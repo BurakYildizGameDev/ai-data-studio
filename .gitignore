@@ -1,0 +1,43 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*.class
+
+# Distribution & packaging
+build/
+dist/
+*.spec
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Runtime data, logs & database
+*.db
+*.sqlite3
+outputs/
+raw/
+work/
+logs/
+settings.json
+app_state.db
+
+# Editor & OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Developer notes & scratch
+scratch/
+yapilanlar*.md
+yapılanlar*.md
+YAPILANLAR.md
+YAPILACAKLAR.md
+SIRADAKI_ISLER.md
+
+# Turkce gelistirici notlari ve ic analiz raporlari (yayinlanmaz)
+*_yapilanlar.md
+*yapilanlar*.md
