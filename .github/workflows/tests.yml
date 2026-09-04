@@ -1,0 +1,52 @@
+name: Tests
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.10", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      # customtkinter needs a Tk display; the GUI tests build real widgets.
+      - name: Install Linux GUI dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-tk xvfb
+
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e ".[dev]"
+
+      # The suite redirects AIDATASTUDIO_DATA_DIR to a temp directory (see
+      # ai_data_studio/tests/conftest.py), so nothing touches a real data directory.
+      - name: Run tests
+        if: runner.os != 'Linux'
+        run: python -m pytest ai_data_studio/tests -q
+
+      - name: Run tests (virtual display)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a python -m pytest ai_data_studio/tests -q
