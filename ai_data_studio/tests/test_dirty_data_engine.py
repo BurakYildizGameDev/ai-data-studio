@@ -34,3 +34,15 @@ def test_inject_dirty_data_helper():
     df_out, meta = inject_dirty_data(df, dirty_rate=0.4, seed=42)
     assert len(df_out) == 5
     assert meta["corrupted_rows"] >= 1
+
+def test_dirty_data_engine_categorical():
+    df = pd.DataFrame({
+        "status": pd.Categorical(["ACTIVE", "PENDING", "CLOSED", "ACTIVE", "SUSPENDED"] * 4),
+        "day_of_week": pd.Categorical(["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY"] * 5)
+    })
+    cfg = DirtyDataConfig(dirty_rate=0.5, typo_rate=0.8, casing_noise_rate=0.8, random_seed=42)
+    engine = DirtyDataEngine(cfg)
+    df_corrupt, meta = engine.corrupt(df)
+    assert len(df_corrupt) == 20
+    assert meta["corrupted_rows"] == 10
+    assert not df_corrupt.empty

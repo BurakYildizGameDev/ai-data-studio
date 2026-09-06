@@ -70,6 +70,12 @@ class DirtyDataEngine:
         reasons: Dict[int, List[str]] = {idx: [] for idx in corrupted_indices}
 
         eligible_cols = [c for c in df_out.columns if c.lower() not in self.config.exclude_columns]
+
+        # Convert Categorical columns to object dtype to prevent pandas category assignment errors
+        for c in eligible_cols:
+            if isinstance(df_out[c].dtype, pd.CategoricalDtype) or df_out[c].dtype.name == "category":
+                df_out[c] = df_out[c].astype(object)
+
         numeric_cols = [c for c in eligible_cols if pd.api.types.is_numeric_dtype(df_out[c])]
         string_cols = [c for c in eligible_cols if pd.api.types.is_string_dtype(df_out[c]) or pd.api.types.is_object_dtype(df_out[c])]
 
