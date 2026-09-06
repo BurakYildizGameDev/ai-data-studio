@@ -131,7 +131,12 @@ class TimeSeriesEngine:
                     
                     # Eğer is_fraud varsa patlama işlemlerini fraud işaretle
                     if "is_fraud" in df_out.columns:
-                        df_out.at[b_idx, "is_fraud"] = True
+                        if pd.api.types.is_bool_dtype(df_out["is_fraud"]):
+                            df_out.at[b_idx, "is_fraud"] = True
+                        elif pd.api.types.is_float_dtype(df_out["is_fraud"]):
+                            df_out.at[b_idx, "is_fraud"] = 1.0
+                        else:
+                            df_out.at[b_idx, "is_fraud"] = 1
 
                 df_out["is_burst_velocity"] = is_burst
 
