@@ -99,7 +99,8 @@ The JSON object MUST have exactly this shape:
 }
 
 Hard constraints:
-- 6 to 14 columns. Include at least one target/outcome column when the domain implies one.
+- 12 to 20 columns. Include at least one target/outcome column when the domain implies one.
+- Provide a rich, enterprise-grade schema covering: identifiers, user demographics, financial balances/limits, transaction specifics, device/network telemetries, and outcome/risk labels.
 - Every name in business_rules, correlations, and monotonicity_rules MUST be a column defined in "columns".
 - business_rules are expressions that hold TRUE for valid rows (e.g. "watch_time_s <= ad_duration_s").
   Use only column names, numeric literals, comparison operators and `and` / `or` / `not`.
