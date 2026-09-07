@@ -22,6 +22,7 @@ from tenacity import (
 )
 
 from .. import config
+from ..i18n import t
 
 log = logging.getLogger(__name__)
 
@@ -59,13 +60,13 @@ def _classify(exc: Exception) -> HFError:
     """Hub istisnasini kalıcı/geçici olarak siniflandirir."""
     status = getattr(getattr(exc, "response", None), "status_code", None)
     if status in (429, 500, 502, 503, 504):
-        return HFRetryableError("HF geçici hata (%s): %s" % (status, exc))
+        return HFRetryableError(t("service.error.hf_temporary", status=status, error=exc))
     if status in (401, 403):
-        return HFNotConfiguredError("HF yetkilendirme hatası (%s): %s" % (status, exc))
+        return HFNotConfiguredError(t("service.error.hf_auth", status=status, error=exc))
     name = type(exc).__name__
     if name in ("ConnectionError", "Timeout", "ReadTimeout", "HfHubHTTPError"):
-        return HFRetryableError("HF bağlantı hatası: %s" % exc)
-    return HFError("HF hatası: %s" % exc)
+        return HFRetryableError(t("service.error.hf_connection", error=exc))
+    return HFError(t("service.error.hf_generic", error=exc))
 
 
 def get_token() -> Optional[str]:
@@ -86,7 +87,7 @@ def _api(token: Optional[str] = None):
     try:
         from huggingface_hub import HfApi
     except ImportError as exc:  # pragma: no cover
-        raise HFError("`huggingface_hub` paketi kurulu değil") from exc
+        raise HFError(t("service.error.package_missing", package="huggingface_hub")) from exc
     return HfApi(token=token or get_token())
 
 
@@ -133,7 +134,7 @@ def load_seed_dataframe(dataset_id: str, max_rows: int = 2000,
     try:
         import datasets as hf_datasets
     except ImportError as exc:  # pragma: no cover
-        raise HFError("`datasets` paketi kurulu değil") from exc
+        raise HFError(t("service.error.package_missing", package="datasets")) from exc
 
     hf_token = token or get_token()
 
@@ -163,7 +164,7 @@ def load_seed_dataframe(dataset_id: str, max_rows: int = 2000,
         raise _classify(exc) from exc
 
     if not rows:
-        raise HFError("Dataset boş veya okunamadı: %s" % dataset_id)
+        raise HFError(t("service.error.hf_dataset_empty", dataset=dataset_id))
 
     df = pd.DataFrame(rows)
     # Ic ice (dict/list) kolonlar sema ilhami icin kullanissiz - atiliyor.
@@ -515,16 +516,15 @@ def push_dataset(df: pd.DataFrame, repo_id: str, schema,
     hf_token = token or get_token()
     if not hf_token:
         raise HFNotConfiguredError(
-            "HuggingFace token bulunamadı. Ayarlar sekmesinden girin veya "
-            "HF_TOKEN ortam değişkenini tanımlayın."
+            t("service.error.hf_no_token")
         )
     if df is None or df.empty:
-        raise HFError("Yuklenecek veri boş")
+        raise HFError(t("service.error.hf_empty_data"))
 
     try:
         import datasets as hf_datasets
     except ImportError as exc:  # pragma: no cover
-        raise HFError("`datasets` paketi kurulu değil") from exc
+        raise HFError(t("service.error.package_missing", package="datasets")) from exc
 
     try:
         dataset = hf_datasets.Dataset.from_pandas(df.reset_index(drop=True))

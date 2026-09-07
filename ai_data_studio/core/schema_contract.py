@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import json
 import re
+
+from ..i18n import t
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -42,7 +44,7 @@ def extract_json_block(text: str) -> Dict[str, Any]:
     en son da dengeli parantez taramasi yapılır.
     """
     if not isinstance(text, str) or not text.strip():
-        raise SchemaValidationError("LLM yaniti boş - JSON blogu bulunamadı")
+        raise SchemaValidationError(t("schema.error.empty_response"))
 
     candidates: List[str] = [text.strip()]
     for match in _FENCE_RE.finditer(text):
@@ -68,7 +70,7 @@ def extract_json_block(text: str) -> Dict[str, Any]:
             return parsed
 
     raise SchemaValidationError(
-        "LLM yanitinda geçerli JSON blogu bulunamadı"
+        t("schema.error.no_json")
         + (" (%s)" % last_error if last_error else "")
     )
 
@@ -147,24 +149,23 @@ class ColumnSpec:
     def from_dict(cls, data: Any, index: int) -> "ColumnSpec":
         where = "columns[%d]" % index
         if not isinstance(data, dict):
-            raise SchemaValidationError("%s bir nesne olmalı, %s geldi" % (where, type(data).__name__))
+            raise SchemaValidationError(
+                t("schema.error.must_be_object", where=where,
+                  got=type(data).__name__))
 
         name = data.get("name")
         if not isinstance(name, str) or not name.strip():
-            raise SchemaValidationError("%s: 'name' zorunlu ve boş olmayan bir metin olmalı" % where)
+            raise SchemaValidationError(t("schema.error.name_required", where=where))
         name = name.strip()
         if not _IDENTIFIER_RE.fullmatch(name):
             raise SchemaValidationError(
-                "%s: kolon adı '%s' geçersiz - df.eval ile kullanilabilmesi için "
-                "sadece harf/rakam/alt cizgi icermeli ve rakamla baslamamali" % (where, name)
-            )
+                t("schema.error.bad_identifier", where=where, name=name))
 
         ctype = data.get("type")
         if not isinstance(ctype, str) or ctype.lower() not in VALID_TYPES:
             raise SchemaValidationError(
-                "%s ('%s'): 'type' su degerlerden biri olmalı: %s"
-                % (where, name, sorted(VALID_TYPES))
-            )
+                t("schema.error.bad_type", where=where, name=name,
+                  valid=sorted(VALID_TYPES)))
         ctype = ctype.lower()
 
         spec = cls(
@@ -190,44 +191,48 @@ class ColumnSpec:
     def _validate(self, where: str) -> None:
         if self.distribution and self.distribution.lower() not in VALID_DISTRIBUTIONS:
             raise SchemaValidationError(
-                "%s ('%s'): bilinmeyen distribution '%s' - geçerli: %s"
-                % (where, self.name, self.distribution, sorted(VALID_DISTRIBUTIONS))
+                t("schema.error.bad_distribution", where=where, name=self.name,
+                  distribution=self.distribution,
+                  valid=sorted(VALID_DISTRIBUTIONS))
             )
         if self.distribution:
             self.distribution = self.distribution.lower()
         if self.min is not None and self.max is not None and self.min > self.max:
             raise SchemaValidationError(
-                "%s ('%s'): min (%s) max'tan (%s) büyük olamaz"
-                % (where, self.name, self.min, self.max)
+                t("schema.error.min_gt_max", where=where, name=self.name,
+                  low=self.min, high=self.max)
             )
         if self.target_ratio is not None and not 0.0 <= self.target_ratio <= 1.0:
             raise SchemaValidationError(
-                "%s ('%s'): target_ratio 0..1 araliginda olmalı, %s geldi"
-                % (where, self.name, self.target_ratio)
+                t("schema.error.target_ratio_range", where=where, name=self.name,
+                  value=self.target_ratio)
             )
         if self.zero_prob is not None and not 0.0 <= self.zero_prob <= 1.0:
             raise SchemaValidationError(
-                "%s ('%s'): zero_prob 0..1 araliginda olmalı, %s geldi"
-                % (where, self.name, self.zero_prob)
+                t("schema.error.zero_prob_range", where=where, name=self.name,
+                  value=self.zero_prob)
             )
         if self.p_index is not None and not 1.0 < self.p_index < 2.0:
             raise SchemaValidationError(
-                "%s ('%s'): tweedie p_index 1..2 araliginda olmalı (Compound Poisson-Gamma), %s geldi"
-                % (where, self.name, self.p_index)
+                t("schema.error.p_index_range", where=where, name=self.name,
+                  value=self.p_index)
             )
         if self.std is not None and self.std < 0:
-            raise SchemaValidationError("%s ('%s'): std negatif olamaz" % (where, self.name))
+            raise SchemaValidationError(
+                t("schema.error.std_negative", where=where, name=self.name))
         if self.shape is not None and self.shape <= 0:
-            raise SchemaValidationError("%s ('%s'): shape pozitif olmalı" % (where, self.name))
+            raise SchemaValidationError(
+                t("schema.error.shape_positive", where=where, name=self.name))
         if self.scale is not None and self.scale <= 0:
-            raise SchemaValidationError("%s ('%s'): scale pozitif olmalı" % (where, self.name))
+            raise SchemaValidationError(
+                t("schema.error.scale_positive", where=where, name=self.name))
         if self.type == "category" and not self.categories:
             raise SchemaValidationError(
-                "%s ('%s'): type 'category' ise 'categories' listesi zorunlu" % (where, self.name)
+                t("schema.error.categories_required", where=where, name=self.name)
             )
         if self.distribution == "normal" and self.mean is None:
             raise SchemaValidationError(
-                "%s ('%s'): distribution 'normal' ise 'mean' zorunlu" % (where, self.name)
+                t("schema.error.mean_required", where=where, name=self.name)
             )
 
     @property
@@ -272,15 +277,15 @@ class CorrelationRule:
             raise SchemaValidationError("%s bir nesne olmalı" % where)
         cols = data.get("columns")
         if not isinstance(cols, (list, tuple)) or len(cols) != 2:
-            raise SchemaValidationError("%s: 'columns' tam olarak 2 kolon adı icermeli" % where)
+            raise SchemaValidationError(t("schema.error.correlation_pair", where=where))
         sign = str(data.get("expected_sign", "positive")).lower()
         if sign not in VALID_SIGNS:
             raise SchemaValidationError(
-                "%s: expected_sign 'positive' veya 'negative' olmalı, '%s' geldi" % (where, sign)
+                t("schema.error.expected_sign", where=where, sign=sign)
             )
         min_r = _as_number(data.get("min_r", 0.0), where, "min_r") or 0.0
         if not 0.0 <= abs(min_r) <= 1.0:
-            raise SchemaValidationError("%s: min_r -1..1 araliginda olmalı" % where)
+            raise SchemaValidationError(t("schema.error.min_r_range", where=where))
 
         method = str(data.get("method", "pearson")).lower().strip()
         if method not in {"pearson", "spearman", "kendall"}:
@@ -330,7 +335,7 @@ class MonotonicityRule:
 
         if not col_x or not col_y:
             raise SchemaValidationError(
-                "%s: 'column_x' ve 'column_y' (veya 2 elemanlı 'columns') zorunlu" % where
+                t("schema.error.monotonicity_columns", where=where)
             )
 
         direction = str(data.get("direction", "increasing")).lower().strip()
@@ -341,12 +346,13 @@ class MonotonicityRule:
 
         if direction not in {"increasing", "decreasing"}:
             raise SchemaValidationError(
-                "%s: direction 'increasing' veya 'decreasing' olmalı, '%s' geldi" % (where, direction)
+                t("schema.error.direction", where=where, direction=direction)
             )
 
         min_ratio = _as_number(data.get("min_compliance_ratio", 0.90), where, "min_compliance_ratio") or 0.90
         if not 0.0 < min_ratio <= 1.0:
-            raise SchemaValidationError("%s: min_compliance_ratio 0..1 aralığında olmalı" % where)
+            raise SchemaValidationError(
+                t("schema.error.min_compliance_range", where=where))
 
         return cls(
             column_x=str(col_x).strip(),
@@ -393,7 +399,7 @@ class SchemaContract:
         """Ham dict'i doğrular ve sozlesmeye çevirir. Hatada SchemaValidationError."""
         if not isinstance(data, dict):
             raise SchemaValidationError(
-                "Schema Contract bir JSON nesnesi olmalı, %s geldi" % type(data).__name__
+                t("schema.error.contract_object", got=type(data).__name__)
             )
 
         missing = [k for k in ("domain", "columns") if k not in data]
@@ -402,46 +408,47 @@ class SchemaContract:
 
         domain = data.get("domain")
         if not isinstance(domain, str) or not domain.strip():
-            raise SchemaValidationError("'domain' boş olmayan bir metin olmalı")
+            raise SchemaValidationError(t("schema.error.domain_required"))
 
         raw_columns = data.get("columns")
         if not isinstance(raw_columns, list) or not raw_columns:
-            raise SchemaValidationError("'columns' en az bir kolon iceren bir liste olmalı")
+            raise SchemaValidationError(t("schema.error.columns_required"))
 
         columns = [ColumnSpec.from_dict(c, i) for i, c in enumerate(raw_columns)]
         names = [c.name for c in columns]
         duplicates = sorted({n for n in names if names.count(n) > 1})
         if duplicates:
-            raise SchemaValidationError("Tekrarlanan kolon adları: %s" % duplicates)
+            raise SchemaValidationError(t("schema.error.duplicate_columns",
+                                          columns=duplicates))
 
         row_count_target = data.get("row_count_target", 100_000)
         try:
             row_count_target = int(row_count_target)
         except (TypeError, ValueError):
             raise SchemaValidationError(
-                "'row_count_target' tam sayı olmalı, %r geldi" % (row_count_target,)
+                t("schema.error.row_count_int", value=row_count_target)
             ) from None
         if row_count_target <= 0:
-            raise SchemaValidationError("'row_count_target' pozitif olmalı")
+            raise SchemaValidationError(t("schema.error.row_count_positive"))
 
         try:
             random_seed = int(data.get("random_seed", 42))
         except (TypeError, ValueError):
-            raise SchemaValidationError("'random_seed' tam sayı olmalı") from None
+            raise SchemaValidationError(t("schema.error.seed_int")) from None
 
         raw_rules = data.get("business_rules", []) or []
         if not isinstance(raw_rules, list):
-            raise SchemaValidationError("'business_rules' bir liste olmalı")
+            raise SchemaValidationError(t("schema.error.rules_list"))
         business_rules = [str(r).strip() for r in raw_rules if str(r).strip()]
 
         raw_corr = data.get("correlations", []) or []
         if not isinstance(raw_corr, list):
-            raise SchemaValidationError("'correlations' bir liste olmalı")
+            raise SchemaValidationError(t("schema.error.correlations_list"))
         correlations = [CorrelationRule.from_dict(c, i) for i, c in enumerate(raw_corr)]
 
         raw_mono = data.get("monotonicity_rules", []) or []
         if not isinstance(raw_mono, list):
-            raise SchemaValidationError("'monotonicity_rules' bir liste olmalı")
+            raise SchemaValidationError(t("schema.error.monotonicity_list"))
         monotonicity_rules = [MonotonicityRule.from_dict(m, i) for i, m in enumerate(raw_mono)]
 
         preserve_anomaly_column = data.get("preserve_anomaly_column")
@@ -484,8 +491,8 @@ class SchemaContract:
         known = self.column_names
         if self.primary_key and self.primary_key not in known:
             raise SchemaValidationError(
-                "'%s' tablosunda primary_key '%s' kolonlar arasinda yok"
-                % (self.table_name, self.primary_key)
+                t("schema.error.primary_key_missing", table=self.table_name,
+                  pk=self.primary_key)
             )
         missing = [k for k in self.foreign_keys if k not in known]
         if missing:
@@ -506,15 +513,14 @@ class SchemaContract:
             unknown = [c for c in rule.columns if c not in known]
             if unknown:
                 self.warnings.append(
-                    "Korelasyon kuralı dusuruldu - bilinmeyen kolon(lar) %s (tanımlı: %s)"
-                    % (unknown, sorted(known))
+                    t("schema.warning.correlation_unknown_columns",
+                      columns=unknown, known=sorted(known))
                 )
                 continue
             bad = [c for c in rule.columns if not self.column(c).is_correlatable]
             if bad:
                 self.warnings.append(
-                    "Korelasyon kuralı dusuruldu - %s sayısal/bool değil, korelasyon "
-                    "hesaplanamaz" % bad
+                    t("schema.warning.correlation_not_numeric", columns=bad)
                 )
                 continue
             valid_correlations.append(rule)
@@ -525,14 +531,14 @@ class SchemaContract:
         for m_rule in self.monotonicity_rules:
             if m_rule.column_x not in known or m_rule.column_y not in known:
                 self.warnings.append(
-                    "Monotonluk kuralı düşürüldü - bilinmeyen kolon(lar) [%s, %s] (tanımlı: %s)"
-                    % (m_rule.column_x, m_rule.column_y, sorted(known))
+                    t("schema.warning.monotonicity_unknown_columns",
+                      x=m_rule.column_x, y=m_rule.column_y, known=sorted(known))
                 )
                 continue
             if not self.column(m_rule.column_x).is_correlatable or not self.column(m_rule.column_y).is_correlatable:
                 self.warnings.append(
-                    "Monotonluk kuralı düşürüldü - [%s, %s] sayısal/bool değil"
-                    % (m_rule.column_x, m_rule.column_y)
+                    t("schema.warning.monotonicity_not_numeric",
+                      x=m_rule.column_x, y=m_rule.column_y)
                 )
                 continue
             valid_monotonic.append(m_rule)
@@ -548,13 +554,13 @@ class SchemaContract:
             unknown = sorted(referenced - known)
             if unknown:
                 self.warnings.append(
-                    "İş kuralı '%s' tanımlı olmayan ad(lar) iceriyor: %s" % (rule, unknown)
+                    t("schema.warning.rule_unknown_names", rule=rule, names=unknown)
                 )
 
         if self.preserve_anomaly_column and self.preserve_anomaly_column not in known:
             self.warnings.append(
-                "preserve_anomaly_column '%s' tanımlı kolonlar arasında bulunamadı: %s"
-                % (self.preserve_anomaly_column, sorted(known))
+                t("schema.warning.preserve_column_missing",
+                  column=self.preserve_anomaly_column, known=sorted(known))
             )
 
     # -- erisim ----------------------------------------------------------- #
@@ -614,10 +620,11 @@ def _as_number(value: Any, where: str, key: str) -> Optional[float]:
     if value is None or value == "":
         return None
     if isinstance(value, bool):
-        raise SchemaValidationError("%s: '%s' sayısal olmalı, boolean geldi" % (where, key))
+        raise SchemaValidationError(
+            t("schema.error.numeric_bool", where=where, field=key))
     try:
         return float(value)
     except (TypeError, ValueError):
         raise SchemaValidationError(
-            "%s: '%s' sayısal olmalı, %r geldi" % (where, key, value)
+            t("schema.error.numeric_expected", where=where, field=key, value=value)
         ) from None

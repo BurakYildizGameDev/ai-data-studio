@@ -148,7 +148,11 @@ class TestMonotonicityRuleAndContract(unittest.TestCase):
         }
         contract = SchemaContract.from_dict(contract_dict)
         self.assertEqual(len(contract.monotonicity_rules), 0)
-        self.assertTrue(any("Monotonluk kuralı düşürüldü" in w for w in contract.warnings))
+        from ai_data_studio.i18n import t
+
+        prefix = t("schema.warning.monotonicity_unknown_columns",
+                   x="", y="", known="").split("-")[0].rstrip()
+        self.assertTrue(any(prefix in w for w in contract.warnings))
 
 
 class TestMonotonicityValidator(unittest.TestCase):

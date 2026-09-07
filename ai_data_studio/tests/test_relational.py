@@ -296,10 +296,22 @@ class TestValidateRelationships(unittest.TestCase):
         self.assertNotIn("repair", report)
 
     def test_emit_receives_messages(self):
+        from ai_data_studio.i18n import t
+
+        # emit artik (mesaj, seviye) ikilisi aliyor - severity metinden degil
+        # olaydan geliyor (bkz. config.PROGRESS_*).
         messages = []
-        validate_relationships(_frames(), _contract(), emit=messages.append)
-        self.assertTrue(any("Yabancı anahtar" in m for m in messages))
-        self.assertTrue(any("Kardinalite" in m for m in messages))
+
+        def collect(message, level="info"):
+            messages.append((message, level))
+
+        validate_relationships(_frames(), _contract(), emit=collect)
+        prefix = t("relational.fk_line", relationship="", orphans="",
+                   pct="", verdict="").split("[")[0].strip()
+        self.assertTrue(any(prefix in m for m, _ in messages))
+        card_prefix = t("relational.cardinality_line", relationship="",
+                        observed="", expected="", verdict="").split("[")[0].strip()
+        self.assertTrue(any(card_prefix in m for m, _ in messages))
 
     def test_single_table_contract_is_trivially_valid(self):
         contract = DatasetContract.from_dict({

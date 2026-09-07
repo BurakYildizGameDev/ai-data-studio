@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
+from ..i18n import t
 
 from .schema_contract import (
     SchemaContract,
@@ -51,28 +52,28 @@ class Relationship:
         where = "relationships[%d]" % index
         if not isinstance(data, dict):
             raise SchemaValidationError(
-                "%s bir nesne olmalı, %s geldi" % (where, type(data).__name__)
+                t("schema.error.must_be_object", where=where, got=type(data).__name__)
             )
 
         def _req(key: str) -> str:
             value = data.get(key)
             if not isinstance(value, str) or not value.strip():
                 raise SchemaValidationError(
-                    "%s: '%s' zorunlu ve boş olmayan bir metin olmalı" % (where, key)
+                    t("contract.error.field_required", where=where, field=key)
                 )
             return value.strip()
 
         try:
             mean_per_parent = float(data.get("mean_per_parent", 3.0))
         except (TypeError, ValueError):
-            raise SchemaValidationError("%s: 'mean_per_parent' sayı olmalı" % where) from None
+            raise SchemaValidationError(t("contract.error.mean_per_parent_number", where=where)) from None
         if mean_per_parent <= 0:
-            raise SchemaValidationError("%s: 'mean_per_parent' pozitif olmalı" % where)
+            raise SchemaValidationError(t("contract.error.mean_per_parent_positive", where=where))
 
         try:
             min_per_parent = int(data.get("min_per_parent", 0))
         except (TypeError, ValueError):
-            raise SchemaValidationError("%s: 'min_per_parent' tam sayı olmalı" % where) from None
+            raise SchemaValidationError(t("contract.error.min_per_parent_int", where=where)) from None
         if min_per_parent < 0:
             raise SchemaValidationError("%s: 'min_per_parent' negatif olamaz" % where)
 
@@ -83,12 +84,12 @@ class Relationship:
                 max_per_parent = int(raw_max)
             except (TypeError, ValueError):
                 raise SchemaValidationError(
-                    "%s: 'max_per_parent' tam sayı olmalı" % where
+                    t("contract.error.max_per_parent_int", where=where)
                 ) from None
             if max_per_parent < min_per_parent:
                 raise SchemaValidationError(
-                    "%s: 'max_per_parent' (%d) 'min_per_parent'tan (%d) küçük olamaz"
-                    % (where, max_per_parent, min_per_parent)
+                    t("contract.error.max_lt_min", where=where,
+                      high=max_per_parent, low=min_per_parent)
                 )
 
         return cls(
@@ -142,7 +143,7 @@ class DatasetContract:
     def from_dict(cls, data: Any) -> "DatasetContract":
         if not isinstance(data, dict):
             raise SchemaValidationError(
-                "Dataset Contract bir JSON nesnesi olmalı, %s geldi" % type(data).__name__
+                t("contract.error.contract_object", got=type(data).__name__)
             )
 
         # Tek tablolu bir Schema Contract da kabul edilir: N=1 olarak sarilir.
@@ -151,11 +152,11 @@ class DatasetContract:
 
         domain = data.get("domain")
         if not isinstance(domain, str) or not domain.strip():
-            raise SchemaValidationError("'domain' boş olmayan bir metin olmalı")
+            raise SchemaValidationError(t("schema.error.domain_required"))
 
         raw_tables = data.get("tables")
         if not isinstance(raw_tables, list) or not raw_tables:
-            raise SchemaValidationError("'tables' en az bir tablo iceren bir liste olmalı")
+            raise SchemaValidationError(t("contract.error.tables_required"))
         if len(raw_tables) > MAX_TABLES:
             raise SchemaValidationError(
                 "'tables' en fazla %d tablo icerebilir, %d geldi"
@@ -167,17 +168,18 @@ class DatasetContract:
         names = [t.table_name for t in tables]
         duplicates = sorted({n for n in names if names.count(n) > 1})
         if duplicates:
-            raise SchemaValidationError("Tekrarlanan tablo adları: %s" % duplicates)
+            raise SchemaValidationError(t("contract.error.duplicate_tables",
+                                          tables=duplicates))
 
         raw_rel = data.get("relationships", []) or []
         if not isinstance(raw_rel, list):
-            raise SchemaValidationError("'relationships' bir liste olmalı")
+            raise SchemaValidationError(t("contract.error.relationships_list"))
         relationships = [Relationship.from_dict(r, i) for i, r in enumerate(raw_rel)]
 
         try:
             random_seed = int(data.get("random_seed", tables[0].random_seed))
         except (TypeError, ValueError):
-            raise SchemaValidationError("'random_seed' tam sayı olmalı") from None
+            raise SchemaValidationError(t("schema.error.seed_int")) from None
 
         contract = cls(
             domain=domain.strip(),
@@ -226,17 +228,17 @@ class DatasetContract:
                 table = by_name.get(table_name)
                 if table is None:
                     raise SchemaValidationError(
-                        "İlişki '%s': %s tablosu '%s' tanımlı değil"
-                        % (rel.label(), role, table_name)
+                        t("contract.error.relationship_table_missing",
+                          label=rel.label(), side=role, table=table_name)
                     )
                 if key not in table.column_names:
                     raise SchemaValidationError(
-                        "İlişki '%s': '%s' kolonu '%s' tablosunda yok"
-                        % (rel.label(), key, table_name)
+                        t("contract.error.relationship_column_missing",
+                          label=rel.label(), column=key, table=table_name)
                     )
             if rel.parent_table == rel.child_table:
                 raise SchemaValidationError(
-                    "İlişki '%s': bir tablo kendi kendisinin ebeveyni olamaz" % rel.label()
+                    t("contract.error.self_parent", label=rel.label())
                 )
 
         # Uretim sirasi cikarilabiliyor mu (dongu var mi)?
@@ -248,7 +250,7 @@ class DatasetContract:
         roots = [name for name in by_name if name not in children]
         if not roots:
             raise SchemaValidationError(
-                "Kök tablo bulunamadı - ilişkilerde döngü olabilir"
+                t("contract.error.no_root_table")
             )
         return roots[0]
 
@@ -283,8 +285,7 @@ class DatasetContract:
             ready = sorted(n for n, deps in pending.items() if not (deps - set(ordered)))
             if not ready:
                 raise SchemaValidationError(
-                    "İlişkilerde döngü var, üretim sırası çıkarılamıyor: %s"
-                    % sorted(pending)
+                    t("contract.error.cycle", tables=sorted(pending))
                 )
             for name in ready:
                 ordered.append(name)

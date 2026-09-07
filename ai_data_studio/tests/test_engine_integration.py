@@ -101,7 +101,9 @@ class TestParametricGeneration(_PipelineCase):
         cfg = self._cfg(engine=orchestrator.ENGINE_PARAMETRIC, relational=True)
         with self.assertRaises(ValueError) as ctx:
             self._run(cfg, client)
-        self.assertIn("ilişkisel", str(ctx.exception).lower())
+        from ai_data_studio.i18n import t
+
+        self.assertEqual(str(ctx.exception), t("pipeline.error.parametric_relational_cli"))
         # Hata LLM'e gitmeden, sema uretilmeden verilmeli.
         self.assertEqual(client.calls, [])
 
@@ -123,12 +125,18 @@ class TestAutoEngineFallback(_PipelineCase):
         self.assertGreater(len(result.dataframe), 0)
         self.assertIn("fallback_reason", result.generation_meta)
         # Kullanici sessizce baska bir motora gectigimizi gormeli.
-        self.assertTrue(any("Parametrik motora düşülüyor" in e["message"] for e in events))
+        from ai_data_studio.i18n import t
+
+        self.assertTrue(any(t("run.engine.falling_back") in e["message"]
+                            for e in events))
 
     def test_uses_llm_when_code_generation_succeeds(self):
         events, result = self._run(self._cfg(engine=orchestrator.ENGINE_AUTO))
         self.assertEqual(result.report["engines"]["generation"], orchestrator.ENGINE_LLM)
-        self.assertFalse(any("Parametrik motora düşülüyor" in e["message"] for e in events))
+        from ai_data_studio.i18n import t
+
+        self.assertFalse(any(t("run.engine.falling_back") in e["message"]
+                             for e in events))
 
     def test_default_engine_is_unchanged_llm_path(self):
         _, result = self._run(self._cfg())

@@ -265,14 +265,21 @@ class TestHealthCheckReporting(unittest.TestCase):
             "invalid key", response=mock.Mock(status_code=401, headers={}), body=None)
         client = self._anthropic_client(error)
         self.assertFalse(client.health_check())
-        self.assertIn("Kimlik doğrulanamadı", client.last_health_error)
+        from ai_data_studio.i18n import t
+
+        self.assertIn(t("service.error.auth_failed", source="").split("(")[0].rstrip(),
+                      client.last_health_error)
         self.assertIn("ANTHROPIC_API_KEY", client.last_health_error)
 
     def test_network_error_is_not_reported_as_auth_error(self):
         client = self._anthropic_client(ConnectionError("dns yok"))
         self.assertFalse(client.health_check())
-        self.assertIn("ulaşılamadı", client.last_health_error)
-        self.assertNotIn("Kimlik doğrulanamadı", client.last_health_error)
+        from ai_data_studio.i18n import t
+
+        self.assertIn(t("service.error.unreachable", error="").rstrip(),
+                      client.last_health_error)
+        self.assertNotIn(t("service.error.auth_failed", source="").split("(")[0].rstrip(),
+                         client.last_health_error)
 
     def test_success_clears_error(self):
         client = self._anthropic_client(None)
@@ -296,7 +303,11 @@ class TestHealthCheckReporting(unittest.TestCase):
             with self.assertRaises(LLMError) as ctx:
                 orchestrator._build_llm_client(
                     orchestrator.PipelineConfig(domain_prompt="x"), mock.Mock(), 1)
-        self.assertIn("Kimlik doğrulanamadı", str(ctx.exception))
+        from ai_data_studio.i18n import t
+
+        self.assertIn(t("run.error.health_check", provider="anthropic",
+                        model="", detail="").split("(")[0].rstrip(),
+                      str(ctx.exception))
 
 
 class TestOllamaHealthReporting(unittest.TestCase):

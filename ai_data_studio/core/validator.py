@@ -27,6 +27,8 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
+from .. import config
+from ..i18n import t
 from .schema_contract import SchemaContract
 
 log = logging.getLogger(__name__)
@@ -72,7 +74,7 @@ class ValidationCancelled(RuntimeError):
 
 def _check_cancel(cancel_event: Optional[threading.Event]) -> None:
     if cancel_event is not None and cancel_event.is_set():
-        raise ValidationCancelled("Validasyon kullanıcı tarafından iptal edildi")
+        raise ValidationCancelled(t("validation.cancelled"))
 
 
 # --------------------------------------------------------------------------- #
@@ -455,10 +457,15 @@ def run_validation(
     if seed_df is None and reference_df is not None:
         seed_df = reference_df
 
-    def emit(message: str) -> None:
+    def emit(message: str, level: str = config.PROGRESS_INFO) -> None:
+        """Alt adım mesajını dışarı verir.
+
+        ``level`` konsol rengini belirler; çağıran taraf uyarıyı METİNDEN değil
+        buradan bildirir, aksi hâlde çeviri yapıldığında renklendirme bozulur.
+        """
         log.info(message)
         if on_progress is not None:
-            on_progress(message)
+            on_progress(message, level)
 
     rows_in = len(df)
     report: Dict[str, Any] = {
@@ -499,30 +506,34 @@ def run_validation(
 
     # -- 1. Duplicate temizleme ------------------------------------------ #
     _check_cancel(cancel_event)
-    emit("Validasyon basladi (%s satır)" % format(rows_in, ","))
+    emit(t("validation.started", rows=format(rows_in, ",")))
     before = len(df)
     df = df.drop_duplicates()
-    record("Duplicate temizleme", before, len(df))
+    record(t("validation.stage.duplicates"), before, len(df))
 
     # -- 2. Sema sinirlari ------------------------------------------------ #
     _check_cancel(cancel_event)
     before = len(df)
     df, bounds_detail = apply_schema_bounds(df, schema)
-    record("Şema sinirlari", before, len(df), {"per_column": bounds_detail})
+    record(t("validation.stage.bounds"), before, len(df), {"per_column": bounds_detail})
     if bounds_detail:
         top_bounds = sorted(bounds_detail.items(), key=lambda x: x[1], reverse=True)[:3]
-        emit("    -> En çok elenen kolonlar: %s" % ", ".join("%s: -%s" % (c, format(n, ",")) for c, n in top_bounds))
+        emit("    -> " + t("validation.top_dropped_columns",
+                            columns=", ".join("%s: -%s" % (c, format(n, ","))
+                                              for c, n in top_bounds)))
 
     # -- 3. Is kurallari -------------------------------------------------- #
     _check_cancel(cancel_event)
     before = len(df)
     df, rules_detail = apply_business_rules(df, schema.business_rules)
-    record("İş kuralları", before, len(df), {"detail": rules_detail["rules"]})
+    record(t("validation.stage.rules"), before, len(df), {"detail": rules_detail["rules"]})
     report["business_rules"] = rules_detail["rules"]
     for r_info in rules_detail.get("rules", []):
         if r_info.get("violations", 0) > 0:
-            emit("    -> Kural ihlali: '%s' -> %s satır elendi (%%%.1f)"
-                 % (r_info["rule"], format(r_info["violations"], ","), r_info.get("violation_pct", 0.0)))
+            emit("    -> " + t("validation.rule_violation",
+                                rule=r_info["rule"],
+                                rows=format(r_info["violations"], ","),
+                                pct="%.1f" % r_info.get("violation_pct", 0.0)))
 
     # -- 4. Z-Score ------------------------------------------------------- #
     _check_cancel(cancel_event)
@@ -538,19 +549,22 @@ def run_validation(
         preserve_anomaly_value=target_preserve_val,
         schema=schema,
     )
-    record("Z-Score aykırı değer", before, len(df), {"detail": z_detail})
+    record(t("validation.stage.z_score"), before, len(df), {"detail": z_detail})
     z_skipped = z_detail.get("skipped_columns", {})
     if z_skipped:
-        emit("    -> Z-Score atlanan kolonlar (kuyruk koruma): %s"
-             % ", ".join("%s (%s)" % (c, why) for c, why in list(z_skipped.items())[:4]))
+        emit("    -> " + t("validation.z_skipped",
+                            columns=", ".join("%s (%s)" % (c, why)
+                                              for c, why in list(z_skipped.items())[:4])))
     z_per_col = z_detail.get("per_column", {})
     if z_per_col:
         top_z = sorted(z_per_col.items(), key=lambda x: x[1], reverse=True)[:3]
-        emit("    -> Z-Score aykırıları: %s" % ", ".join("%s: -%s" % (c, format(n, ",")) for c, n in top_z))
+        emit("    -> " + t("validation.z_outliers",
+                            columns=", ".join("%s: -%s" % (c, format(n, ","))
+                                              for c, n in top_z)))
     z_preserved = z_detail.get("preserved_anomalies", 0)
     if z_preserved > 0:
-        emit("    -> Z-Score anomali koruma: '%s' kolonu sayesinde %d uç satır silinmekten korundu"
-             % (target_preserve_col, z_preserved))
+        emit("    -> " + t("validation.z_preserved",
+                            column=target_preserve_col, rows=z_preserved))
 
     # -- 5. IsolationForest ----------------------------------------------- #
     _check_cancel(cancel_event)
@@ -563,8 +577,8 @@ def run_validation(
     record("IsolationForest", before, len(df), {"detail": iso_detail})
     iso_preserved = iso_detail.get("preserved_anomalies", 0)
     if iso_preserved > 0:
-        emit("    -> IsolationForest anomali koruma: '%s' kolonu sayesinde %d uç satır silinmekten korundu"
-             % (target_preserve_col, iso_preserved))
+        emit("    -> " + t("validation.iso_preserved",
+                            column=target_preserve_col, rows=iso_preserved))
 
     # -- 5b. Korelasyon koruma (kuyruk kesme emniyeti) --------------------- #
     # Outlier asamalari, semanin hedefledigi korelasyonu tasiyan uc satirlari
@@ -589,11 +603,13 @@ def run_validation(
         if regressions:
             restored = int(len(df_before_outliers) - len(df))
             for reg in regressions:
-                emit("    -> UYARI: '%s ~ %s' korelasyonu temizlik yüzünden düştü: r=%s -> %s (eşik %s)"
-                     % (reg["pair"][0], reg["pair"][1], reg["r_before"], reg["r_after"], reg["min_r"]))
-            emit("    -> Korelasyon koruma devrede: outlier temizliği geri alınıyor "
-                 "(%s satır geri geldi). Kapatmak için --no-correlation-guard."
-                 % format(restored, ","))
+                emit("    -> " + t("validation.correlation_regressed",
+                                    left=reg["pair"][0], right=reg["pair"][1],
+                                    before=reg["r_before"], after=reg["r_after"],
+                                    threshold=reg["min_r"]),
+                     level=config.PROGRESS_WARNING)
+            emit("    -> " + t("validation.correlation_guard_reverted",
+                                rows=format(restored, ",")))
             before_revert = len(df)
             df = df_before_outliers
             guard_info["reverted"] = True
@@ -631,26 +647,33 @@ def run_validation(
         "total_preserved": tot_preserved,
     }
 
-    emit("Validasyon tamamlandı: %s -> %s satır (%%%.1f korundu)"
-         % (format(rows_in, ","), format(len(df), ","), report["retention_pct"]))
+    emit(t("validation.finished", rows_in=format(rows_in, ","),
+             rows_out=format(len(df), ","),
+             retention="%.1f" % report["retention_pct"]))
     if target_preserve_col and tot_preserved > 0:
-        emit("  -> Anomali Koruma Özeti: %d satır '%s' etiketiyle silinmekten korundu"
-             % (tot_preserved, target_preserve_col))
+        emit("  -> " + t("validation.preserved_summary",
+                          rows=tot_preserved, column=target_preserve_col))
 
     for c in report["correlations"]:
-        corr_status = "UYGUN" if c["pass"] else "BEKLENENİN ALTINDA"
-        emit("  -> Korelasyon [%s]: r=%.3f (beklenen: %s, min: %.2f) [%s]"
-             % (" - ".join(c["pair"]), c["actual_r"], c["expected_sign"], c["min_r"], corr_status))
+        corr_status = (t("validation.verdict.ok") if c["pass"]
+                       else t("validation.verdict.below"))
+        emit("  -> " + t("validation.correlation_line",
+                         pair=" - ".join(c["pair"]), r="%.3f" % c["actual_r"],
+                         sign=c["expected_sign"], min_r="%.2f" % c["min_r"],
+                         verdict=corr_status))
 
     dist_rep = report.get("distributions", {})
     if not dist_rep.get("skipped"):
-        emit("  -> KS Dağılım Testi: %d/%d sayısal kolon referansla uyumlu"
-             % (dist_rep.get("passed", 0), dist_rep.get("total", 0)))
+        emit("  -> " + t("validation.ks_summary",
+                          passed=dist_rep.get("passed", 0),
+                          total=dist_rep.get("total", 0)))
 
     failed_corr = [c for c in report["correlations"] if not c["pass"]]
     if failed_corr:
-        emit("UYARI: %d korelasyon beklentiyi karsilamadi: %s"
-             % (len(failed_corr), ", ".join("-".join(c["pair"]) for c in failed_corr)))
+        emit(t("validation.correlations_unmet",
+               count=len(failed_corr),
+               pairs=", ".join("-".join(c["pair"]) for c in failed_corr)),
+             level=config.PROGRESS_WARNING)
 
     # -- 6b. Monotonluk ve Kredi Riski Skor Kartı Doğrulaması -------------- #
     if schema.monotonicity_rules:
@@ -658,12 +681,18 @@ def run_validation(
             from .monotonicity_validator import validate_monotonicity
             mono_report = validate_monotonicity(df, schema.monotonicity_rules, seed=schema.random_seed)
             report["monotonicity"] = mono_report.to_dict()
-            emit("  -> Monotonluk Denetimi: %d/%d kural başarıyla doğrulandı"
-                 % (mono_report.passed_rules, mono_report.total_rules))
+            emit("  -> " + t("validation.monotonicity_summary",
+                              passed=mono_report.passed_rules,
+                              total=mono_report.total_rules))
             for mr in mono_report.results:
-                st = "UYGUN" if mr.passed else "İHLAL"
-                emit("     * [%s -> %s (%s)]: Spearman r=%.3f, Dilim Uyumu=%%%.1f [%s]"
-                     % (mr.column_x, mr.column_y, mr.direction, mr.spearman_r, mr.binned_compliance_ratio * 100, st))
+                st = (t("validation.verdict.ok") if mr.passed
+                      else t("validation.verdict.violation"))
+                emit("     * " + t("validation.monotonicity_line",
+                                   x=mr.column_x, y=mr.column_y,
+                                   direction=mr.direction,
+                                   r="%.3f" % mr.spearman_r,
+                                   compliance="%.1f" % (mr.binned_compliance_ratio * 100),
+                                   verdict=st))
         except Exception as exc:
             log.warning("Monotonluk denetimi hatası: %s", exc)
 
@@ -675,12 +704,16 @@ def run_validation(
                                              table_name=audit_table_name)
             report["privacy_audit"] = priv_rep.to_dict()
             if priv_rep.dcr and priv_rep.nndr and priv_rep.has_reference_data:
-                emit("  -> Gizlilik & NNDR: DCR=%.4f, NNDR=%.4f (Ezberleme Riski: %s)"
-                     % (priv_rep.dcr.mean_dcr, priv_rep.nndr.mean_nndr, priv_rep.nndr.memorization_risk))
+                emit("  -> " + t("validation.privacy_nndr",
+                                  dcr="%.4f" % priv_rep.dcr.mean_dcr,
+                                  nndr="%.4f" % priv_rep.nndr.mean_nndr,
+                                  risk=priv_rep.nndr.memorization_risk))
             if not priv_rep.hipaa_audit.passed:
-                emit("  -> HIPAA Safe Harbor Uyarısı: %s" % priv_rep.hipaa_audit.summary)
+                emit("  -> " + t("validation.hipaa_warning",
+                                  summary=priv_rep.hipaa_audit.summary),
+                     level=config.PROGRESS_WARNING)
             else:
-                emit("  -> HIPAA Safe Harbor Uyumluluğu: DOĞRULANDI")
+                emit("  -> " + t("validation.hipaa_ok"))
         except Exception as exc:
             log.warning("Gizlilik denetimi çalıştırılamadı: %s", exc)
 

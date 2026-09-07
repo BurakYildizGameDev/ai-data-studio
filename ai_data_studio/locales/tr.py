@@ -354,7 +354,7 @@ MESSAGES = {
         "Kardinalite [{relationship}]: ort {observed} (beklenen {expected}) {verdict}"
     ),
     "result.relational.deviation": "SAPMA",
-    "result.relational.pk_not_unique": "UYARI: '{table}' birincil anahtarı '{key}' tekil değil",
+    "result.relational.pk_not_unique": "UYARI: '{table}' birincil anahtarı '{pk}' tekil değil",
     "result.plan.task_type": "Görev tipi",
     "result.plan.table_count": "Tablo sayısı",
     "result.plan.target": "Hedef değişken",
@@ -398,4 +398,566 @@ MESSAGES = {
         "ilişkisel kutusunu kapatın."
     ),
     "pipeline.error.folder_open": "Klasör açılamadı: {error}",
+    # --- Pipeline adımları -------------------------------------------------- #
+    "step.1": "Servis kontrolü",
+    "step.2": "Araştırma & şema üretimi",
+    "step.3": "Seed veri arama (HuggingFace)",
+    "step.4": "Kod üretimi & self-healing",
+    "step.5": "Sandbox çalıştırma",
+    "step.6": "Validasyon & ayıklama",
+    "step.7": "Çıktı & durum kaydı",
+
+    # --- Pipeline hataları --------------------------------------------------- #
+    "pipeline.error.unknown_engine": "Bilinmeyen üretim motoru: {engine} (geçerli: {valid})",
+    "pipeline.error.parametric_relational_cli": (
+        "Parametrik motor ilişkisel (çok tablolu) üretimi desteklemiyor. --relational "
+        "ile --engine llm kullanın ya da --engine parametric için --relational'ı "
+        "kaldırın."
+    ),
+    "pipeline.error.dirty_rate_range": "dirty_rate 0 ile 1 arasında olmalı, {value} verildi",
+    "pipeline.error.max_tables_planner": "max_tables 1 ile {limit} arasında olmalı, {value} verildi",
+    "pipeline.error.max_tables_relational": "max_tables 2 ile {limit} arasında olmalı, {value} verildi",
+    "pipeline.error.unknown_fraud_table": (
+        "--fraud-table '{table}' sözleşmede yok. Geçerli tablolar: {tables}"
+    ),
+    "pipeline.error.unknown_audit_table": (
+        "--audit-table '{table}' sözleşmede yok. Geçerli tablolar: {tables} (ya da 'all')"
+    ),
+    "pipeline.cancelled_by_user": "Pipeline kullanıcı tarafından iptal edildi",
+
+    # --- Koşu ilerlemesi ------------------------------------------------------ #
+    "run.checking_provider": "Sağlayıcı kontrol ediliyor: {provider} / {model}",
+    "run.service_ready": "Servis hazır: {model}",
+    "run.provider_model": "Sağlayıcı: {provider} | Model: {model}",
+    "run.seed.hf_searching": "HuggingFace'te referans veri aranıyor...",
+    "run.seed.loaded": "Seed veri yüklendi: {source} ({rows} satır)",
+    "run.seed.columns": "Referans sütunlar ({count} adet): {columns}",
+    "run.seed.none_found": "Uygun seed veri bulunamadı - şema sıfırdan üretilecek",
+    "run.seed.web_searching": "Web'de referans veri aranıyor ve toplanıyor: '{query}'...",
+    "run.seed.web_collected": "Web'den referans veri toplandı: {source} ({rows} satır, {columns} sütun)",
+    "run.seed.extracted_columns": "Çıkarılan referans kolonlar: {columns}",
+    "run.seed.web_none": "Web'den uygun veri çıkarılamadı - şema sıfırdan üretilecek",
+    "run.seed.skipped": "Seed veri kullanılmıyor (atlandı)",
+    "run.plan.analysing": "Proje analiz ediliyor: hangi veri gerekli?",
+    "run.schema.relational": "LLM domain analiz ediyor ve ilişkisel Dataset Contract üretiyor...",
+    "run.schema.single": "LLM domain analiz ediyor ve Schema Contract üretiyor...",
+    "run.schema.contract_ready": (
+        "Dataset Contract hazır: {tables} tablo, {relationships} ilişki (kök tablo: {root})"
+    ),
+    "run.schema.ready": "Şema hazır: {summary}",
+    "run.audit.tables": "Gizlilik denetimi yapılacak tablolar: {tables}",
+    "run.engine.parametric_selected": "Parametrik motor seçildi - kod üretimi ve sandbox atlanıyor",
+    "run.engine.compiled_no_llm": "Şema doğrudan vektörel derlendi ({seconds} sn, LLM kodu yok)",
+    "run.engine.compiled": "Şema doğrudan vektörel derlendi ({seconds} sn)",
+    "run.engine.falling_back": "Parametrik motora düşülüyor (--engine auto)",
+    "run.codegen.writing": "Veri üreten kod yazılıyor...",
+    "run.codegen.failed_warning": "UYARI: kod üretimi başarısız ({error})",
+    "run.raw.generated": "Ham veri üretildi: {rows} satır ({attempts} deneme, {seconds} sn)",
+    "run.raw.generated_relational": (
+        "Ham veri üretildi: {tables} tablo, {rows} satır ({attempts} deneme, {seconds} sn)"
+    ),
+    "run.raw.saved": "Ham veri kaydedildi: {name} ({size} MB)",
+    "run.fraud.injected": (
+        "Dolandırıcılık senaryoları enjekte edildi: {rows} satır (oran: %{rate}, "
+        "tablo: {table}, kolon: {column})"
+    ),
+    "run.time_series.applied": (
+        "Zaman serisi dinamiği uygulandı: {entities} tekil varlık, {bursts} hız "
+        "patlaması, medyan aralık {median} sn"
+    ),
+    "run.time_series.entity_warning": (
+        "UYARI: '{column}' kolonu {rows} satırda {distinct} farklı değer taşıyor; hız "
+        "metrikleri anlamsız kalır. Tekrar eden bir kolon verin: --ts-entity-col <kolon>"
+    ),
+    "run.features.expanded": "Özellik genişletme: {added} yeni kolon (toplam {total})",
+    "run.validation.running": "Discriminator çalışıyor...",
+    "run.validation.table": "Tablo doğrulanıyor: {table}",
+    "run.validation.done": "Validasyon bitti: {rows_in} -> {rows_out} satır (%{retention} korundu)",
+    "run.validation.table_rows": "{rows_in} -> {rows_out} satır (%{retention})",
+    "run.relational.checking": "İlişkisel bütünlük denetleniyor ({count} ilişki)...",
+    "run.relational.repair_disabled": "yetim onarımı kapalı (--no-repair-orphans)",
+    "run.relational.contract_violated": "sözleşme ihlali sürüyor",
+    "run.relational.failed": "UYARI: İlişkisel bütünlük denetimi başarısız - {reason}",
+    "run.dirty.injected": (
+        "Kontrollü kirlilik enjekte edildi: {rows} satır (%{rate}) - eksik {missing}, "
+        "yazım hatası {typo}, uç değer {spike}, harf/boşluk {casing}"
+    ),
+    "run.dirty.audit_columns": "Denetim izi kolonları eklendi: is_corrupted, corruption_details",
+    "run.output.writing": "Çıktı dosyaları yazılıyor...",
+    "run.output.written": "Çıktı yazıldı: {kinds}",
+    "run.output.skipped": "Çıktı dosyası yazılmadı (write_outputs=False)",
+    "run.hub.uploading": "HuggingFace'e yükleniyor: {repo}",
+    "run.hub.uploaded": "Yüklendi: {url}",
+    "run.cost.summary": "LLM kullanımı: {calls} çağrı, {tokens} token, ~${cost}",
+    "run.finished": "Tamamlandı. {rows} temiz satır, tahmini maliyet ${cost}",
+    "run.finished_relational": "Tamamlandı. {tables} tablo, {rows} temiz satır, tahmini maliyet ${cost}",
+    # --- Plan ve şema konsol dökümü ------------------------------------------ #
+    "run.plan.ready": "Plan hazır: {summary}",
+    "run.plan.rationale": "Gerekçe: {rationale}",
+    "run.plan.target": "Hedef değişken: {target}",
+    "run.plan.class_balance": "Sınıf dengesi: pozitif sınıf %{pct}",
+    "run.plan.leakage": "Sızıntı yaratacağı için ayıklanan kolonlar ({count} adet):",
+    "run.plan.split": "Train/test ayrımı: {kind} - {reason}",
+    "run.schema.generation_order": "{tables} tablo, üretim sırası: {order}",
+    "run.schema.table_line": "Tablo '{table}' | PK: {pk} | hedef {rows} satır",
+    "run.schema.columns_header": "Tanımlanan kolonlar ({count} adet):",
+    "run.schema.spec_range": "aralık: [{low}, {high}]",
+    "run.schema.spec_distribution": "dağılım: {distribution}",
+    "run.schema.spec_categories": "kategoriler: [{categories}]",
+    "run.schema.spec_ratio": "oran: %{pct}",
+    "run.schema.spec_not_null": "not null",
+    "run.schema.rules_header": "İş kuralları ({count} adet):",
+    "run.schema.rule": "Kural: {rule}",
+    "run.schema.correlations_header": "Beklenen korelasyonlar ({count} adet):",
+    "run.schema.relationships_header": "İlişkiler ({count} adet):",
+    "run.schema.relationship": "{label} (ebeveyn başına ort {mean}; {bounds}{optional})",
+    "run.schema.optional": "opsiyonel",
+
+    # --- CLI ------------------------------------------------------------------ #
+    "cli.auth.header": "Kimlik bilgisi durumu",
+    "cli.auth.source": "kaynak: {source}",
+    "cli.auth.implicit": "anahtar yok ama {source} bulundu - denenecek",
+    "cli.auth.checked": "bakılan: keyring, {vars}",
+    "cli.auth.oauth_logged_in": "OAuth: giriş yapılmış - {detail}",
+    "cli.auth.oauth_missing": "OAuth: {command} kurulu değil ({hint})",
+    "cli.auth.oauth_login": "OAuth: giriş için -> {command}",
+    "cli.auth.note": "NOT:   {note}",
+    "cli.auth.ollama_running": "Ollama {version} - {count} model",
+    "cli.auth.ollama_down": "daemon çalışmıyor ({host})",
+    "cli.auth.none_available": "Hiçbir sağlayıcı kullanılabilir değil.",
+    "cli.error.domain_and_project": (
+        "--domain ve --project birlikte kullanılamaz: ya veriyi tarif edin ya da "
+        "projeyi anlatın"
+    ),
+    "cli.error.domain_or_project": "--domain veya --project zorunlu (veya --check-auth kullanın)",
+    "cli.error.generic": "HATA: {error}",
+    "cli.label.domain": "Domain",
+    "cli.label.project": "Proje",
+    "cli.label.provider": "Sağlayıcı",
+    "cli.label.backend": "(arka uç: {backend})",
+    "cli.label.target": "Hedef",
+    "cli.label.target_value": "{rows} satır, seed {seed}",
+    "cli.label.mode": "Mod",
+    "cli.label.engine": "Motor",
+    "cli.mode.planner": "proje planlayıcı (en fazla {limit} tablo, tablo sayısına plan karar verir)",
+    "cli.mode.relational": "ilişkisel (en fazla {limit} tablo, yetim onarımı: {repair})",
+    "cli.on": "açık",
+    "cli.off": "KAPALI",
+    "cli.engine.time_series": "zaman serisi",
+    "cli.engine.expand_features": "özellik genişletme",
+    "cli.engine.dirty": "kirlilik %{pct}",
+    "cli.cancelled": "İptal edildi.",
+    "cli.cancelled_with": "İptal edildi: {reason}",
+    "cli.summary.job_done": "Job #{job_id} tamamlandı.",
+    "cli.summary.clean_rows": "Temiz satır",
+    "cli.summary.clean_rows_value": "{rows_out} / {rows_in} (%{retention} korundu)",
+    "cli.summary.cost": "Maliyet",
+    "cli.summary.outputs": "Çıktılar:",
+    "cli.summary.plan": "Proje planı: {summary}",
+    "cli.relational.integrity_failed": "İlişkisel bütünlük sağlanamadı ({count} ihlal).",
+    # --- CLI --help ---------------------------------------------------------- #
+    "cli.help.description": "AI Synthetic Data Studio - GUI'siz uçtan uca pipeline",
+    "cli.help.domain": "Üretilecek veri setinin domain/görev tanımı",
+    "cli.help.project": (
+        "Veri yerine PROJEYİ anlat: planlayıcı hangi verinin gerektiğine, hedef "
+        "değişkene, sınıf dengesine, ayıklanacak sızıntı kolonlarına ve train/test "
+        "ayrımına kendisi karar verir"
+    ),
+    "cli.help.check_auth": "Tüm sağlayıcıların kimlik durumunu yazdırıp çık",
+    "cli.help.model": "Sağlayıcıya özel model adı",
+    "cli.help.locale": "Faker locale (örn. tr_TR)",
+    "cli.help.hf_seed": "HuggingFace'ten referans veri çek",
+    "cli.help.hf_dataset": "Belirli bir HF dataset id'si kullan",
+    "cli.help.web_seed": "Web'den gerçek referans (seed) veri topla",
+    "cli.help.web_query": "Web arama sorgusu veya doğrudan URL",
+    "cli.help.formats": "Virgülle ayrılmış: csv,parquet,json",
+    "cli.help.push_to_hub": "Temiz veriyi bu HF repo_id'ye yükle",
+    "cli.help.public": "HF repo'yu herkese açık oluştur",
+    "cli.help.contamination": "IsolationForest anomali oranı (0 = kapalı, varsayılan). Örn: 0.05",
+    "cli.help.no_correlation_guard": (
+        "Outlier temizliği hedef korelasyonları bozarsa geri alma korumasını kapat"
+    ),
+    "cli.help.preserve_col": (
+        "Z-score ve IsolationForest filtrelerinden muaf tutulacak anomali kolonu (örn: is_fraud)"
+    ),
+    "cli.help.preserve_val": "Anomali koruma değeri (varsayılan: 1 veya True)",
+    "cli.help.inject_fraud": "Sentetik veriye parametrik dolandırıcılık (fraud) senaryoları enjekte et",
+    "cli.help.fraud_rate": "Dolandırıcılık enjeksiyon oranı (varsayılan: 0.005 yani %0.5)",
+    "cli.help.fraud_target_col": "Dolandırıcılık etiket kolonu (varsayılan: is_fraud)",
+    "cli.help.audit_privacy": "NNDR, Diferansiyel Gizlilik ve HIPAA Safe Harbor denetimi yap",
+    "cli.help.fraud_table": "Dolandırıcılık enjeksiyonu hangi tabloya uygulansın (varsayılan: kök tablo)",
+    "cli.help.audit_table": (
+        "Gizlilik denetimi hangi tabloya uygulansın: boş = kök tablo (varsayılan), "
+        "'all' = bütün tablolar, ya da bir tablo adı"
+    ),
+    "cli.help.gemini_backend": (
+        "Gemini arka ucunu bu koşu için seç: 'aistudio' (API anahtarı, hızlı) veya "
+        "'cli' (Antigravity oturumu, yavaş). Kalıcı ayar değişmez"
+    ),
+    "cli.help.relational": "Çok tablolu (ilişkisel) veri seti üret: tablolar + yabancı anahtarlar",
+    "cli.help.max_tables": (
+        "İlişkisel modda üst tablo sınırı (varsayılan 6, sözleşmedeki sert sınır 12)"
+    ),
+    "cli.help.no_repair_orphans": (
+        "Yetim yabancı anahtarları silme, hata olarak raporla (CI kapısı: bütünlük "
+        "sağlanamazsa çıkış kodu 3)"
+    ),
+    "cli.help.engine": (
+        "Üretim motoru: 'llm' kod üretir ve sandbox'ta koşar (varsayılan), "
+        "'parametric' şemayı doğrudan derler (LLM kodu yok, tek tablo), 'auto' kod "
+        "üretimi tükenirse parametriğe düşer"
+    ),
+    "cli.help.time_series": (
+        "Zaman serisi ve hız dinamiği ekle: kronolojik sıralama, sirkadiyen ritim, "
+        "seconds_since_last_tx, hız patlamaları"
+    ),
+    "cli.help.ts_timestamp_col": "Zaman serisi zaman damgası kolonu (varsayılan: transaction_timestamp)",
+    "cli.help.ts_entity_col": (
+        "Zaman serisi varlık kimliği kolonu; yoksa üretilir (varsayılan: customer_id)"
+    ),
+    "cli.help.ts_start": "Zaman serisi başlangıcı (YYYY-MM-DD HH:MM:SS)",
+    "cli.help.ts_end": "Zaman serisi bitişi (YYYY-MM-DD HH:MM:SS)",
+    "cli.help.expand_features": (
+        "Deterministik özellik genişletme: finansal oranlar, kredi notu, zaman "
+        "türevleri ve davranışsal bayraklar ekle"
+    ),
+    "cli.help.dirty_rate": (
+        "Kontrollü kirlilik oranı (0-1, 0 = kapalı). Doğrulamadan SONRA uygulanır; "
+        "is_corrupted / corruption_details kolonları eklenir"
+    ),
+    "cli.help.hardware": (
+        "Donanım profilini (CPU/RAM/GPU) ve önerilen yerel modeli yazdır, çık"
+    ),
+    # --- Doğrulayıcı ---------------------------------------------------------- #
+    "validation.stage.duplicates": "Duplicate temizleme",
+    "validation.stage.bounds": "Şema sınırları",
+    "validation.stage.rules": "İş kuralları",
+    "validation.stage.z_score": "Z-Score aykırı değer",
+    "validation.started": "Validasyon başladı ({rows} satır)",
+    "validation.finished": "Validasyon tamamlandı: {rows_in} -> {rows_out} satır (%{retention} korundu)",
+    "validation.cancelled": "Validasyon kullanıcı tarafından iptal edildi",
+    "validation.top_dropped_columns": "En çok elenen kolonlar: {columns}",
+    "validation.rule_violation": "Kural ihlali: '{rule}' -> {rows} satır elendi (%{pct})",
+    "validation.z_skipped": "Z-Score atlanan kolonlar (kuyruk koruma): {columns}",
+    "validation.z_outliers": "Z-Score aykırıları: {columns}",
+    "validation.z_preserved": (
+        "Z-Score anomali koruma: '{column}' kolonu sayesinde {rows} uç satır silinmekten korundu"
+    ),
+    "validation.iso_preserved": (
+        "IsolationForest anomali koruma: '{column}' kolonu sayesinde {rows} uç satır korundu"
+    ),
+    "validation.preserved_summary": "Anomali koruma özeti: {rows} satır '{column}' etiketiyle korundu",
+    "validation.correlation_regressed": (
+        "UYARI: '{left} ~ {right}' korelasyonu temizlik yüzünden düştü: "
+        "r={before} -> {after} (eşik {threshold})"
+    ),
+    "validation.correlation_guard_reverted": (
+        "Korelasyon koruma devrede: outlier temizliği geri alınıyor ({rows} satır geri "
+        "geldi). Kapatmak için --no-correlation-guard."
+    ),
+    "validation.correlation_line": (
+        "Korelasyon [{pair}]: r={r} (beklenen: {sign}, min: {min_r}) [{verdict}]"
+    ),
+    "validation.correlations_unmet": "UYARI: {count} korelasyon beklentiyi karşılamadı: {pairs}",
+    "validation.ks_summary": "KS Dağılım Testi: {passed}/{total} sayısal kolon referansla uyumlu",
+    "validation.monotonicity_summary": "Monotonluk Denetimi: {passed}/{total} kural doğrulandı",
+    "validation.monotonicity_line": (
+        "[{x} -> {y} ({direction})]: Spearman r={r}, Dilim Uyumu=%{compliance} [{verdict}]"
+    ),
+    "validation.privacy_nndr": "Gizlilik & NNDR: DCR={dcr}, NNDR={nndr} (ezberleme riski: {risk})",
+    "validation.hipaa_warning": "HIPAA Safe Harbor uyarısı: {summary}",
+    "validation.hipaa_ok": "HIPAA Safe Harbor uyumluluğu: DOĞRULANDI",
+    "validation.verdict.ok": "UYGUN",
+    "validation.verdict.below": "BEKLENENİN ALTINDA",
+    "validation.verdict.violation": "İHLAL",
+    # --- Kod üretimi (yalnız konsol; LLM geri beslemesi çeviri dışı) ---------- #
+    "codegen.starting": "Kod üretimi başlatılıyor (LLM)...",
+    "codegen.written": "LLM Python kodunu oluşturdu ({lines} satır). Sandbox testi başlatılıyor...",
+    "codegen.written_relational": (
+        "LLM {tables} tablo için Python kodunu oluşturdu ({lines} satır). Sandbox "
+        "testi başlatılıyor..."
+    ),
+    "codegen.attempt": "Deneme {attempt}/{total}: kod sandbox'ta çalıştırılıyor...",
+    "codegen.attempt_failed": "Deneme {attempt} başarısız: {error}",
+    "codegen.hint": "Çözüm ipucu: {hint}",
+    "codegen.attempt_ok": "Deneme {attempt} başarılı: {rows} satır ({seconds} sn, {columns} sütun)",
+    "codegen.attempt_ok_relational": (
+        "Deneme {attempt} başarılı: {tables} tablo üretildi ({seconds} sn) - {counts}"
+    ),
+    "codegen.schema_mismatch": "Deneme {attempt}: {count} şema uyumsuzluğu bulundu",
+    "codegen.mismatch_item": "Uyumsuzluk: {issue}",
+    "codegen.mismatch_more": "... ve {count} uyumsuzluk daha",
+    "codegen.repeated_error": "Aynı hata tekrarlandı - LLM'den yaklaşımını değiştirmesi isteniyor...",
+    "codegen.feeding_back": "LLM'e hata geri besleniyor, kod düzeltiliyor...",
+    "codegen.gave_up": "{attempts} denemede başarılı kod üretilemedi. Son hata:\n{error}",
+    "codegen.fix_call_failed": "Kod düzeltme çağrısı başarısız: {error}",
+    "codegen.unexpected_state": "Beklenmeyen durum",
+    "codegen.cancelled": "Kullanıcı tarafından iptal edildi",
+    # --- İlişkisel doğrulayıcı ------------------------------------------------ #
+    "relational.orphans_removed": "Yetim satır temizliği [{relationship}]: {rows} satır elendi",
+    "relational.pk_not_unique": (
+        "UYARI: '{table}' birincil anahtarı '{pk}' tekil değil ({duplicates} tekrar, "
+        "{nulls} boş)"
+    ),
+    "relational.fk_line": "Yabancı anahtar [{relationship}]: {orphans} yetim satır (%{pct}) [{verdict}]",
+    "relational.verdict.orphans": "YETİM VAR",
+    "relational.cardinality_line": (
+        "Kardinalite [{relationship}]: ebeveyn başına ort {observed} (beklenen {expected}) [{verdict}]"
+    ),
+
+    # --- Monotonluk doğrulayıcı ------------------------------------------------ #
+    "monotonicity.no_rules": "Tanımlanmış monotonluk kuralı bulunmamaktadır.",
+    "monotonicity.report_title": "Monotonluk & Kredi Riski Skor Kartı Uyumluluk Raporu",
+    "monotonicity.table_header": (
+        "| Değişken X | Hedef/Bağımlı Y | Yön | Spearman $r_s$ | Dilim Uyumu | Çift "
+        "Uyumu | Durum |"
+    ),
+    "monotonicity.compliant": "Uyumlu",
+    "monotonicity.below_threshold": (
+        "Dilim monotonluk uyumu (%{binned}) veya ikili uyum (%{pairwise}) eşiğin "
+        "(%{threshold}) altında"
+    ),
+    "monotonicity.column_missing": "Kolon veri çerçevesinde bulunamadı veya veri boş",
+    "monotonicity.not_enough_rows": "Yeterli geçerli sayısal satır yok (<10)",
+    # --- HIPAA tanımlayıcı kataloğu -------------------------------------------- #
+    "hipaa.title.names": "İsim ve soyisimler",
+    "hipaa.title.geographic": "Eyalet/il altı coğrafi birimler",
+    "hipaa.title.dates": "Kişiye doğrudan bağlı tarihler",
+    "hipaa.title.phone": "Telefon numaraları",
+    "hipaa.title.fax": "Faks numaraları",
+    "hipaa.title.ssn": "Sosyal güvenlik / kimlik numarası (SSN / TCKN)",
+    "hipaa.title.mrn": "Tıbbi kayıt / protokol numarası",
+    "hipaa.title.health_plan": "Sağlık sigortası hesap numarası",
+    "hipaa.title.account": "Banka / hesap numaraları",
+    "hipaa.title.vehicle": "Araç tanımlayıcı ve plakalar (VIN)",
+    "hipaa.title.device": "Cihaz tanımlayıcı ve seri numaraları",
+    "hipaa.title.biometric": "Biyometrik tanımlayıcılar",
+    "hipaa.title.face": "Yüz fotoğrafları ve benzer görüntüler",
+    "hipaa.title.unique_code": "Her türlü benzersiz kod veya numara",
+    "hipaa.category.direct": "Doğrudan tanımlayıcı",
+    "hipaa.category.quasi": "Yarı tanımlayıcı (quasi-identifier)",
+    "hipaa.category.timestamp": "Zaman damgası (date shifting gerekir)",
+    "hipaa.category.health_system": "Sağlık sistemi kimliği",
+    "hipaa.category.health_financial": "Finansal sağlık kimliği",
+    "hipaa.category.financial": "Finansal tanımlayıcı",
+    "hipaa.category.asset": "Varlık tanımlayıcı",
+    "hipaa.category.hardware": "Donanım tanımlayıcı",
+    "hipaa.category.digital": "Dijital iz",
+    "hipaa.category.network": "Ağ tanımlayıcı",
+    "hipaa.category.visual_biometric": "Görsel biyometri",
+
+    # --- Gizlilik denetim raporu ------------------------------------------------ #
+    "privacy.report.title": "HIPAA Safe Harbor & Diferansiyel Gizlilik Denetim Raporu",
+    "privacy.report.table": "Tablo",
+    "privacy.report.summary_heading": "Yönetici Özeti",
+    "privacy.report.overall_status": "Genel gizlilik durumu",
+    "privacy.report.guarantee": "Gizlilik seviyesi",
+    "privacy.report.epsilon": "Tahmini diferansiyel gizlilik",
+    "privacy.report.memorisation_heading": "Referans Veri Ezberleme (Memorization) Analizi",
+    "privacy.report.no_reference": (
+        "Referans (seed) veri sağlanmadığı için DCR/NNDR karşılaştırması atlandı. Veri "
+        "sıfırdan sentetik üretildi."
+    ),
+    "privacy.report.no_reference_table": (
+        "Bu tablo için referans (seed) veri yok; DCR/NNDR karşılaştırması yapılamadı, "
+        "yani **ezberleme riski ölçülmedi**."
+    ),
+    "privacy.report.nn_intro": (
+        "Sentetik verinin referans hasta/müşteri kayıtlarını birebir kopyalamadığını "
+        "teyit etmek için En Yakın Komşu analizi uygulanmıştır:"
+    ),
+    "privacy.report.metric_header": "| Metrik | Değer | Eşik değer | Risk seviyesi |",
+    "privacy.report.dcr_p5": "5% yüzdelik DCR",
+    "privacy.report.safe_distance": "Güvenli mesafe",
+    "privacy.report.identical_matches": "Birebir eşleşen kayıt sayısı",
+    "privacy.report.mean_nndr": "Ortalama NNDR",
+    "privacy.report.nndr_note_label": "NNDR yorumu:",
+    "privacy.report.nndr_note": (
+        "oran 1.0'a yaklaştıkça sentetik satırların hiçbir gerçek kişiyi kopyalamadığı, "
+        "manifold üzerinde yeni ve bağımsız sentetik bireyler oluşturduğu kanıtlanır."
+    ),
+    "privacy.report.hipaa_heading": "HIPAA 18 Tanımlayıcı Taraması",
+    "privacy.report.audit_result": "Denetim sonucu",
+    "privacy.report.all_passed": "TÜM KRİTERLERİ GEÇTİ",
+    "privacy.report.review_required": "İNCELENMESİ GEREKEN ALANLAR VAR",
+    "privacy.report.age_over_89": "89 yaş üstü satır sayısı",
+    "privacy.report.age_rule": "HIPAA kuralı: 89 yaş üstü 90+ olarak kümelenmelidir",
+    "privacy.report.identifiers_heading": "Tespit Edilen Olası Tanımlayıcı Kolonlar",
+    "privacy.report.identifiers_header": "| Kolon adı | HIPAA kategorisi | Durum / aksiyon |",
+    "privacy.report.no_identifiers": (
+        "Şemada doğrudan maskesiz kişisel tanımlayıcı (PII) kolon tespit edilmemiştir."
+    ),
+    "privacy.report.footer": (
+        "Bu rapor AI Synthetic Data Studio PrivacyAuditor tarafından otomatik oluşturulmuştur."
+    ),
+    "privacy.action.mask": "Sentetik Faker verisi ile maskelenmiş veya kodlanmış olmalıdır.",
+    "privacy.summary.compliant": "HIPAA Safe Harbor uyumlu.",
+    "privacy.summary.findings": "{columns} tanımlayıcı kolon ve {ages} adet 89+ yaş kaydı tespit edildi.",
+    # --- Şema sözleşmesi doğrulaması -------------------------------------------- #
+    "schema.error.empty_response": "LLM yanıtı boş - JSON bloğu bulunamadı",
+    "schema.error.no_json": "LLM yanıtında geçerli JSON bloğu bulunamadı",
+    "schema.error.must_be_object": "{where} bir nesne olmalı, {got} geldi",
+    "schema.error.name_required": "{where}: 'name' zorunlu ve boş olmayan bir metin olmalı",
+    "schema.error.bad_identifier": (
+        "{where}: kolon adı '{name}' geçersiz - df.eval ile kullanılabilmesi için "
+        "sadece harf/rakam/alt çizgi içermeli ve rakamla başlamamalı"
+    ),
+    "schema.error.bad_type": "{where} ('{name}'): 'type' şu değerlerden biri olmalı: {valid}",
+    "schema.error.bad_distribution": (
+        "{where} ('{name}'): bilinmeyen distribution '{distribution}' - geçerli: {valid}"
+    ),
+    "schema.error.min_gt_max": "{where} ('{name}'): min ({low}) max'tan ({high}) büyük olamaz",
+    "schema.error.target_ratio_range": "{where} ('{name}'): target_ratio 0..1 aralığında olmalı, {value} geldi",
+    "schema.error.zero_prob_range": "{where} ('{name}'): zero_prob 0..1 aralığında olmalı, {value} geldi",
+    "schema.error.p_index_range": (
+        "{where} ('{name}'): tweedie p_index 1..2 aralığında olmalı (Compound Poisson-Gamma), {value} geldi"
+    ),
+    "schema.error.std_negative": "{where} ('{name}'): std negatif olamaz",
+    "schema.error.shape_positive": "{where} ('{name}'): shape pozitif olmalı",
+    "schema.error.scale_positive": "{where} ('{name}'): scale pozitif olmalı",
+    "schema.error.categories_required": (
+        "{where} ('{name}'): type 'category' ise 'categories' listesi zorunlu"
+    ),
+    "schema.error.mean_required": "{where} ('{name}'): distribution 'normal' ise 'mean' zorunlu",
+    "schema.error.contract_object": "Schema Contract bir JSON nesnesi olmalı, {got} geldi",
+    "schema.error.domain_required": "'domain' boş olmayan bir metin olmalı",
+    "schema.error.columns_required": "'columns' en az bir kolon içeren bir liste olmalı",
+    "schema.error.duplicate_columns": "Tekrarlanan kolon adları: {columns}",
+    "schema.error.row_count_positive": "'row_count_target' pozitif olmalı",
+    "schema.error.row_count_int": "'row_count_target' tam sayı olmalı, {value} geldi",
+    "schema.error.seed_int": "'random_seed' tam sayı olmalı",
+    "schema.error.rules_list": "'business_rules' bir liste olmalı",
+    "schema.error.correlations_list": "'correlations' bir liste olmalı",
+    "schema.error.monotonicity_list": "'monotonicity_rules' bir liste olmalı",
+    "schema.error.correlation_pair": "{where}: 'columns' tam olarak 2 kolon adı içermeli",
+    "schema.error.expected_sign": "{where}: expected_sign 'positive' veya 'negative' olmalı, '{sign}' geldi",
+    "schema.error.min_r_range": "{where}: min_r -1..1 aralığında olmalı",
+    "schema.error.monotonicity_columns": (
+        "{where}: 'column_x' ve 'column_y' (veya 2 elemanlı 'columns') zorunlu"
+    ),
+    "schema.error.direction": "{where}: direction 'increasing' veya 'decreasing' olmalı, '{direction}' geldi",
+    "schema.error.min_compliance_range": "{where}: min_compliance_ratio 0..1 aralığında olmalı",
+    "schema.error.primary_key_missing": "'{table}' tablosunda primary_key '{pk}' kolonlar arasında yok",
+    "schema.error.numeric_bool": "{where}: '{field}' sayısal olmalı, boolean geldi",
+    "schema.error.numeric_expected": "{where}: '{field}' sayısal olmalı, {value} geldi",
+    "schema.warning.correlation_unknown_columns": (
+        "Korelasyon kuralı düşürüldü - bilinmeyen kolon(lar) {columns} (tanımlı: {known})"
+    ),
+    "schema.warning.correlation_not_numeric": (
+        "Korelasyon kuralı düşürüldü - {columns} sayısal/bool değil, korelasyon hesaplanamaz"
+    ),
+    "schema.warning.monotonicity_unknown_columns": (
+        "Monotonluk kuralı düşürüldü - bilinmeyen kolon(lar) [{x}, {y}] (tanımlı: {known})"
+    ),
+    "schema.warning.monotonicity_not_numeric": (
+        "Monotonluk kuralı düşürüldü - [{x}, {y}] sayısal/bool değil"
+    ),
+    "schema.warning.rule_unknown_names": "İş kuralı '{rule}' tanımlı olmayan ad(lar) içeriyor: {names}",
+    "schema.warning.preserve_column_missing": (
+        "preserve_anomaly_column '{column}' tanımlı kolonlar arasında bulunamadı: {known}"
+    ),
+    # --- Veri seti sözleşmesi -------------------------------------------------- #
+    "contract.error.contract_object": "Dataset Contract bir JSON nesnesi olmalı, {got} geldi",
+    "contract.error.field_required": "{where}: '{field}' zorunlu ve boş olmayan bir metin olmalı",
+    "contract.error.tables_required": "'tables' en az bir tablo içeren bir liste olmalı",
+    "contract.error.duplicate_tables": "Tekrarlanan tablo adları: {tables}",
+    "contract.error.relationships_list": "'relationships' bir liste olmalı",
+    "contract.error.mean_per_parent_number": "{where}: 'mean_per_parent' sayı olmalı",
+    "contract.error.mean_per_parent_positive": "{where}: 'mean_per_parent' pozitif olmalı",
+    "contract.error.min_per_parent_int": "{where}: 'min_per_parent' tam sayı olmalı",
+    "contract.error.max_per_parent_int": "{where}: 'max_per_parent' tam sayı olmalı",
+    "contract.error.max_lt_min": (
+        "{where}: 'max_per_parent' ({high}) 'min_per_parent'tan ({low}) küçük olamaz"
+    ),
+    "contract.error.relationship_table_missing": (
+        "İlişki '{label}': {side} tablosu '{table}' tanımlı değil"
+    ),
+    "contract.error.relationship_column_missing": (
+        "İlişki '{label}': '{column}' kolonu '{table}' tablosunda yok"
+    ),
+    "contract.error.self_parent": "İlişki '{label}': bir tablo kendi kendisinin ebeveyni olamaz",
+    "contract.error.no_root_table": "Kök tablo bulunamadı - ilişkilerde döngü olabilir",
+    "contract.error.cycle": (
+        "İlişkilerde döngü var, üretim sırası çıkarılamıyor: {tables}"
+    ),
+
+    # --- Proje planlayıcı ------------------------------------------------------ #
+    "plan.error.plan_object": "Proje planı bir JSON nesnesi olmalı, {got} geldi",
+    "plan.error.leakage_list": "'excluded_leakage' bir liste olmalı",
+    "plan.error.target_required": (
+        "'{task}' görevinde 'target' zorunlu - hedef değişkeni olmayan bir veri seti "
+        "eğitime hazır değildir"
+    ),
+    "plan.error.class_ratio_required": (
+        "'{task}' görevinde 'positive_class_ratio' zorunlu - sınıf dengesi belirtilmemiş "
+        "bir sınıflandırma veri seti kullanışlı değildir"
+    ),
+    "plan.error.class_ratio_range": "'positive_class_ratio' 0 ile 1 arasında olmalı, {value} geldi",
+    "plan.error.split_column_missing": "split: '{column}' kolonu '{table}' tablosunda yok",
+    "plan.error.split_not_datetime": (
+        "split: zamana göre bölme için '{column}' bir 'datetime' kolonu olmalı, '{got}' türünde"
+    ),
+    "plan.warning.unsupervised_target": (
+        "Görev 'unsupervised' ama bir hedef değişken verilmiş ({target}) - yok sayıldı."
+    ),
+    "plan.warning.class_ratio_ignored": "'{task}' görevinde sınıf dengesi anlamsız - yok sayıldı.",
+    "plan.warning.class_ratio_extreme": (
+        "Sınıf dengesi aşırı ({ratio}): bu orandaki bir hedef, üretilen satır sayısında "
+        "anlamlı sayıda örnek vermeyebilir."
+    ),
+    "plan.warning.no_leakage": (
+        "Hiçbir sızıntı kolonu ayıklanmamış. Çoğu gerçek problemde hedef olay sonrası "
+        "bilinen en az bir alan vardır; plan bunu düşünmemiş olabilir."
+    ),
+    # --- Servis katmanı hataları ------------------------------------------------ #
+    "service.error.package_missing": "`{package}` paketi kurulu değil",
+    "service.error.auth_failed": (
+        "Kimlik doğrulanamadı ({source}). Anahtar geçersiz veya süresi dolmuş."
+    ),
+    "service.error.forbidden": "Anahtarın bu işlem için yetkisi yok ({error}).",
+    "service.error.unreachable": "Servise ulaşılamadı: {error}",
+    "service.error.model_not_found": "Model bulunamadı: {model} ({error})",
+    "service.error.anthropic_connection": "Anthropic bağlantı hatası: {error}",
+    "service.error.anthropic_bad_key": "Anthropic API anahtarı geçersiz: {error}",
+    "service.error.anthropic_server": "Anthropic sunucu hatası {status}",
+    "service.error.anthropic_api": "Anthropic API hatası {status}: {error}",
+    "service.error.anthropic_empty": "Anthropic boş yanıt döndü (stop_reason={reason})",
+    "service.error.gemini_request": "Gemini istek hatası: {error}",
+    "service.error.gemini_server": "Gemini sunucu hatası: {error}",
+    "service.error.gemini_api": "Gemini API hatası: {error}",
+    "service.error.gemini_empty": "Gemini boş yanıt döndü",
+    "service.error.ollama_unreachable": (
+        "Ollama daemon'a bağlanılamadı ({host}). `ollama serve` çalışıyor mu?"
+    ),
+    "service.error.ollama_down": "Ollama daemon çalışmıyor ({host}). Başlatmak için: ollama serve",
+    "service.error.ollama_model_missing": "Model kurulu değil: {model}. İndirmek için: ollama pull {model}",
+    "service.error.ollama_bad_json_tags": "Ollama /api/tags geçersiz JSON döndü",
+    "service.error.ollama_bad_json": "Ollama geçersiz JSON döndü",
+    "service.error.ollama_pull_start": "Model indirme başlatılamadı: {error}",
+    "service.error.ollama_pull": "Ollama pull hatası: {error}",
+    "service.error.ollama_timeout": "Ollama yanıtı {seconds} saniyede gelmedi - daha küçük bir model deneyin",
+    "service.error.ollama_call_failed": "Ollama çağrısı başarısız: {error}",
+    "service.error.ollama_generic": "Ollama hatası: {error}",
+    "service.error.ollama_empty": "Ollama boş yanıt döndü",
+    "service.error.hf_temporary": "HF geçici hata ({status}): {error}",
+    "service.error.hf_auth": "HF yetkilendirme hatası ({status}): {error}",
+    "service.error.hf_connection": "HF bağlantı hatası: {error}",
+    "service.error.hf_generic": "HF hatası: {error}",
+    "service.error.hf_dataset_empty": "Dataset boş veya okunamadı: {dataset}",
+    "service.error.hf_no_token": (
+        "HuggingFace token bulunamadı. Ayarlar sekmesinden girin veya HF_TOKEN ortam "
+        "değişkenini tanımlayın."
+    ),
+    "service.error.hf_empty_data": "Yüklenecek veri boş",
+    "service.error.schema_retries": (
+        "{attempts} denemede geçerli Schema Contract üretilemedi. Son hata: {error}"
+    ),
+    "service.error.contract_retries": (
+        "{attempts} denemede geçerli Dataset Contract üretilemedi. Son hata: {error}"
+    ),
+    "service.error.plan_retries": (
+        "{attempts} denemede geçerli proje planı üretilemedi. Son hata: {error}"
+    ),
+    "run.error.health_check": "{provider} servisi doğrulanamadı (model: {model}). {detail}",
+    "run.error.health_hint": "API anahtarını / daemon'u kontrol edin.",
 }

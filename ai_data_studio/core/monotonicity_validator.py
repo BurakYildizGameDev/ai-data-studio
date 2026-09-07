@@ -16,6 +16,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
+from ..i18n import t
+
 from .schema_contract import MonotonicityRule
 
 log = logging.getLogger(__name__)
@@ -106,15 +108,16 @@ class MonotonicityReport:
 
     def to_markdown(self) -> str:
         if not self.results:
-            return "*Tanımlanmış monotonluk kuralı bulunmamaktadır.*"
+            return "*%s*" % t("monotonicity.no_rules")
 
         lines = [
-            "### Monotonluk & Kredi Riski Skor Kartı Uyumluluk Raporu",
-            "| Değişken X | Hedef/Bağımlı Y | Yön | Spearman $r_s$ | Dilim Uyumu | Çift Uyumu | Durum |",
+            "### " + t("monotonicity.report_title"),
+            t("monotonicity.table_header"),
             "|---|---|---|---|---|---|---|",
         ]
         for r in self.results:
-            status = "✅ GEÇTİ" if r.passed else "❌ İHLAL"
+            status = ("✅ " + t("history.verdict.pass") if r.passed
+                      else "❌ " + t("validation.verdict.violation"))
             lines.append(
                 "| `%s` | `%s` | %s | `%.3f` | %%%.1f | %%%.1f | %s |"
                 % (
@@ -151,7 +154,7 @@ class MonotonicityValidator:
                 spearman_r=0.0,
                 pairwise_compliance_ratio=0.0,
                 min_compliance_ratio=rule.min_compliance_ratio,
-                reason="Kolon veri çerçevesinde bulunamadı veya veri boş",
+                reason=t("monotonicity.column_missing"),
             )
 
         # Sayısala çevir ve geçerli satırları al
@@ -174,7 +177,7 @@ class MonotonicityValidator:
                 spearman_r=0.0,
                 pairwise_compliance_ratio=0.0,
                 min_compliance_ratio=rule.min_compliance_ratio,
-                reason="Yeterli geçerli sayısal satır yok (<10)",
+                reason=t("monotonicity.not_enough_rows"),
             )
 
         # 1. Spearman Rank Korelasyonu
@@ -211,10 +214,11 @@ class MonotonicityValidator:
             and direction_ok
         )
 
-        reason = "Uyumlu" if passed else (
-            "Dilim monotonluk uyumu (%%%.1f) veya ikili uyum (%%%.1f) eşiğin (%%%.1f) altında"
-            % (binned_ratio * 100, pairwise_ratio * 100, rule.min_compliance_ratio * 100)
-        )
+        reason = t("monotonicity.compliant") if passed else t(
+            "monotonicity.below_threshold",
+            binned="%.1f" % (binned_ratio * 100),
+            pairwise="%.1f" % (pairwise_ratio * 100),
+            threshold="%.1f" % (rule.min_compliance_ratio * 100))
 
         return MonotonicityCheckResult(
             column_x=cx,

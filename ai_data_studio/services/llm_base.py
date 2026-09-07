@@ -13,6 +13,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Callable, Dict, Optional
 
 from .. import config
+from ..i18n import t
 from .prompt_blocks import (
     BUSINESS_RULES_BLOCK,
     COPULA_BLOCK,
@@ -412,8 +413,8 @@ class BaseLLMClient(ABC):
             return contract
 
         raise SchemaValidationError(
-            "%d denemede geçerli Schema Contract üretilemedi. Son hata: %s"
-            % (SCHEMA_MAX_RETRIES, last_error)
+            t("service.error.schema_retries", attempts=SCHEMA_MAX_RETRIES,
+              error=last_error)
         )
 
     def generate_dataset_schema(self, domain_prompt: str,
@@ -474,8 +475,8 @@ class BaseLLMClient(ABC):
             return contract
 
         raise SchemaValidationError(
-            "%d denemede geçerli Dataset Contract üretilemedi. Son hata: %s"
-            % (SCHEMA_MAX_RETRIES, last_error)
+            t("service.error.contract_retries", attempts=SCHEMA_MAX_RETRIES,
+              error=last_error)
         )
 
     def generate_project_plan(self, project_prompt: str,
@@ -540,8 +541,8 @@ class BaseLLMClient(ABC):
             return plan
 
         raise SchemaValidationError(
-            "%d denemede geçerli proje planı üretilemedi. Son hata: %s"
-            % (SCHEMA_MAX_RETRIES, last_error)
+            t("service.error.plan_retries", attempts=SCHEMA_MAX_RETRIES,
+              error=last_error)
         )
 
     def generate_dataset_code(self, contract) -> str:

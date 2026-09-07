@@ -19,6 +19,8 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import pandas as pd
 
+from .. import config
+from ..i18n import t
 from .dataset_contract import DatasetContract, Relationship
 
 log = logging.getLogger(__name__)
@@ -182,8 +184,9 @@ def repair_orphans(tables: Dict[str, pd.DataFrame],
             detail["removed_per_relationship"][rel.label()] = removed
             detail["removed_total"] += removed
             if emit is not None:
-                emit("    -> Yetim satır temizliği [%s]: %s satır elendi"
-                     % (rel.label(), format(removed, ",")))
+                emit("    -> " + t("relational.orphans_removed",
+                                   relationship=rel.label(),
+                                   rows=format(removed, ",")))
     return repaired, detail
 
 
@@ -219,19 +222,27 @@ def validate_relationships(tables: Dict[str, pd.DataFrame],
     if emit is not None:
         for r in pk:
             if not r["pass"]:
-                emit("    -> UYARI: '%s' birincil anahtarı '%s' tekil değil "
-                     "(%s tekrar, %s boş)"
-                     % (r["table"], r["primary_key"],
-                        format(r.get("duplicates", 0), ","), format(r.get("nulls", 0), ",")))
+                emit("    -> " + t("relational.pk_not_unique",
+                                   table=r["table"], pk=r["primary_key"],
+                                   duplicates=format(r.get("duplicates", 0), ","),
+                                   nulls=format(r.get("nulls", 0), ",")),
+                     level=config.PROGRESS_WARNING)
         for r in fk:
-            status = "UYGUN" if r["pass"] else "YETİM VAR"
-            emit("    -> Yabancı anahtar [%s]: %s yetim satır (%%%.2f) [%s]"
-                 % (r["relationship"], format(r.get("orphan_rows", 0), ","),
-                    r.get("orphan_pct", 0.0), status))
+            status = (t("validation.verdict.ok") if r["pass"]
+                      else t("relational.verdict.orphans"))
+            emit("    -> " + t("relational.fk_line",
+                               relationship=r["relationship"],
+                               orphans=format(r.get("orphan_rows", 0), ","),
+                               pct="%.2f" % r.get("orphan_pct", 0.0),
+                               verdict=status))
         for r in card:
-            status = "UYGUN" if r["pass"] else "SAPMA"
-            emit("    -> Kardinalite [%s]: ebeveyn başına ort %.2f (beklenen %.2f) [%s]"
-                 % (r["relationship"], r["observed_mean"], r["expected_mean"], status))
+            status = (t("validation.verdict.ok") if r["pass"]
+                      else t("result.relational.deviation"))
+            emit("    -> " + t("relational.cardinality_line",
+                               relationship=r["relationship"],
+                               observed="%.2f" % r["observed_mean"],
+                               expected="%.2f" % r["expected_mean"],
+                               verdict=status))
             for v in r.get("violations", []):
                 emit("       * %s" % v)
 

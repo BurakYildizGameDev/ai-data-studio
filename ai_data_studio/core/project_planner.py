@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from .dataset_contract import DatasetContract
+from ..i18n import t
 from .schema_contract import SchemaValidationError, extract_json_block
 
 __all__ = [
@@ -60,7 +61,7 @@ def _require_str(data: Dict[str, Any], key: str, where: str) -> str:
     value = data.get(key)
     if not isinstance(value, str) or not value.strip():
         raise SchemaValidationError(
-            "%s: '%s' bos olmayan bir metin olmali" % (where, key)
+            t("contract.error.field_required", where=where, field=key)
         )
     return value.strip()
 
@@ -81,7 +82,8 @@ class LeakageExclusion:
         where = "excluded_leakage[%d]" % index
         if not isinstance(data, dict):
             raise SchemaValidationError(
-                "%s bir nesne olmali, %s geldi" % (where, type(data).__name__)
+                t("schema.error.must_be_object", where=where,
+                  got=type(data).__name__)
             )
         return cls(column=_require_str(data, "column", where),
                    reason=_require_str(data, "reason", where))
@@ -104,7 +106,8 @@ class SplitStrategy:
         where = "split"
         if not isinstance(data, dict):
             raise SchemaValidationError(
-                "%s bir nesne olmali, %s geldi" % (where, type(data).__name__)
+                t("schema.error.must_be_object", where=where,
+                  got=type(data).__name__)
             )
         kind = _require_str(data, "kind", where).lower()
         if kind not in SPLIT_KINDS:
@@ -139,7 +142,8 @@ class TargetSpec:
         where = "target"
         if not isinstance(data, dict):
             raise SchemaValidationError(
-                "%s bir nesne olmali, %s geldi" % (where, type(data).__name__)
+                t("schema.error.must_be_object", where=where,
+                  got=type(data).__name__)
             )
         return cls(table=_require_str(data, "table", where),
                    column=_require_str(data, "column", where))
@@ -170,7 +174,7 @@ class ProjectPlan:
     def from_dict(cls, data: Any, project: str = "") -> "ProjectPlan":
         if not isinstance(data, dict):
             raise SchemaValidationError(
-                "Proje plani bir JSON nesnesi olmali, %s geldi" % type(data).__name__
+                t("plan.error.plan_object", got=type(data).__name__)
             )
 
         raw_dataset = data.get("dataset")
@@ -195,7 +199,7 @@ class ProjectPlan:
                 "dusundugunu gostermelisin (hicbiri yoksa bos liste ver)"
             )
         if not isinstance(raw_leakage, list):
-            raise SchemaValidationError("'excluded_leakage' bir liste olmali")
+            raise SchemaValidationError(t("plan.error.leakage_list"))
         exclusions = [LeakageExclusion.from_dict(item, i)
                       for i, item in enumerate(raw_leakage)]
 
@@ -235,8 +239,7 @@ class ProjectPlan:
         if supervised:
             if self.target is None:
                 raise SchemaValidationError(
-                    "'%s' gorevinde 'target' zorunlu - hedef degiskeni olmayan bir "
-                    "veri seti egitime hazir degildir" % self.task_type
+                    t("plan.error.target_required", task=self.task_type)
                 )
             table = self._table_or_raise(self.target.table, "target")
             if self.target.column not in table.column_names:
@@ -246,8 +249,7 @@ class ProjectPlan:
                 )
         elif self.target is not None:
             self.warnings.append(
-                "Gorev 'unsupervised' ama bir hedef degisken verilmis (%s) - yok sayildi."
-                % self.target.label()
+                t("plan.warning.unsupervised_target", target=self.target.label())
             )
             self.target = None
 
@@ -268,8 +270,7 @@ class ProjectPlan:
             )
         if supervised and not self.excluded_leakage:
             self.warnings.append(
-                "Hicbir sizinti kolonu ayiklanmamis. Cogu gercek problemde hedef olay "
-                "sonrasi bilinen en az bir alan vardir; plan bunu dusunmemis olabilir."
+                t("plan.warning.no_leakage")
             )
 
         # 3) Hedef kolonun kendisi sizinti listesinde olamaz.
@@ -286,24 +287,21 @@ class ProjectPlan:
         if self.task_type in _CLASSIFICATION:
             if self.positive_class_ratio is None:
                 raise SchemaValidationError(
-                    "'%s' gorevinde 'positive_class_ratio' zorunlu - sinif dengesi "
-                    "belirtilmemis bir siniflandirma veri seti kullanisli degildir"
-                    % self.task_type
+                    t("plan.error.class_ratio_required", task=self.task_type)
                 )
             if not 0.0 < self.positive_class_ratio < 1.0:
                 raise SchemaValidationError(
-                    "'positive_class_ratio' 0 ile 1 arasinda olmali, %r geldi"
-                    % (self.positive_class_ratio,)
+                    t("plan.error.class_ratio_range",
+                      value=self.positive_class_ratio)
                 )
             if not _RATIO_WARN_LOW <= self.positive_class_ratio <= _RATIO_WARN_HIGH:
                 self.warnings.append(
-                    "Sinif dengesi asiri (%.3f): bu orandaki bir hedef, uretilen satir "
-                    "sayisinda anlamli sayida ornek vermeyebilir."
-                    % self.positive_class_ratio
+                    t("plan.warning.class_ratio_extreme",
+                      ratio="%.3f" % self.positive_class_ratio)
                 )
         elif self.positive_class_ratio is not None:
             self.warnings.append(
-                "'%s' gorevinde sinif dengesi anlamsiz - yok sayildi." % self.task_type
+                t("plan.warning.class_ratio_ignored", task=self.task_type)
             )
             self.positive_class_ratio = None
 
@@ -343,14 +341,15 @@ class ProjectPlan:
         column = next((c for c in table.columns if c.name == split.column), None)
         if column is None:
             raise SchemaValidationError(
-                "split: '%s' kolonu '%s' tablosunda yok" % (split.column, table_name)
+                t("plan.error.split_column_missing", column=split.column,
+                  table=table_name)
             )
         split.table = table_name
 
         if split.kind == "temporal" and column.type != "datetime":
             raise SchemaValidationError(
-                "split: zamana gore bolme icin '%s' bir 'datetime' kolonu olmali, "
-                "'%s' turunde" % (column.name, column.type)
+                t("plan.error.split_not_datetime", column=column.name,
+                  got=column.type)
             )
 
     def _check_target_ratio_agreement(self) -> None:

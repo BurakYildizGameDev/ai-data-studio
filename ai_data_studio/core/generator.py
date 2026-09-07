@@ -31,6 +31,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 import pandas as pd
 
 from .. import config
+from ..i18n import t
 from .schema_contract import SchemaContract
 
 log = logging.getLogger(__name__)
@@ -722,28 +723,36 @@ def _generation_loop(
     Returns:
         ({tablo_adi: DataFrame}, çalışan_kod, meta)
     """
-    def emit(message: str) -> None:
+    def emit(message: str, level: str = config.PROGRESS_INFO,
+             sandbox: bool = False) -> None:
+        """Alt adım mesajı.
+
+        ``sandbox`` bu satırın sandbox aşamasına ait olduğunu söyler; orchestrator
+        adım numarasını buradan seçer. Önceden mesajın içinde "sandbox" kelimesi
+        aranıyordu - çeviriyle bozulacak bir bağ.
+        """
         log.info(message)
         if on_progress is not None:
-            on_progress(message)
+            on_progress(message, level, sandbox)
 
     def check_cancel() -> None:
         if cancel_event is not None and cancel_event.is_set():
-            raise GenerationFailedError("Kullanıcı tarafından iptal edildi")
+            raise GenerationFailedError(t("codegen.cancelled"))
 
     root_schema = contract.table(contract.root_table)
     fix_context = contract if relational else root_schema
 
     check_cancel()
-    emit("Kod üretimi başlatılıyor (LLM)...")
+    emit(t("codegen.starting"))
     if relational:
         code = llm_client.generate_dataset_code(contract)
-        emit("LLM %d tablo için Python kodunu oluşturdu (%d satır). Sandbox testi başlatılıyor..."
-             % (len(contract.tables), len(code.splitlines())))
+        emit(sandbox=True,
+             message=t("codegen.written_relational", tables=len(contract.tables),
+                       lines=len(code.splitlines())))
     else:
         code = llm_client.generate_code(root_schema)
-        emit("LLM Python kodunu oluşturdu (%d satır). Sandbox testi başlatılıyor..."
-             % len(code.splitlines()))
+        emit(sandbox=True,
+             message=t("codegen.written", lines=len(code.splitlines())))
 
     history: List[str] = []
     signatures: set = set()
@@ -751,7 +760,8 @@ def _generation_loop(
 
     for attempt in range(1, max_retries + 1):
         check_cancel()
-        emit("Deneme %d/%d: kod sandbox'ta calistiriliyor..." % (attempt, max_retries))
+        emit(t("codegen.attempt", attempt=attempt, total=max_retries),
+             sandbox=True)
 
         result = execute_in_sandbox(
             code,
@@ -767,9 +777,11 @@ def _generation_loop(
             hint = diagnostic_hint(result.traceback)
             if hint:
                 feedback += "\n\nNASIL DUZELTILIR:\n%s" % hint
-            emit("Deneme %d başarısız: %s" % (attempt, _first_line(result.traceback)))
+            emit(t("codegen.attempt_failed", attempt=attempt,
+                   error=_first_line(result.traceback)),
+                 level=config.PROGRESS_WARNING)
             if hint:
-                emit("  -> Çözüm ipucu: %s" % _first_line(hint, 120))
+                emit("  -> " + t("codegen.hint", hint=_first_line(hint, 120)))
         else:
             tables = dict(result.tables)
             if not relational:
@@ -778,15 +790,17 @@ def _generation_loop(
             issues = _sanity_check_tables(tables, contract)
             if not issues:
                 if relational:
-                    emit("Deneme %d başarılı: %d tablo üretildi (%.1f sn) - %s"
-                         % (attempt, len(tables), result.duration_s,
-                            ", ".join("%s=%s" % (n, format(len(f), ","))
-                                      for n, f in sorted(tables.items()))))
+                    emit(t("codegen.attempt_ok_relational", attempt=attempt,
+                           tables=len(tables),
+                           seconds="%.1f" % result.duration_s,
+                           counts=", ".join("%s=%s" % (n, format(len(f), ","))
+                                            for n, f in sorted(tables.items()))))
                 else:
                     primary = tables[contract.root_table]
-                    emit("Deneme %d başarılı: %s satır üretildi (%.1f sn, %d sütun)"
-                         % (attempt, format(len(primary), ","), result.duration_s,
-                            len(primary.columns)))
+                    emit(t("codegen.attempt_ok", attempt=attempt,
+                           rows=format(len(primary), ","),
+                           seconds="%.1f" % result.duration_s,
+                           columns=len(primary.columns)))
                 meta = {
                     "attempts": attempt,
                     "duration_s": round(result.duration_s, 2),
@@ -797,11 +811,12 @@ def _generation_loop(
                 }
                 return tables, code, meta
             feedback = "Üretilen veri şema ile uyusmuyor:\n- " + "\n- ".join(issues)
-            emit("Deneme %d: %d şema uyumsuzluğu bulundu" % (attempt, len(issues)))
+            emit(t("codegen.schema_mismatch", attempt=attempt, count=len(issues)))
             for issue in issues[:3]:
-                emit("  -> Uyumsuzluk: %s" % _first_line(issue, 110))
+                emit("  -> " + t("codegen.mismatch_item",
+                                  issue=_first_line(issue, 110)))
             if len(issues) > 3:
-                emit("  -> ... ve %d uyumsuzluk daha" % (len(issues) - 3))
+                emit("  -> " + t("codegen.mismatch_more", count=len(issues) - 3))
 
         if not result.success:
             history_entry = _first_line(result.traceback, 200)
@@ -816,16 +831,15 @@ def _generation_loop(
 
         if attempt == max_retries:
             raise GenerationFailedError(
-                "%d denemede başarılı kod üretilemedi. Son hata:\n%s" % (max_retries, feedback)
-            )
+                t("codegen.gave_up", attempts=max_retries, error=feedback))
 
         check_cancel()
         if repeated:
             # Kucuk yerel modeller ayni tuzaga defalarca dusebiliyor; ayni hatayi
             # tekrar gorursek "yamala" demek yerine yaklasimi degistirmesini isteriz.
-            emit("Aynı hata tekrarlandi - LLM'den yaklasimini degistirmesi isteniyor...")
+            emit(t("codegen.repeated_error"), level=config.PROGRESS_WARNING)
         else:
-            emit("LLM'e hata geri besleniyor, kod duzeltiliyor...")
+            emit(t("codegen.feeding_back"))
         try:
             code = llm_client.fix_code(previous_code=code, error_feedback=feedback,
                                        schema=fix_context, history=history, escalate=repeated)
@@ -836,9 +850,10 @@ def _generation_loop(
             code = llm_client.fix_code(previous_code=code, error_feedback=feedback,
                                        schema=fix_context)
         except Exception as exc:
-            raise GenerationFailedError("Kod duzeltme çağrısı başarısız: %s" % exc) from exc
+            raise GenerationFailedError(
+                t("codegen.fix_call_failed", error=exc)) from exc
 
-    raise GenerationFailedError("Beklenmeyen durum")
+    raise GenerationFailedError(t("codegen.unexpected_state"))
 
 
 def generate_and_execute(

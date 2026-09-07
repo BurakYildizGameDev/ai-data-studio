@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
+from ..i18n import t
 
 log = logging.getLogger(__name__)
 
@@ -35,54 +36,54 @@ __all__ = [
 # HIPAA Safe Harbor 18 Tanımlayıcı regex desenleri
 HIPAA_IDENTIFIER_RULES: Dict[str, Dict[str, Any]] = {
     "NAMES": {
-        "title": "İsim ve Soyisimler (Names)",
+        "title": t("hipaa.title.names"),
         "patterns": [r"name", r"first_name", r"last_name", r"full_name", r"ad$", r"soyad", r"hasta_adi", r"hasta_ad"],
-        "category": "Doğrudan Tanımlayıcı",
+        "category": t("hipaa.category.direct"),
     },
     "GEOGRAPHIC": {
-        "title": "Eyalet/İl altı coğrafi birimler (Geographic Subdivisions)",
+        "title": t("hipaa.title.geographic"),
         "patterns": [r"address", r"street", r"sokak", r"cadde", r"mahalle", r"zip", r"postal_code", r"posta_kodu"],
-        "category": "Yarı Tanımlayıcı (Quasi-Identifier)",
+        "category": t("hipaa.category.quasi"),
     },
     "DATES": {
-        "title": "Kişiye doğrudan bağlı tarihler (Dates directly related to an individual)",
+        "title": t("hipaa.title.dates"),
         "patterns": [r"birth_date", r"dob", r"admission_date", r"discharge_date", r"death_date", r"dogum_tarihi", r"yatis_tarihi"],
-        "category": "Zaman Damgası (Date Shifting Gerekir)",
+        "category": t("hipaa.category.timestamp"),
     },
     "PHONE": {
-        "title": "Telefon numaraları (Telephone numbers)",
+        "title": t("hipaa.title.phone"),
         "patterns": [r"phone", r"telephone", r"mobile", r"gsm", r"telefon", r"cep_tel"],
-        "category": "Doğrudan Tanımlayıcı",
+        "category": t("hipaa.category.direct"),
     },
     "FAX": {
-        "title": "Faks numaraları (Fax numbers)",
+        "title": t("hipaa.title.fax"),
         "patterns": [r"fax", r"faks"],
-        "category": "Doğrudan Tanımlayıcı",
+        "category": t("hipaa.category.direct"),
     },
     "EMAIL": {
         "title": "E-posta adresleri (Email addresses)",
         "patterns": [r"email", r"e_mail", r"eposta", r"mail_adresi"],
-        "category": "Doğrudan Tanımlayıcı",
+        "category": t("hipaa.category.direct"),
     },
     "SSN_TCKN": {
-        "title": "Sosyal Güvenlik / Kimlik No (SSN / TCKN)",
+        "title": t("hipaa.title.ssn"),
         "patterns": [r"ssn", r"social_security", r"tckn", r"tc_no", r"kimlik_no", r"national_id"],
         "category": "Hassas Resmi Kimlik",
     },
     "MRN": {
-        "title": "Tıbbi Kayıt / Protokol No (Medical Record Numbers)",
+        "title": t("hipaa.title.mrn"),
         "patterns": [r"mrn", r"medical_record", r"protokol", r"hasta_no", r"patient_id", r"dosya_no"],
-        "category": "Sağlık Sistemi Kimliği",
+        "category": t("hipaa.category.health_system"),
     },
     "HEALTH_PLAN": {
-        "title": "Sağlık Sigortası Hesap No (Health Plan Beneficiary)",
+        "title": t("hipaa.title.health_plan"),
         "patterns": [r"health_plan", r"insurance_id", r"sigorta_no", r"police_no"],
-        "category": "Finansal Sağlık Kimliği",
+        "category": t("hipaa.category.health_financial"),
     },
     "ACCOUNT_NUMBERS": {
-        "title": "Banka / Hesap Numaraları (Account Numbers)",
+        "title": t("hipaa.title.account"),
         "patterns": [r"account_number", r"account_no", r"iban", r"hesap_no", r"kredi_karti"],
-        "category": "Finansal Tanımlayıcı",
+        "category": t("hipaa.category.financial"),
     },
     "CERTIFICATE_LICENSE": {
         "title": "Sertifika / Ehliyet No (Certificate & License Numbers)",
@@ -90,37 +91,37 @@ HIPAA_IDENTIFIER_RULES: Dict[str, Dict[str, Any]] = {
         "category": "Resmi Belge",
     },
     "VEHICLE": {
-        "title": "Araç Tanımlayıcı ve Plakalar (Vehicle Identifiers / VIN)",
+        "title": t("hipaa.title.vehicle"),
         "patterns": [r"vin", r"license_plate", r"plaka", r"chassis"],
-        "category": "Varlık Tanımlayıcı",
+        "category": t("hipaa.category.asset"),
     },
     "DEVICE_IDENTIFIERS": {
-        "title": "Cihaz Tanımlayıcı ve Seri Noları (Device Identifiers / Serial Numbers)",
+        "title": t("hipaa.title.device"),
         "patterns": [r"serial_no", r"device_id", r"imei", r"mac_address", r"cihaz_no"],
-        "category": "Donanım Tanımlayıcı",
+        "category": t("hipaa.category.hardware"),
     },
     "WEB_URL": {
         "title": "Web Siteleri (Universal Resource Locators - URL)",
         "patterns": [r"url", r"website", r"web_site", r"profil_url"],
-        "category": "Dijital İz",
+        "category": t("hipaa.category.digital"),
     },
     "IP_ADDRESS": {
         "title": "IP Adresleri (Internet Protocol Addresses)",
         "patterns": [r"ip_address", r"ip$", r"ipv4", r"ipv6", r"ip_adresi"],
-        "category": "Ağ Tanımlayıcı",
+        "category": t("hipaa.category.network"),
     },
     "BIOMETRIC": {
-        "title": "Biyometrik Tanımlayıcılar (Biometric Identifiers)",
+        "title": t("hipaa.title.biometric"),
         "patterns": [r"biometric", r"fingerprint", r"voice_print", r"iris", r"parmak_izi"],
         "category": "Biyometrik Veri",
     },
     "FULL_FACE_PHOTO": {
-        "title": "Yüz Fotoğrafları (Full Face Photos & Comparable Images)",
+        "title": t("hipaa.title.face"),
         "patterns": [r"photo", r"picture", r"face_image", r"vesikalik", r"resim_url"],
-        "category": "Görsel Biyometri",
+        "category": t("hipaa.category.visual_biometric"),
     },
     "ANY_UNIQUE_CODE": {
-        "title": "Her Türlü Benzersiz Kod (Any other unique identifying number/code)",
+        "title": t("hipaa.title.unique_code"),
         "patterns": [r"uuid", r"guid", r"unique_id", r"barkod", r"barcode"],
         "category": "Benzersiz Anahtar",
     },
@@ -234,73 +235,89 @@ class PrivacyAuditReport:
     def to_markdown(self) -> str:
         """Denetim raporunu kurumsal bir Markdown dokümanına çevirir."""
         lines = [
-            "# HIPAA Safe Harbor & Diferansiyel Gizlilik Denetim Raporu",
+            "# " + t("privacy.report.title"),
             "**Standard:** HIPAA Safe Harbor (45 CFR § 164.514(b)) & NNDR/DCR Memorization Audit",
         ]
         if self.table_name:
-            lines.append("**Tablo:** `%s`" % self.table_name)
+            lines.append("**%s:** `%s`" % (t("privacy.report.table"), self.table_name))
         lines += [
             "",
-            "## 1. Yönetici Özeti",
-            "- **Genel Gizlilik Durumu:** `%s`" % self.overall_privacy_status,
-            "- **Gizlilik Seviyesi:** %s" % self.privacy_guarantee,
+            "## 1. " + t("privacy.report.summary_heading"),
+            "- **%s:** `%s`" % (t("privacy.report.overall_status"),
+                                self.overall_privacy_status),
+            "- **%s:** %s" % (t("privacy.report.guarantee"), self.privacy_guarantee),
         ]
         if self.empirical_epsilon is not None:
-            lines.append("- **Tahmini Diferansiyel Gizlilik ($\\epsilon$):** `%.3f`" % self.empirical_epsilon)
+            lines.append("- **%s ($\\epsilon$):** `%.3f`"
+                         % (t("privacy.report.epsilon"), self.empirical_epsilon))
 
         lines += [
             "",
-            "## 2. Referans Veri Ezberleme (Memorization) Analizi",
+            "## 2. " + t("privacy.report.memorisation_heading"),
         ]
         if not self.has_reference_data or not self.dcr:
             # Cok tablolu kosuda seed veri KOK tabloya ait; cocuk tablolar icin
             # referans yok. "Sifirdan uretildi" demek burada yaniltici olurdu -
             # bos bir epsilon sessizce "sorun yok" gibi okunmamali.
-            lines.append(
-                "*Bu tablo için referans (seed) veri yok; DCR/NNDR karşılaştırması "
-                "yapılamadı, yani **ezberleme riski ölçülmedi**.*"
-                if self.table_name else
-                "*Referans (seed) veri sağlanmadığı için DCR/NNDR karşılaştırması atlandı. Veri sıfırdan sentetik üretildi.*")
+            lines.append("*%s*" % (t("privacy.report.no_reference_table")
+                                   if self.table_name
+                                   else t("privacy.report.no_reference")))
         else:
             lines += [
-                "Sentetik verinin referans hasta/müşteri kayıtlarını birebir kopyalamadığını teyit etmek için En Yakın Komşu analizi uygulanmıştır:",
+                t("privacy.report.nn_intro"),
                 "",
-                "| Metrik | Değer | Eşik Değer | Risk Seviyesi |",
+                t("privacy.report.metric_header"),
                 "|---|---|---|---|",
-                "| **Min DCR (Distance to Closest Record)** | `%.4f` | > 0.0000 | %s |" % (self.dcr.min_dcr, self.dcr.risk_level),
-                "| **5%% Yüzdelik DCR** | `%.4f` | Güvenli mesafe | %s |" % (self.dcr.percentile_5th, self.dcr.risk_level),
-                "| **Birebir Eşleşen Kayıt Sayısı** | `%d` | 0 | %s |" % (self.dcr.identical_matches, "GEÇTİ" if self.dcr.identical_matches == 0 else "İHLAL"),
-                "| **Ortalama NNDR ($d_1 / d_2$)** | `%.4f` | $\\ge 0.50$ | %s |" % (self.nndr.mean_nndr if self.nndr else 1.0, self.nndr.memorization_risk if self.nndr else "LOW"),
+                "| **Min DCR (Distance to Closest Record)** | `%.4f` | > 0.0000 | %s |"
+                % (self.dcr.min_dcr, self.dcr.risk_level),
+                "| **%s** | `%.4f` | %s | %s |"
+                % (t("privacy.report.dcr_p5"), self.dcr.percentile_5th,
+                   t("privacy.report.safe_distance"), self.dcr.risk_level),
+                "| **%s** | `%d` | 0 | %s |"
+                % (t("privacy.report.identical_matches"), self.dcr.identical_matches,
+                   t("history.verdict.pass") if self.dcr.identical_matches == 0
+                   else t("validation.verdict.violation")),
+                "| **%s ($d_1 / d_2$)** | `%.4f` | $\\ge 0.50$ | %s |"
+                % (t("privacy.report.mean_nndr"),
+                   self.nndr.mean_nndr if self.nndr else 1.0,
+                   self.nndr.memorization_risk if self.nndr else "LOW"),
                 "",
-                "> **NNDR Yorumu:** Oran 1.0'a yaklaştıkça sentetik satırların hiçbir gerçek kişiyi kopyalamadığı, manifold üzerinde yeni ve bağımsız sentetik bireyler oluşturduğu kanıtlanır.",
+                "> **%s** %s" % (t("privacy.report.nndr_note_label"),
+                                 t("privacy.report.nndr_note")),
             ]
 
         lines += [
             "",
-            "## 3. HIPAA 18 Tanımlayıcı Taraması",
-            "- **Denetim Sonucu:** %s" % ("✅ TÜM KRİTERLERİ GEÇTİ" if self.hipaa_audit.passed else "⚠️ İNCELENMESİ GEREKEN ALANLAR VAR"),
-            "- **89 Yaş Üstü Satır Sayısı:** %d %s" % (
+            "## 3. " + t("privacy.report.hipaa_heading"),
+            "- **%s:** %s" % (t("privacy.report.audit_result"),
+                              "✅ " + t("privacy.report.all_passed")
+                              if self.hipaa_audit.passed
+                              else "⚠️ " + t("privacy.report.review_required")),
+            "- **%s:** %d %s" % (
+                t("privacy.report.age_over_89"),
                 self.hipaa_audit.age_greater_than_89_count,
-                "(HIPAA kuralı: 89 yaş üstü 90+ olarak kümelenmelidir)" if self.hipaa_audit.age_greater_than_89_count > 0 else "(Uyumlu)"
+                "(%s)" % t("privacy.report.age_rule")
+                if self.hipaa_audit.age_greater_than_89_count > 0
+                else "(%s)" % t("monotonicity.compliant")
             ),
         ]
 
         if self.hipaa_audit.identifiers_found:
             lines += [
                 "",
-                "### Tespit Edilen Olası Tanımlayıcı Kolonlar",
-                "| Kolon Adı | HIPAA Kategorisi | Durum / Aksiyon |",
+                "### " + t("privacy.report.identifiers_heading"),
+                t("privacy.report.identifiers_header"),
                 "|---|---|---|",
             ]
             for item in self.hipaa_audit.identifiers_found:
                 lines.append("| `%s` | %s | %s |" % (item["column"], item["title"], item["action"]))
         else:
-            lines.append("\n*Şemada doğrudan maskesiz kişisel tanımlayıcı (PII) kolon tespit edilmemiştir.*")
+            lines.append("\n*%s*" % t("privacy.report.no_identifiers"))
 
         lines += [
             "",
             "---",
-            "*Bu rapor AI Synthetic Data Studio PrivacyAuditor tarafından otomatik oluşturulmuştur.*",
+            "*%s*" % t("privacy.report.footer"),
         ]
         return "\n".join(lines)
 
@@ -495,7 +512,7 @@ class PrivacyAuditor:
                             "rule_key": key,
                             "title": rule["title"],
                             "category": rule["category"],
-                            "action": "Sentetik Faker verisi ile maskelenmiş veya kodlanmış olmalıdır.",
+                            "action": t("privacy.action.mask"),
                         })
                         break
 
@@ -512,8 +529,8 @@ class PrivacyAuditor:
 
         passed = len(found) == 0 and over_89 == 0
         summary = (
-            "HIPAA Safe Harbor uyumlu." if passed
-            else "%d tanımlayıcı kolon ve %d adet 89+ yaş kaydı tespit edildi." % (len(found), over_89)
+            t("privacy.summary.compliant") if passed
+            else t("privacy.summary.findings", columns=len(found), ages=over_89)
         )
 
         return HIPAAAuditResult(

@@ -185,7 +185,7 @@ def relational_lines(report: Dict[str, Any]) -> List[str]:
     for pk in rel.get("primary_keys") or []:
         if not pk.get("pass"):
             lines.append("  " + t("result.relational.pk_not_unique",
-                                  table=pk.get("table"), key=pk.get("primary_key")))
+                                  table=pk.get("table"), pk=pk.get("primary_key")))
     return lines
 
 

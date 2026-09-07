@@ -152,7 +152,10 @@ class TestDatasetValidation(unittest.TestCase):
         ]}
         with self.assertRaises(SchemaValidationError) as ctx:
             DatasetContract.from_dict(payload)
-        self.assertIn("döngü", str(ctx.exception))
+        from ai_data_studio.i18n import t
+
+        self.assertIn(t("contract.error.cycle", tables="").split("{")[0].rstrip(":"),
+                      str(ctx.exception))
 
     def test_rejects_unknown_table(self):
         payload = {**DATASET, "relationships": [

@@ -52,14 +52,15 @@ TAB_PIPELINE = t("app.tab.pipeline")
 TAB_HISTORY = t("app.tab.history")
 TAB_SETTINGS = t("app.tab.settings")
 
-# Turkce'de "UYARI".lower() -> "uyari" ama "Uyarı".lower() -> "uyarı" olur;
-# ikisini de yakalayabilmek icin karsilastirmadan once diakritikleri duselim.
-_FOLD = str.maketrans("çğıöşüÇĞİÖŞÜ", "cgiosuCGIOSU")
-
-
-def _fold(text: str) -> str:
-    """Karsilastirma icin: diakritikleri kaldirip kucuk harfe cevirir."""
-    return (text or "").translate(_FOLD).lower()
+# Pipeline olaylarinin onem derecesi -> konsol stili. Eskiden mesajin METNINDE
+# "uyari"/"hata" araniyordu; arayuz cevrilir cevrilmez o eslesme sessizce
+# bozulurdu. Severity artik olayin kendisinde geliyor (bkz. config.PROGRESS_*).
+_LEVEL_STYLES = {
+    config.PROGRESS_INFO: "info",
+    config.PROGRESS_SUCCESS: "success",
+    config.PROGRESS_WARNING: "warning",
+    config.PROGRESS_ERROR: "error",
+}
 
 
 class AppWindow(ctk.CTk):
@@ -320,18 +321,18 @@ class AppWindow(ctk.CTk):
         message = data["message"]
         self.pipeline_view.progress_panel.update_progress(
             data["step"], data["percent"], message)
-        level = "info"
-        folded = _fold(message)
-        if folded.startswith("uyari") or "basarisiz" in folded or "hata" in folded:
-            level = "warning"
-        elif "tamamlandi" in folded or "hazir" in folded or "basarili" in folded:
-            level = "success"
-        elif message.startswith("  ->") or message.startswith("    ->"):
-            level = "detail"
-        elif message.startswith("  •") or message.startswith("•"):
-            level = "substep"
-        elif data["detail"].get("schema"):
-            level = "step"
+
+        # Onem derecesi olaydan gelir. Girinti/madde imi ise BICIMDIR, dile bagli
+        # degil: alt satirlari ayirt etmek icin ona bakmak guvenli.
+        severity = data.get("level", config.PROGRESS_INFO)
+        level = _LEVEL_STYLES.get(severity, "info")
+        if severity == config.PROGRESS_INFO:
+            if message.startswith("  ->") or message.startswith("    ->"):
+                level = "detail"
+            elif message.startswith("  •") or message.startswith("•"):
+                level = "substep"
+            elif data["detail"].get("schema"):
+                level = "step"
 
         # Alt detay veya girintili adımları daha temiz ve belirgin göster
         if message.startswith("  ") or message.startswith("•"):

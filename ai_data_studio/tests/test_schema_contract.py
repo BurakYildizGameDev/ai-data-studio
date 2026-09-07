@@ -95,7 +95,11 @@ class TestSchemaContract(unittest.TestCase):
         bad = {**SAMPLE, "columns": [{"name": "yaş (yil)", "type": "int"}]}
         with self.assertRaises(SchemaValidationError) as ctx:
             SchemaContract.from_dict(bad)
-        self.assertIn("geçersiz", str(ctx.exception))
+        from ai_data_studio.i18n import t
+
+        self.assertEqual(str(ctx.exception),
+                         t("schema.error.bad_identifier", where="columns[0]",
+                           name="yaş (yil)"))
 
     def test_min_greater_than_max(self):
         bad = {**SAMPLE, "columns": [{"name": "age", "type": "int", "min": 90, "max": 10}]}
@@ -106,7 +110,11 @@ class TestSchemaContract(unittest.TestCase):
         bad = {**SAMPLE, "columns": [{"name": "a", "type": "int"}, {"name": "a", "type": "int"}]}
         with self.assertRaises(SchemaValidationError) as ctx:
             SchemaContract.from_dict(bad)
-        self.assertIn("Tekrarlanan", str(ctx.exception))
+        from ai_data_studio.i18n import t
+
+        # Sablonun sabit basi - kolon listesi degisken.
+        self.assertIn(t("schema.error.duplicate_columns", columns="").rstrip(),
+                      str(ctx.exception))
 
     def test_target_ratio_out_of_range(self):
         bad = {**SAMPLE, "columns": [{"name": "c", "type": "bool", "target_ratio": 1.7}]}
@@ -119,7 +127,11 @@ class TestSchemaContract(unittest.TestCase):
                                             "expected_sign": "positive"}]}
         sc = SchemaContract.from_dict(data)
         self.assertEqual(sc.correlations, [])
-        self.assertTrue(any("bilinmeyen kolon" in w for w in sc.warnings))
+        from ai_data_studio.i18n import t
+
+        prefix = t("schema.warning.correlation_unknown_columns",
+                   columns="", known="").split("(")[0].rstrip()
+        self.assertTrue(any(prefix in w for w in sc.warnings))
 
     def test_correlation_with_bool_column_is_valid(self):
         """bool <-> sayısal korelasyon gecerlidir (point-biserial); pandas hesaplar."""
@@ -136,7 +148,11 @@ class TestSchemaContract(unittest.TestCase):
                 "correlations": [{"columns": ["age", "tier"], "expected_sign": "positive"}]}
         sc = SchemaContract.from_dict(data)
         self.assertEqual(sc.correlations, [])
-        self.assertTrue(any("sayısal/bool değil" in w for w in sc.warnings))
+        from ai_data_studio.i18n import t
+
+        prefix = t("schema.warning.correlation_not_numeric",
+                   columns="").split("{")[0].split(" - ")[0].rstrip()
+        self.assertTrue(any(prefix in w for w in sc.warnings))
 
     def test_category_requires_categories(self):
         bad = {**SAMPLE, "columns": [{"name": "tier", "type": "category"}]}

@@ -17,6 +17,7 @@ from tenacity import (
 )
 
 from .. import config
+from ..i18n import t
 from .llm_base import BaseLLMClient, LLMError, LLMNotConfiguredError
 
 log = logging.getLogger(__name__)
@@ -49,7 +50,7 @@ class AnthropicClient(BaseLLMClient):
         try:
             import anthropic
         except ImportError as exc:  # pragma: no cover
-            raise LLMNotConfiguredError("`anthropic` paketi kurulu değil") from exc
+            raise LLMNotConfiguredError(t("service.error.package_missing", package="anthropic")) from exc
         self._anthropic = anthropic
 
         if api_key:
@@ -82,16 +83,15 @@ class AnthropicClient(BaseLLMClient):
             return True
         except self._anthropic.AuthenticationError as exc:
             self.last_health_error = (
-                "Kimlik doğrulanamadı (%s). Anahtar geçersiz veya süresi dolmuş."
-                % self.credential.source
+                t("service.error.auth_failed", source=self.credential.source)
             )
             log.warning("Anthropic kimlik doğrulama hatası: %s", exc)
             return False
         except self._anthropic.PermissionDeniedError as exc:
-            self.last_health_error = "Anahtarin bu islem için yetkisi yok (%s)." % exc
+            self.last_health_error = t("service.error.forbidden", error=exc)
             return False
         except Exception as exc:
-            self.last_health_error = "Servise ulaşılamadı: %s" % exc
+            self.last_health_error = t("service.error.unreachable", error=exc)
             log.warning("Anthropic health check başarısız: %s", exc)
             return False
 
@@ -115,15 +115,15 @@ class AnthropicClient(BaseLLMClient):
         except anthropic.RateLimitError as exc:
             raise RetryableLLMError("Anthropic rate limit: %s" % exc) from exc
         except anthropic.APIConnectionError as exc:
-            raise RetryableLLMError("Anthropic bağlantı hatası: %s" % exc) from exc
+            raise RetryableLLMError(t("service.error.anthropic_connection", error=exc)) from exc
         except anthropic.AuthenticationError as exc:
-            raise LLMNotConfiguredError("Anthropic API key geçersiz: %s" % exc) from exc
+            raise LLMNotConfiguredError(t("service.error.anthropic_bad_key", error=exc)) from exc
         except anthropic.NotFoundError as exc:
-            raise LLMError("Model bulunamadı: %s (%s)" % (self.model, exc)) from exc
+            raise LLMError(t("service.error.model_not_found", model=self.model, error=exc)) from exc
         except anthropic.APIStatusError as exc:
             if exc.status_code >= 500:
-                raise RetryableLLMError("Anthropic sunucu hatası %s" % exc.status_code) from exc
-            raise LLMError("Anthropic API hatası %s: %s" % (exc.status_code, exc)) from exc
+                raise RetryableLLMError(t("service.error.anthropic_server", status=exc.status_code)) from exc
+            raise LLMError(t("service.error.anthropic_api", status=exc.status_code, error=exc)) from exc
 
         usage = getattr(message, "usage", None)
         if usage is not None:
@@ -142,7 +142,7 @@ class AnthropicClient(BaseLLMClient):
             block.text for block in message.content if getattr(block, "type", "") == "text"
         )
         if not text.strip():
-            raise LLMError("Anthropic boş yanit dondu (stop_reason=%s)" % message.stop_reason)
+            raise LLMError(t("service.error.anthropic_empty", reason=message.stop_reason))
         return text
 
 
@@ -161,7 +161,7 @@ class GeminiClient(BaseLLMClient):
             from google.genai import errors as genai_errors
             from google.genai import types as genai_types
         except ImportError as exc:  # pragma: no cover
-            raise LLMNotConfiguredError("`google-genai` paketi kurulu değil") from exc
+            raise LLMNotConfiguredError(t("service.error.package_missing", package="google-genai")) from exc
         self._genai_errors = genai_errors
         self._types = genai_types
 
@@ -190,7 +190,7 @@ class GeminiClient(BaseLLMClient):
             log.warning("Gemini health check başarısız: %s", exc)
             return False
         except Exception as exc:
-            self.last_health_error = "Servise ulaşılamadı: %s" % exc
+            self.last_health_error = t("service.error.unreachable", error=exc)
             log.warning("Gemini health check başarısız: %s", exc)
             return False
 
@@ -239,11 +239,11 @@ class GeminiClient(BaseLLMClient):
                 raise RetryableLLMError("Gemini rate limit: %s" % exc) from exc
             if code in (401, 403):
                 raise LLMNotConfiguredError(self._format_client_error(exc)) from exc
-            raise LLMError("Gemini istek hatası: %s" % exc) from exc
+            raise LLMError(t("service.error.gemini_request", error=exc)) from exc
         except errors.ServerError as exc:
-            raise RetryableLLMError("Gemini sunucu hatası: %s" % exc) from exc
+            raise RetryableLLMError(t("service.error.gemini_server", error=exc)) from exc
         except errors.APIError as exc:
-            raise RetryableLLMError("Gemini API hatası: %s" % exc) from exc
+            raise RetryableLLMError(t("service.error.gemini_api", error=exc)) from exc
 
         usage = getattr(response, "usage_metadata", None)
         if usage is not None:
@@ -253,7 +253,7 @@ class GeminiClient(BaseLLMClient):
 
         text = getattr(response, "text", None)
         if not text or not text.strip():
-            raise LLMError("Gemini boş yanit dondu")
+            raise LLMError(t("service.error.gemini_empty"))
         return text
 
 

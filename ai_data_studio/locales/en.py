@@ -357,7 +357,7 @@ MESSAGES = {
         "Cardinality [{relationship}]: mean {observed} (expected {expected}) {verdict}"
     ),
     "result.relational.deviation": "DEVIATION",
-    "result.relational.pk_not_unique": "WARNING: primary key '{key}' of '{table}' is not unique",
+    "result.relational.pk_not_unique": "WARNING: primary key '{pk}' of '{table}' is not unique",
     "result.plan.task_type": "Task type",
     "result.plan.table_count": "Table count",
     "result.plan.target": "Target variable",
@@ -401,4 +401,565 @@ MESSAGES = {
         "or turn the relational switch off."
     ),
     "pipeline.error.folder_open": "The folder could not be opened: {error}",
+    # --- Pipeline steps --------------------------------------------------- #
+    "step.1": "Service check",
+    "step.2": "Research & schema generation",
+    "step.3": "Seed data lookup (HuggingFace)",
+    "step.4": "Code generation & self-healing",
+    "step.5": "Sandbox execution",
+    "step.6": "Validation & cleaning",
+    "step.7": "Output & checkpoint",
+
+    # --- Pipeline errors -------------------------------------------------- #
+    "pipeline.error.unknown_engine": "Unknown generation engine: {engine} (valid: {valid})",
+    "pipeline.error.parametric_relational_cli": (
+        "The parametric engine does not support relational (multi-table) generation. "
+        "Use --engine llm with --relational, or drop --relational to keep "
+        "--engine parametric."
+    ),
+    "pipeline.error.dirty_rate_range": "dirty_rate must be between 0 and 1, got {value}",
+    "pipeline.error.max_tables_planner": "max_tables must be between 1 and {limit}, got {value}",
+    "pipeline.error.max_tables_relational": "max_tables must be between 2 and {limit}, got {value}",
+    "pipeline.error.unknown_fraud_table": (
+        "--fraud-table '{table}' is not in the contract. Valid tables: {tables}"
+    ),
+    "pipeline.error.unknown_audit_table": (
+        "--audit-table '{table}' is not in the contract. Valid tables: {tables} (or 'all')"
+    ),
+    "pipeline.cancelled_by_user": "The pipeline was cancelled by the user",
+
+    # --- Run progress ------------------------------------------------------ #
+    "run.checking_provider": "Checking the provider: {provider} / {model}",
+    "run.service_ready": "Service ready: {model}",
+    "run.provider_model": "Provider: {provider} | Model: {model}",
+    "run.seed.hf_searching": "Searching HuggingFace for reference data...",
+    "run.seed.loaded": "Seed data loaded: {source} ({rows} rows)",
+    "run.seed.columns": "Reference columns ({count}): {columns}",
+    "run.seed.none_found": "No suitable seed data found - the schema is designed from scratch",
+    "run.seed.web_searching": "Searching and collecting reference data from the web: '{query}'...",
+    "run.seed.web_collected": "Reference data collected from the web: {source} ({rows} rows, {columns} columns)",
+    "run.seed.extracted_columns": "Extracted reference columns: {columns}",
+    "run.seed.web_none": "No usable data could be extracted from the web - the schema is designed from scratch",
+    "run.seed.skipped": "No seed data is used (skipped)",
+    "run.plan.analysing": "Analysing the project: what data does it need?",
+    "run.schema.relational": "The LLM is analysing the domain and writing a relational Dataset Contract...",
+    "run.schema.single": "The LLM is analysing the domain and writing a Schema Contract...",
+    "run.schema.contract_ready": (
+        "Dataset Contract ready: {tables} tables, {relationships} relationships (root table: {root})"
+    ),
+    "run.schema.ready": "Schema ready: {summary}",
+    "run.audit.tables": "Tables to be audited for privacy: {tables}",
+    "run.engine.parametric_selected": "Parametric engine selected - code generation and the sandbox are skipped",
+    "run.engine.compiled_no_llm": "The schema compiled straight to vectors ({seconds} s, no LLM code)",
+    "run.engine.compiled": "The schema compiled straight to vectors ({seconds} s)",
+    "run.engine.falling_back": "Falling back to the parametric engine (--engine auto)",
+    "run.codegen.writing": "Writing the code that generates the data...",
+    "run.codegen.failed_warning": "WARNING: code generation failed ({error})",
+    "run.raw.generated": "Raw data generated: {rows} rows ({attempts} attempts, {seconds} s)",
+    "run.raw.generated_relational": (
+        "Raw data generated: {tables} tables, {rows} rows ({attempts} attempts, {seconds} s)"
+    ),
+    "run.raw.saved": "Raw data saved: {name} ({size} MB)",
+    "run.fraud.injected": (
+        "Fraud scenarios injected: {rows} rows (rate: {rate}%, table: {table}, column: {column})"
+    ),
+    "run.time_series.applied": (
+        "Time-series dynamics applied: {entities} distinct entities, {bursts} velocity "
+        "bursts, median gap {median} s"
+    ),
+    "run.time_series.entity_warning": (
+        "WARNING: column '{column}' holds {distinct} distinct values across {rows} rows; "
+        "velocity metrics are meaningless. Give a column that repeats: --ts-entity-col <column>"
+    ),
+    "run.features.expanded": "Feature expansion: {added} new columns ({total} total)",
+    "run.validation.running": "The discriminator is running...",
+    "run.validation.table": "Validating table: {table}",
+    "run.validation.done": "Validation finished: {rows_in} -> {rows_out} rows ({retention}% kept)",
+    "run.validation.table_rows": "{rows_in} -> {rows_out} rows ({retention}%)",
+    "run.relational.checking": "Checking relational integrity ({count} relationships)...",
+    "run.relational.repair_disabled": "orphan repair is off (--no-repair-orphans)",
+    "run.relational.contract_violated": "the contract is still violated",
+    "run.relational.failed": "WARNING: the relational integrity check failed - {reason}",
+    "run.dirty.injected": (
+        "Controlled corruption injected: {rows} rows ({rate}%) - missing {missing}, "
+        "typos {typo}, spikes {spike}, casing/whitespace {casing}"
+    ),
+    "run.dirty.audit_columns": "Audit-trail columns added: is_corrupted, corruption_details",
+    "run.output.writing": "Writing the output files...",
+    "run.output.written": "Output written: {kinds}",
+    "run.output.skipped": "No output file was written (write_outputs=False)",
+    "run.hub.uploading": "Uploading to HuggingFace: {repo}",
+    "run.hub.uploaded": "Uploaded: {url}",
+    "run.cost.summary": "LLM usage: {calls} calls, {tokens} tokens, ~${cost}",
+    "run.finished": "Finished. {rows} clean rows, estimated cost ${cost}",
+    "run.finished_relational": "Finished. {tables} tables, {rows} clean rows, estimated cost ${cost}",
+    # --- Plan & schema console dump --------------------------------------- #
+    "run.plan.ready": "Plan ready: {summary}",
+    "run.plan.rationale": "Rationale: {rationale}",
+    "run.plan.target": "Target variable: {target}",
+    "run.plan.class_balance": "Class balance: positive class {pct}%",
+    "run.plan.leakage": "Columns dropped because they would leak ({count}):",
+    "run.plan.split": "Train/test split: {kind} - {reason}",
+    "run.schema.generation_order": "{tables} tables, generation order: {order}",
+    "run.schema.table_line": "Table '{table}' | PK: {pk} | target {rows} rows",
+    "run.schema.columns_header": "Declared columns ({count}):",
+    "run.schema.spec_range": "range: [{low}, {high}]",
+    "run.schema.spec_distribution": "distribution: {distribution}",
+    "run.schema.spec_categories": "categories: [{categories}]",
+    "run.schema.spec_ratio": "ratio: {pct}%",
+    "run.schema.spec_not_null": "not null",
+    "run.schema.rules_header": "Business rules ({count}):",
+    "run.schema.rule": "Rule: {rule}",
+    "run.schema.correlations_header": "Expected correlations ({count}):",
+    "run.schema.relationships_header": "Relationships ({count}):",
+    "run.schema.relationship": "{label} (mean {mean} per parent; {bounds}{optional})",
+    "run.schema.optional": "optional",
+
+    # --- CLI --------------------------------------------------------------- #
+    "cli.auth.header": "Credential status",
+    "cli.auth.source": "source: {source}",
+    "cli.auth.implicit": "no key, but {source} was found - it will be tried",
+    "cli.auth.checked": "checked: keyring, {vars}",
+    "cli.auth.oauth_logged_in": "OAuth: signed in - {detail}",
+    "cli.auth.oauth_missing": "OAuth: {command} is not installed ({hint})",
+    "cli.auth.oauth_login": "OAuth: sign in with -> {command}",
+    "cli.auth.note": "NOTE:  {note}",
+    "cli.auth.ollama_running": "Ollama {version} - {count} models",
+    "cli.auth.ollama_down": "the daemon is not running ({host})",
+    "cli.auth.none_available": "No provider is usable.",
+    "cli.error.domain_and_project": (
+        "--domain and --project cannot be combined: either describe the data or "
+        "describe the project"
+    ),
+    "cli.error.domain_or_project": "--domain or --project is required (or use --check-auth)",
+    "cli.error.generic": "ERROR: {error}",
+    "cli.label.domain": "Domain",
+    "cli.label.project": "Project",
+    "cli.label.provider": "Provider",
+    "cli.label.backend": "(backend: {backend})",
+    "cli.label.target": "Target",
+    "cli.label.target_value": "{rows} rows, seed {seed}",
+    "cli.label.mode": "Mode",
+    "cli.label.engine": "Engine",
+    "cli.mode.planner": "project planner (up to {limit} tables, the plan decides how many)",
+    "cli.mode.relational": "relational (up to {limit} tables, orphan repair: {repair})",
+    "cli.on": "on",
+    "cli.off": "OFF",
+    "cli.engine.time_series": "time series",
+    "cli.engine.expand_features": "feature expansion",
+    "cli.engine.dirty": "corruption {pct}%",
+    "cli.cancelled": "Cancelled.",
+    "cli.cancelled_with": "Cancelled: {reason}",
+    "cli.summary.job_done": "Job #{job_id} finished.",
+    "cli.summary.clean_rows": "Clean rows",
+    "cli.summary.clean_rows_value": "{rows_out} / {rows_in} ({retention}% kept)",
+    "cli.summary.cost": "Cost",
+    "cli.summary.outputs": "Outputs:",
+    "cli.summary.plan": "Project plan: {summary}",
+    "cli.relational.integrity_failed": "Relational integrity was not met ({count} violations).",
+    # --- CLI --help -------------------------------------------------------- #
+    "cli.help.description": "AI Synthetic Data Studio - the headless end-to-end pipeline",
+    "cli.help.domain": "Domain / task description of the dataset to generate",
+    "cli.help.project": (
+        "Describe the PROJECT instead of the data: the planner decides what data is "
+        "needed, the target variable, the class balance, which leakage columns to "
+        "drop, and the train/test split"
+    ),
+    "cli.help.check_auth": "Print the credential status of every provider and exit",
+    "cli.help.model": "Provider-specific model name",
+    "cli.help.locale": "Faker locale (e.g. tr_TR)",
+    "cli.help.hf_seed": "Fetch reference data from HuggingFace",
+    "cli.help.hf_dataset": "Use a specific HF dataset id",
+    "cli.help.web_seed": "Collect real reference (seed) data from the web",
+    "cli.help.web_query": "Web search query, or a direct URL",
+    "cli.help.formats": "Comma separated: csv,parquet,json",
+    "cli.help.push_to_hub": "Upload the clean data to this HF repo_id",
+    "cli.help.public": "Create the HF repo as public",
+    "cli.help.contamination": "IsolationForest anomaly rate (0 = off, the default). E.g. 0.05",
+    "cli.help.no_correlation_guard": (
+        "Turn off the rollback that protects target correlations from outlier cleaning"
+    ),
+    "cli.help.preserve_col": (
+        "Anomaly column exempted from the Z-score and IsolationForest filters (e.g. is_fraud)"
+    ),
+    "cli.help.preserve_val": "Anomaly protection value (default: 1 or True)",
+    "cli.help.inject_fraud": "Inject parametric fraud scenarios into the synthetic data",
+    "cli.help.fraud_rate": "Fraud injection rate (default: 0.005, i.e. 0.5%)",
+    "cli.help.fraud_target_col": "Fraud label column (default: is_fraud)",
+    "cli.help.audit_privacy": "Run the NNDR, differential privacy and HIPAA Safe Harbor audit",
+    "cli.help.fraud_table": "Which table the fraud injection applies to (default: the root table)",
+    "cli.help.audit_table": (
+        "Which table the privacy audit applies to: empty = the root table (default), "
+        "'all' = every table, or a table name"
+    ),
+    "cli.help.gemini_backend": (
+        "Pick the Gemini backend for this run: 'aistudio' (API key, fast) or 'cli' "
+        "(Antigravity session, slow). The stored setting is not changed"
+    ),
+    "cli.help.relational": "Generate a relational (multi-table) dataset: tables + foreign keys",
+    "cli.help.max_tables": (
+        "Upper table limit in relational mode (default 6; the contract's hard limit is 12)"
+    ),
+    "cli.help.no_repair_orphans": (
+        "Do not delete orphan foreign keys, report them as an error (CI gate: exit "
+        "code 3 when integrity is not met)"
+    ),
+    "cli.help.engine": (
+        "Generation engine: 'llm' writes code and runs it in the sandbox (default), "
+        "'parametric' compiles the schema directly (no LLM code, single table), "
+        "'auto' falls back to parametric when code generation runs out of attempts"
+    ),
+    "cli.help.time_series": (
+        "Add time-series and velocity dynamics: chronological ordering, circadian "
+        "rhythm, seconds_since_last_tx, velocity bursts"
+    ),
+    "cli.help.ts_timestamp_col": "Time-series timestamp column (default: transaction_timestamp)",
+    "cli.help.ts_entity_col": (
+        "Time-series entity id column; generated when missing (default: customer_id)"
+    ),
+    "cli.help.ts_start": "Time-series start (YYYY-MM-DD HH:MM:SS)",
+    "cli.help.ts_end": "Time-series end (YYYY-MM-DD HH:MM:SS)",
+    "cli.help.expand_features": (
+        "Deterministic feature expansion: financial ratios, credit rating, time "
+        "derivations and behavioural flags"
+    ),
+    "cli.help.dirty_rate": (
+        "Controlled corruption rate (0-1, 0 = off). Applied AFTER validation; the "
+        "is_corrupted / corruption_details columns are added"
+    ),
+    "cli.help.hardware": (
+        "Print the hardware profile (CPU/RAM/GPU) and the recommended local model, then exit"
+    ),
+    # --- Validator ---------------------------------------------------------- #
+    "validation.stage.duplicates": "Duplicate removal",
+    "validation.stage.bounds": "Schema bounds",
+    "validation.stage.rules": "Business rules",
+    "validation.stage.z_score": "Z-score outliers",
+    "validation.started": "Validation started ({rows} rows)",
+    "validation.finished": "Validation finished: {rows_in} -> {rows_out} rows ({retention}% kept)",
+    "validation.cancelled": "Validation was cancelled by the user",
+    "validation.top_dropped_columns": "Columns dropping the most rows: {columns}",
+    "validation.rule_violation": "Rule violation: '{rule}' -> {rows} rows removed ({pct}%)",
+    "validation.z_skipped": "Z-score skipped (tail protection): {columns}",
+    "validation.z_outliers": "Z-score outliers: {columns}",
+    "validation.z_preserved": (
+        "Z-score anomaly protection: column '{column}' saved {rows} extreme rows from deletion"
+    ),
+    "validation.iso_preserved": (
+        "IsolationForest anomaly protection: column '{column}' saved {rows} extreme rows"
+    ),
+    "validation.preserved_summary": "Anomaly protection summary: {rows} rows kept by the '{column}' label",
+    "validation.correlation_regressed": (
+        "WARNING: correlation '{left} ~ {right}' dropped because of cleaning: "
+        "r={before} -> {after} (threshold {threshold})"
+    ),
+    "validation.correlation_guard_reverted": (
+        "Correlation guard engaged: outlier cleaning is being rolled back ({rows} rows "
+        "came back). Disable it with --no-correlation-guard."
+    ),
+    "validation.correlation_line": (
+        "Correlation [{pair}]: r={r} (expected: {sign}, min: {min_r}) [{verdict}]"
+    ),
+    "validation.correlations_unmet": "WARNING: {count} correlations missed the expectation: {pairs}",
+    "validation.ks_summary": "KS distribution test: {passed}/{total} numeric columns match the reference",
+    "validation.monotonicity_summary": "Monotonicity check: {passed}/{total} rules verified",
+    "validation.monotonicity_line": (
+        "[{x} -> {y} ({direction})]: Spearman r={r}, bin compliance={compliance}% [{verdict}]"
+    ),
+    "validation.privacy_nndr": "Privacy & NNDR: DCR={dcr}, NNDR={nndr} (memorisation risk: {risk})",
+    "validation.hipaa_warning": "HIPAA Safe Harbor warning: {summary}",
+    "validation.hipaa_ok": "HIPAA Safe Harbor compliance: VERIFIED",
+    "validation.verdict.ok": "OK",
+    "validation.verdict.below": "BELOW EXPECTATION",
+    "validation.verdict.violation": "VIOLATION",
+    # --- Code generation (console only; LLM feedback stays untranslated) ---- #
+    "codegen.starting": "Starting code generation (LLM)...",
+    "codegen.written": "The LLM wrote the Python code ({lines} lines). Starting the sandbox test...",
+    "codegen.written_relational": (
+        "The LLM wrote Python code for {tables} tables ({lines} lines). Starting the "
+        "sandbox test..."
+    ),
+    "codegen.attempt": "Attempt {attempt}/{total}: running the code in the sandbox...",
+    "codegen.attempt_failed": "Attempt {attempt} failed: {error}",
+    "codegen.hint": "Fix hint: {hint}",
+    "codegen.attempt_ok": "Attempt {attempt} succeeded: {rows} rows ({seconds} s, {columns} columns)",
+    "codegen.attempt_ok_relational": (
+        "Attempt {attempt} succeeded: {tables} tables ({seconds} s) - {counts}"
+    ),
+    "codegen.schema_mismatch": "Attempt {attempt}: {count} schema mismatches found",
+    "codegen.mismatch_item": "Mismatch: {issue}",
+    "codegen.mismatch_more": "... and {count} more mismatches",
+    "codegen.repeated_error": "The same error repeated - asking the LLM to change its approach...",
+    "codegen.feeding_back": "Feeding the error back to the LLM, fixing the code...",
+    "codegen.gave_up": "No working code after {attempts} attempts. Last error:\n{error}",
+    "codegen.fix_call_failed": "The code-fix call failed: {error}",
+    "codegen.unexpected_state": "Unexpected state",
+    "codegen.cancelled": "Cancelled by the user",
+    # --- Relational validator ---------------------------------------------- #
+    "relational.orphans_removed": "Orphan cleanup [{relationship}]: {rows} rows removed",
+    "relational.pk_not_unique": (
+        "WARNING: primary key '{pk}' of '{table}' is not unique ({duplicates} "
+        "duplicates, {nulls} nulls)"
+    ),
+    "relational.fk_line": "Foreign key [{relationship}]: {orphans} orphan rows ({pct}%) [{verdict}]",
+    "relational.verdict.orphans": "ORPHANS FOUND",
+    "relational.cardinality_line": (
+        "Cardinality [{relationship}]: mean {observed} per parent (expected {expected}) [{verdict}]"
+    ),
+
+    # --- Monotonicity validator --------------------------------------------- #
+    "monotonicity.no_rules": "No monotonicity rule is defined.",
+    "monotonicity.report_title": "Monotonicity & Credit Risk Scorecard Compliance Report",
+    "monotonicity.table_header": (
+        "| Variable X | Target/Dependent Y | Direction | Spearman $r_s$ | Bin compliance "
+        "| Pair compliance | Status |"
+    ),
+    "monotonicity.compliant": "Compliant",
+    "monotonicity.below_threshold": (
+        "Bin monotonicity compliance ({binned}%) or pairwise compliance ({pairwise}%) "
+        "is below the threshold ({threshold}%)"
+    ),
+    "monotonicity.column_missing": "The column is missing from the dataframe, or the data is empty",
+    "monotonicity.not_enough_rows": "Not enough valid numeric rows (<10)",
+    # --- HIPAA identifier catalogue ---------------------------------------- #
+    "hipaa.title.names": "Names",
+    "hipaa.title.geographic": "Geographic subdivisions smaller than a state",
+    "hipaa.title.dates": "Dates directly related to an individual",
+    "hipaa.title.phone": "Telephone numbers",
+    "hipaa.title.fax": "Fax numbers",
+    "hipaa.title.ssn": "Social security / national id numbers",
+    "hipaa.title.mrn": "Medical record numbers",
+    "hipaa.title.health_plan": "Health plan beneficiary numbers",
+    "hipaa.title.account": "Account numbers",
+    "hipaa.title.vehicle": "Vehicle identifiers and licence plates (VIN)",
+    "hipaa.title.device": "Device identifiers and serial numbers",
+    "hipaa.title.biometric": "Biometric identifiers",
+    "hipaa.title.face": "Full-face photos and comparable images",
+    "hipaa.title.unique_code": "Any other unique identifying number or code",
+    "hipaa.category.direct": "Direct identifier",
+    "hipaa.category.quasi": "Quasi-identifier",
+    "hipaa.category.timestamp": "Timestamp (date shifting required)",
+    "hipaa.category.health_system": "Health system identifier",
+    "hipaa.category.health_financial": "Health financial identifier",
+    "hipaa.category.financial": "Financial identifier",
+    "hipaa.category.asset": "Asset identifier",
+    "hipaa.category.hardware": "Hardware identifier",
+    "hipaa.category.digital": "Digital trace",
+    "hipaa.category.network": "Network identifier",
+    "hipaa.category.visual_biometric": "Visual biometric",
+
+    # --- Privacy audit report ----------------------------------------------- #
+    "privacy.report.title": "HIPAA Safe Harbor & Differential Privacy Audit Report",
+    "privacy.report.table": "Table",
+    "privacy.report.summary_heading": "Executive Summary",
+    "privacy.report.overall_status": "Overall privacy status",
+    "privacy.report.guarantee": "Privacy level",
+    "privacy.report.epsilon": "Estimated differential privacy",
+    "privacy.report.memorisation_heading": "Reference Data Memorisation Analysis",
+    "privacy.report.no_reference": (
+        "No reference (seed) data was supplied, so the DCR/NNDR comparison was skipped. "
+        "The data was generated from scratch."
+    ),
+    "privacy.report.no_reference_table": (
+        "There is no reference (seed) data for this table; the DCR/NNDR comparison "
+        "could not run, so the **memorisation risk was not measured**."
+    ),
+    "privacy.report.nn_intro": (
+        "A nearest-neighbour analysis was run to confirm that the synthetic data does "
+        "not copy reference patient/customer records verbatim:"
+    ),
+    "privacy.report.metric_header": "| Metric | Value | Threshold | Risk level |",
+    "privacy.report.dcr_p5": "5th percentile DCR",
+    "privacy.report.safe_distance": "Safe distance",
+    "privacy.report.identical_matches": "Identical record count",
+    "privacy.report.mean_nndr": "Mean NNDR",
+    "privacy.report.nndr_note_label": "NNDR reading:",
+    "privacy.report.nndr_note": (
+        "the closer the ratio is to 1.0, the more it shows that no synthetic row copies "
+        "a real person - the rows are new, independent points on the manifold."
+    ),
+    "privacy.report.hipaa_heading": "HIPAA 18-Identifier Scan",
+    "privacy.report.audit_result": "Audit result",
+    "privacy.report.all_passed": "ALL CRITERIA PASSED",
+    "privacy.report.review_required": "AREAS REQUIRING REVIEW",
+    "privacy.report.age_over_89": "Rows with age over 89",
+    "privacy.report.age_rule": "HIPAA rule: ages over 89 must be grouped as 90+",
+    "privacy.report.identifiers_heading": "Possible Identifier Columns Detected",
+    "privacy.report.identifiers_header": "| Column | HIPAA category | Status / action |",
+    "privacy.report.no_identifiers": (
+        "No unmasked personal identifier (PII) column was detected in the schema."
+    ),
+    "privacy.report.footer": (
+        "This report was generated automatically by the AI Synthetic Data Studio PrivacyAuditor."
+    ),
+    "privacy.action.mask": "Should be masked or encoded with synthetic Faker data.",
+    "privacy.summary.compliant": "HIPAA Safe Harbor compliant.",
+    "privacy.summary.findings": "{columns} identifier columns and {ages} rows aged 89+ were detected.",
+    # --- Schema contract validation ----------------------------------------- #
+    "schema.error.empty_response": "The LLM response was empty - no JSON block found",
+    "schema.error.no_json": "No valid JSON block was found in the LLM response",
+    "schema.error.must_be_object": "{where} must be an object, got {got}",
+    "schema.error.name_required": "{where}: 'name' is required and must be a non-empty string",
+    "schema.error.bad_identifier": (
+        "{where}: column name '{name}' is invalid - to be usable with df.eval it may "
+        "only contain letters, digits and underscores, and must not start with a digit"
+    ),
+    "schema.error.bad_type": "{where} ('{name}'): 'type' must be one of: {valid}",
+    "schema.error.bad_distribution": (
+        "{where} ('{name}'): unknown distribution '{distribution}' - valid: {valid}"
+    ),
+    "schema.error.min_gt_max": "{where} ('{name}'): min ({low}) cannot be greater than max ({high})",
+    "schema.error.target_ratio_range": "{where} ('{name}'): target_ratio must be within 0..1, got {value}",
+    "schema.error.zero_prob_range": "{where} ('{name}'): zero_prob must be within 0..1, got {value}",
+    "schema.error.p_index_range": (
+        "{where} ('{name}'): tweedie p_index must be within 1..2 (Compound Poisson-Gamma), got {value}"
+    ),
+    "schema.error.std_negative": "{where} ('{name}'): std cannot be negative",
+    "schema.error.shape_positive": "{where} ('{name}'): shape must be positive",
+    "schema.error.scale_positive": "{where} ('{name}'): scale must be positive",
+    "schema.error.categories_required": (
+        "{where} ('{name}'): a 'categories' list is required when type is 'category'"
+    ),
+    "schema.error.mean_required": "{where} ('{name}'): 'mean' is required when distribution is 'normal'",
+    "schema.error.contract_object": "The Schema Contract must be a JSON object, got {got}",
+    "schema.error.domain_required": "'domain' must be a non-empty string",
+    "schema.error.columns_required": "'columns' must be a list with at least one column",
+    "schema.error.duplicate_columns": "Duplicate column names: {columns}",
+    "schema.error.row_count_positive": "'row_count_target' must be positive",
+    "schema.error.row_count_int": "'row_count_target' must be an integer, got {value}",
+    "schema.error.seed_int": "'random_seed' must be an integer",
+    "schema.error.rules_list": "'business_rules' must be a list",
+    "schema.error.correlations_list": "'correlations' must be a list",
+    "schema.error.monotonicity_list": "'monotonicity_rules' must be a list",
+    "schema.error.correlation_pair": "{where}: 'columns' must contain exactly 2 column names",
+    "schema.error.expected_sign": "{where}: expected_sign must be 'positive' or 'negative', got '{sign}'",
+    "schema.error.min_r_range": "{where}: min_r must be within -1..1",
+    "schema.error.monotonicity_columns": (
+        "{where}: 'column_x' and 'column_y' (or a 2-element 'columns') are required"
+    ),
+    "schema.error.direction": "{where}: direction must be 'increasing' or 'decreasing', got '{direction}'",
+    "schema.error.min_compliance_range": "{where}: min_compliance_ratio must be within 0..1",
+    "schema.error.primary_key_missing": "primary_key '{pk}' of table '{table}' is not among its columns",
+    "schema.error.numeric_bool": "{where}: '{field}' must be numeric, got a boolean",
+    "schema.error.numeric_expected": "{where}: '{field}' must be numeric, got {value}",
+    "schema.warning.correlation_unknown_columns": (
+        "Correlation rule dropped - unknown column(s) {columns} (defined: {known})"
+    ),
+    "schema.warning.correlation_not_numeric": (
+        "Correlation rule dropped - {columns} is not numeric/bool, no correlation can be computed"
+    ),
+    "schema.warning.monotonicity_unknown_columns": (
+        "Monotonicity rule dropped - unknown column(s) [{x}, {y}] (defined: {known})"
+    ),
+    "schema.warning.monotonicity_not_numeric": (
+        "Monotonicity rule dropped - [{x}, {y}] is not numeric/bool"
+    ),
+    "schema.warning.rule_unknown_names": "Business rule '{rule}' refers to undefined name(s): {names}",
+    "schema.warning.preserve_column_missing": (
+        "preserve_anomaly_column '{column}' was not found among the defined columns: {known}"
+    ),
+    # --- Dataset contract ---------------------------------------------------- #
+    "contract.error.contract_object": "The Dataset Contract must be a JSON object, got {got}",
+    "contract.error.field_required": "{where}: '{field}' is required and must be a non-empty string",
+    "contract.error.tables_required": "'tables' must be a list with at least one table",
+    "contract.error.duplicate_tables": "Duplicate table names: {tables}",
+    "contract.error.relationships_list": "'relationships' must be a list",
+    "contract.error.mean_per_parent_number": "{where}: 'mean_per_parent' must be a number",
+    "contract.error.mean_per_parent_positive": "{where}: 'mean_per_parent' must be positive",
+    "contract.error.min_per_parent_int": "{where}: 'min_per_parent' must be an integer",
+    "contract.error.max_per_parent_int": "{where}: 'max_per_parent' must be an integer",
+    "contract.error.max_lt_min": (
+        "{where}: 'max_per_parent' ({high}) cannot be smaller than 'min_per_parent' ({low})"
+    ),
+    "contract.error.relationship_table_missing": (
+        "Relationship '{label}': the {side} table '{table}' is not defined"
+    ),
+    "contract.error.relationship_column_missing": (
+        "Relationship '{label}': column '{column}' does not exist in table '{table}'"
+    ),
+    "contract.error.self_parent": "Relationship '{label}': a table cannot be its own parent",
+    "contract.error.no_root_table": "No root table found - the relationships may contain a cycle",
+    "contract.error.cycle": (
+        "The relationships contain a cycle, the generation order cannot be derived: {tables}"
+    ),
+
+    # --- Project planner ----------------------------------------------------- #
+    "plan.error.plan_object": "The project plan must be a JSON object, got {got}",
+    "plan.error.leakage_list": "'excluded_leakage' must be a list",
+    "plan.error.target_required": (
+        "'target' is required for the '{task}' task - a dataset without a target "
+        "variable is not ready for training"
+    ),
+    "plan.error.class_ratio_required": (
+        "'positive_class_ratio' is required for the '{task}' task - a classification "
+        "dataset without a stated class balance is not useful"
+    ),
+    "plan.error.class_ratio_range": "'positive_class_ratio' must be between 0 and 1, got {value}",
+    "plan.error.split_column_missing": "split: column '{column}' does not exist in table '{table}'",
+    "plan.error.split_not_datetime": (
+        "split: a temporal split needs '{column}' to be a 'datetime' column, it is '{got}'"
+    ),
+    "plan.warning.unsupervised_target": (
+        "The task is 'unsupervised' but a target variable was given ({target}) - ignored."
+    ),
+    "plan.warning.class_ratio_ignored": "A class balance is meaningless for the '{task}' task - ignored.",
+    "plan.warning.class_ratio_extreme": (
+        "The class balance is extreme ({ratio}): a target at this rate may not yield a "
+        "meaningful number of examples in the generated row count."
+    ),
+    "plan.warning.no_leakage": (
+        "No leakage column was dropped. Most real problems have at least one field that "
+        "is only known after the target event; the plan may have missed it."
+    ),
+    # --- Service layer errors ----------------------------------------------- #
+    "service.error.package_missing": "The `{package}` package is not installed",
+    "service.error.auth_failed": (
+        "Authentication failed ({source}). The key is invalid or has expired."
+    ),
+    "service.error.forbidden": "The key is not allowed to perform this operation ({error}).",
+    "service.error.unreachable": "The service could not be reached: {error}",
+    "service.error.model_not_found": "Model not found: {model} ({error})",
+    "service.error.anthropic_connection": "Anthropic connection error: {error}",
+    "service.error.anthropic_bad_key": "The Anthropic API key is invalid: {error}",
+    "service.error.anthropic_server": "Anthropic server error {status}",
+    "service.error.anthropic_api": "Anthropic API error {status}: {error}",
+    "service.error.anthropic_empty": "Anthropic returned an empty response (stop_reason={reason})",
+    "service.error.gemini_request": "Gemini request error: {error}",
+    "service.error.gemini_server": "Gemini server error: {error}",
+    "service.error.gemini_api": "Gemini API error: {error}",
+    "service.error.gemini_empty": "Gemini returned an empty response",
+    "service.error.ollama_unreachable": (
+        "Could not connect to the Ollama daemon ({host}). Is `ollama serve` running?"
+    ),
+    "service.error.ollama_down": "The Ollama daemon is not running ({host}). Start it with: ollama serve",
+    "service.error.ollama_model_missing": "Model not installed: {model}. Pull it with: ollama pull {model}",
+    "service.error.ollama_bad_json_tags": "Ollama /api/tags returned invalid JSON",
+    "service.error.ollama_bad_json": "Ollama returned invalid JSON",
+    "service.error.ollama_pull_start": "The model download could not be started: {error}",
+    "service.error.ollama_pull": "Ollama pull error: {error}",
+    "service.error.ollama_timeout": "Ollama did not answer within {seconds} seconds - try a smaller model",
+    "service.error.ollama_call_failed": "The Ollama call failed: {error}",
+    "service.error.ollama_generic": "Ollama error: {error}",
+    "service.error.ollama_empty": "Ollama returned an empty response",
+    "service.error.hf_temporary": "HF temporary error ({status}): {error}",
+    "service.error.hf_auth": "HF authorisation error ({status}): {error}",
+    "service.error.hf_connection": "HF connection error: {error}",
+    "service.error.hf_generic": "HF error: {error}",
+    "service.error.hf_dataset_empty": "The dataset is empty or could not be read: {dataset}",
+    "service.error.hf_no_token": (
+        "No HuggingFace token was found. Enter one in the Settings tab, or define the "
+        "HF_TOKEN environment variable."
+    ),
+    "service.error.hf_empty_data": "There is no data to upload",
+    "service.error.schema_retries": (
+        "No valid Schema Contract after {attempts} attempts. Last error: {error}"
+    ),
+    "service.error.contract_retries": (
+        "No valid Dataset Contract after {attempts} attempts. Last error: {error}"
+    ),
+    "service.error.plan_retries": (
+        "No valid project plan after {attempts} attempts. Last error: {error}"
+    ),
+    "run.error.health_check": "The {provider} service could not be verified (model: {model}). {detail}",
+    "run.error.health_hint": "Check the API key / the daemon.",
 }

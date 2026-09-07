@@ -180,7 +180,9 @@ class TestLeakage(unittest.TestCase):
 
     def test_empty_list_is_allowed_but_warns(self):
         plan = ProjectPlan.from_dict(plan_dict(excluded_leakage=[]))
-        self.assertTrue(any("sizinti" in w.lower() for w in plan.warnings))
+        from ai_data_studio.i18n import t
+
+        self.assertIn(t("plan.warning.no_leakage"), plan.warnings)
 
     def test_exclusion_needs_a_reason(self):
         with self.assertRaises(SchemaValidationError):
@@ -200,8 +202,10 @@ class TestClassBalance(unittest.TestCase):
 
     def test_extreme_ratio_warns(self):
         plan = ProjectPlan.from_dict(plan_dict(positive_class_ratio=0.0001))
-        self.assertTrue(any("asiri" in w.lower() or "aşırı" in w.lower()
-                            for w in plan.warnings))
+        from ai_data_studio.i18n import t
+
+        prefix = t("plan.warning.class_ratio_extreme", ratio="").split("(")[0].rstrip()
+        self.assertTrue(any(prefix in w for w in plan.warnings))
 
     def test_regression_ignores_ratio_with_a_warning(self):
         data = plan_dict(task_type="regression",

@@ -207,10 +207,12 @@ class TestPrivacyAuditorEndToEnd(unittest.TestCase):
         self.assertIsInstance(report, PrivacyAuditReport)
 
         md = report.to_markdown()
+        from ai_data_studio.i18n import t
+
         self.assertIn("HIPAA Safe Harbor", md)
         self.assertIn("DCR (Distance to Closest Record)", md)
         self.assertIn("NNDR", md)
-        self.assertIn("Diferansiyel Gizlilik", md)
+        self.assertIn(t("privacy.report.title"), md)
 
         summary = report.to_dict()
         self.assertIn("dcr", summary)
@@ -328,7 +330,9 @@ class TestPerTablePrivacyAudit(unittest.TestCase):
             self.assertIn(key, result.output_paths, "%s icin rapor yazilmadi" % name)
             from pathlib import Path
             body = Path(result.output_paths[key]).read_text(encoding="utf-8")
-            self.assertIn("**Tablo:** `%s`" % name, body)
+            from ai_data_studio.i18n import t
+
+            self.assertIn("**%s:** `%s`" % (t("privacy.report.table"), name), body)
 
     def test_child_report_says_memorisation_was_not_measured(self):
         """Seed veri kök tabloya ait; çocuk tabloda boş epsilon 'sorun yok' gibi
@@ -339,7 +343,11 @@ class TestPerTablePrivacyAudit(unittest.TestCase):
                  if n != result.contract.root_table][0]
         body = Path(result.output_paths["privacy_report:%s" % child]).read_text(
             encoding="utf-8")
-        self.assertIn("ezberleme riski ölçülmedi", body)
+        from ai_data_studio.i18n import t
+
+        # Cocuk tabloda "olculmedi" ibaresi mutlaka bulunmali - bos bir epsilon
+        # "sorun yok" gibi okunmamali.
+        self.assertIn(t("privacy.report.no_reference_table"), body)
 
     def test_manifest_lists_every_privacy_report(self):
         import json
@@ -373,7 +381,9 @@ class TestPerTablePrivacyAudit(unittest.TestCase):
             "_privacy_report.md"))
         from pathlib import Path
         body = Path(result.output_paths["privacy_report"]).read_text(encoding="utf-8")
-        self.assertNotIn("**Tablo:**", body)
+        from ai_data_studio.i18n import t
+
+        self.assertNotIn("**%s:**" % t("privacy.report.table"), body)
 
 
 class TestAuditTableCli(unittest.TestCase):

@@ -16,6 +16,7 @@ from typing import Any, Callable, Dict, List, Optional
 import requests
 
 from .. import config
+from ..i18n import t
 from .llm_base import BaseLLMClient, LLMError, LLMNotConfiguredError
 
 log = logging.getLogger(__name__)
@@ -74,11 +75,10 @@ def list_models(host: Optional[str] = None) -> List[Dict[str, Any]]:
         payload = r.json()
     except requests.RequestException as exc:
         raise OllamaUnavailableError(
-            "Ollama daemon'a baglanilamadi (%s). `ollama serve` çalışıyor mu?"
-            % (host or config.OLLAMA_HOST)
+            t("service.error.ollama_unreachable", host=host or config.OLLAMA_HOST)
         ) from exc
     except ValueError as exc:
-        raise LLMError("Ollama /api/tags geçersiz JSON dondu") from exc
+        raise LLMError(t("service.error.ollama_bad_json_tags")) from exc
 
     models = []
     for entry in payload.get("models", []) or []:
@@ -131,7 +131,7 @@ def pull_model(
         )
         response.raise_for_status()
     except requests.RequestException as exc:
-        raise OllamaUnavailableError("Model indirme başlatılamadı: %s" % exc) from exc
+        raise OllamaUnavailableError(t("service.error.ollama_pull_start", error=exc)) from exc
 
     try:
         for line in response.iter_lines(decode_unicode=True):
@@ -145,7 +145,7 @@ def pull_model(
             except ValueError:
                 continue
             if "error" in event:
-                raise LLMError("Ollama pull hatası: %s" % event["error"])
+                raise LLMError(t("service.error.ollama_pull", error=event["error"]))
             if on_progress is not None:
                 completed = event.get("completed") or 0
                 total = event.get("total") or 0
@@ -216,7 +216,7 @@ class OllamaClient(BaseLLMClient):
         self.host = host or config.OLLAMA_HOST
         if not is_available(self.host):
             raise OllamaUnavailableError(
-                "Ollama daemon çalışmıyor (%s). Başlatmak için: ollama serve" % self.host
+                t("service.error.ollama_down", host=self.host)
             )
         if auto_pull and not has_model(self.model, self.host):
             log.info("Model kurulu değil, indiriliyor: %s", self.model)
@@ -226,13 +226,12 @@ class OllamaClient(BaseLLMClient):
         self.last_health_error = ""
         if not is_available(self.host):
             self.last_health_error = (
-                "Ollama daemon çalışmıyor (%s). Başlatmak için: ollama serve" % self.host
+                t("service.error.ollama_down", host=self.host)
             )
             return False
         if not has_model(self.model, self.host):
             self.last_health_error = (
-                "Model kurulu değil: %s. Indirmek için: ollama pull %s"
-                % (self.model, self.model)
+                t("service.error.ollama_model_missing", model=self.model)
             )
             return False
         return True
@@ -259,16 +258,15 @@ class OllamaClient(BaseLLMClient):
             data = response.json()
         except requests.Timeout as exc:
             raise LLMError(
-                "Ollama yaniti %d saniyede gelmedi - daha kucuk bir model deneyin"
-                % COMPLETION_TIMEOUT
+                t("service.error.ollama_timeout", seconds=COMPLETION_TIMEOUT)
             ) from exc
         except requests.RequestException as exc:
-            raise OllamaUnavailableError("Ollama çağrısı başarısız: %s" % exc) from exc
+            raise OllamaUnavailableError(t("service.error.ollama_call_failed", error=exc)) from exc
         except ValueError as exc:
-            raise LLMError("Ollama geçersiz JSON dondu") from exc
+            raise LLMError(t("service.error.ollama_bad_json")) from exc
 
         if "error" in data:
-            raise LLMError("Ollama hatası: %s" % data["error"])
+            raise LLMError(t("service.error.ollama_generic", error=data["error"]))
 
         self._log_usage(data.get("prompt_eval_count", 0) or 0,
                         data.get("eval_count", 0) or 0,
@@ -276,5 +274,5 @@ class OllamaClient(BaseLLMClient):
 
         text = ((data.get("message") or {}).get("content") or "").strip()
         if not text:
-            raise LLMError("Ollama boş yanit dondu")
+            raise LLMError(t("service.error.ollama_empty"))
         return text

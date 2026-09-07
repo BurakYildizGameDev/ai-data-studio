@@ -142,6 +142,18 @@ KIND_AUTH_TOKEN = "auth_token"
 KIND_SDK_DEFAULT = "sdk_default"
 KIND_NONE = "none"
 
+# --------------------------------------------------------------------------- #
+# Ilerleme olayi onem dereceleri
+# --------------------------------------------------------------------------- #
+# Konsol rengini BU alan belirler. Mesajin metnine bakmak ("UYARI ile mi
+# basliyor") dile bagimlidir ve arayuz cevrildigi anda sessizce bozulur; bu
+# yuzden severity olayin kendisinde tasiniyor.
+PROGRESS_INFO = "info"
+PROGRESS_SUCCESS = "success"
+PROGRESS_WARNING = "warning"
+PROGRESS_ERROR = "error"
+PROGRESS_LEVELS = (PROGRESS_INFO, PROGRESS_SUCCESS, PROGRESS_WARNING, PROGRESS_ERROR)
+
 DEFAULT_SETTINGS: Dict[str, Any] = {
     "provider": PROVIDER_ANTHROPIC,
     "model": DEFAULT_MODELS[PROVIDER_ANTHROPIC],

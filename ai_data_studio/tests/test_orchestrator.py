@@ -60,7 +60,11 @@ class TestSelfHealingLoop(unittest.TestCase):
         client = fake_llm.FakeLLMClient([fake_llm.BROKEN_RUNTIME_CODE])
         with self.assertRaises(GenerationFailedError) as ctx:
             generate_and_execute(self.schema, client, max_retries=3, timeout=90)
-        self.assertIn("3 denemede", str(ctx.exception))
+        from ai_data_studio.i18n import t as _t
+
+        # Sablonun ilk satiri dilden bagimsiz karsilastirma noktasi.
+        first_line = _t("codegen.gave_up", attempts=3, error="").splitlines()[0]
+        self.assertIn(first_line, str(ctx.exception))
 
     def test_forbidden_import_is_reported_as_feedback(self):
         """SecurityError sandbox'ta yakalanip LLM'e geri beslenmeli, sizmamali."""
@@ -184,7 +188,10 @@ class TestOrchestratorEndToEnd(unittest.TestCase):
         client = fake_llm.FakeLLMClient([fake_llm.BROKEN_RUNTIME_CODE, fake_llm.GOOD_CODE])
         events, result = self._run(client)
         self.assertEqual(result.generation_meta["attempts"], 2)
-        self.assertTrue(any("duzeltiliyor" in e["message"] for e in events))
+        from ai_data_studio.i18n import t as _t
+
+        self.assertTrue(any(_t("codegen.feeding_back") in e["message"]
+                            for e in events))
 
     def test_failure_is_recorded_in_state(self):
         client = fake_llm.FakeLLMClient([fake_llm.BROKEN_RUNTIME_CODE])
@@ -195,7 +202,10 @@ class TestOrchestratorEndToEnd(unittest.TestCase):
                 next(iterator)
         job = self.state.list_jobs(1)[0]
         self.assertEqual(job["status"], STATUS_FAILED)
-        self.assertIn("denemede başarılı kod üretilemedi", job["error"])
+        from ai_data_studio.i18n import t as _t
+
+        first_line = _t("codegen.gave_up", attempts=3, error="").splitlines()[0]
+        self.assertIn(first_line, job["error"])
 
     def test_cancel_stops_pipeline(self):
         cancel = threading.Event()
@@ -298,6 +308,131 @@ class TestPipelineWorker(unittest.TestCase):
         self.assertIsInstance(events[-1][1], str)
 
 
+class TestProgressLevels(unittest.TestCase):
+    """İlerleme olayları önem derecesini KENDİLERİ taşımalı.
+
+    Arayüz eskiden mesajın metninde "uyari"/"hata" arıyordu. Metne bağlı bir
+    eşleşme, mesajlar çevrildiği anda sessizce bozulur ve uyarılar normal
+    satır gibi görünür.
+    """
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        from ai_data_studio.core.state_manager import StateManager
+
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._tmp.name)
+        self.state = StateManager(self.tmp / "state.db")
+
+    def tearDown(self):
+        self.state.close()
+        self._tmp.cleanup()
+
+    def _events(self, client=None, **overrides):
+        import threading
+        from ai_data_studio.core import orchestrator
+        from ai_data_studio.tests import fake_llm
+
+        params = dict(domain_prompt="e-ticaret", provider="fake", row_count=2000,
+                      export_formats=["csv"], output_dir=self.tmp / "out")
+        params.update(overrides)
+        cfg = orchestrator.PipelineConfig(**params)
+        iterator = orchestrator.run_pipeline(
+            cfg, threading.Event(), self.state,
+            llm_client=client or fake_llm.FakeLLMClient())
+        events = []
+        while True:
+            try:
+                events.append(next(iterator))
+            except StopIteration:
+                return events
+
+    def test_every_event_carries_a_valid_level(self):
+        from ai_data_studio import config
+
+        for event in self._events():
+            self.assertIn("level", event, event["message"])
+            self.assertIn(event["level"], config.PROGRESS_LEVELS, event["message"])
+
+    def test_default_level_is_info(self):
+        from ai_data_studio import config
+
+        events = self._events()
+        self.assertTrue(any(e["level"] == config.PROGRESS_INFO for e in events))
+
+    def test_warnings_are_marked_as_warnings(self):
+        """Şema uyarıları metinden değil alandan anlaşılmalı."""
+        import json
+        from ai_data_studio import config
+        from ai_data_studio.tests import fake_llm
+
+        # Bilinmeyen kolona bakan bir korelasyon kurali sema UYARISI uretir
+        # (hata degil: kural dusurulur, kosu devam eder).
+        schema = json.loads(json.dumps(fake_llm.SCHEMA_JSON))
+        schema["correlations"].append({"columns": ["boyle_bir_kolon_yok", "item_count"],
+                                      "expected_sign": "positive", "min_r": 0.3})
+        client = fake_llm.FakeLLMClient(
+            schema_override="```json\n%s\n```" % json.dumps(schema))
+
+        events = self._events(client=client)
+        warnings = [e for e in events if e["level"] == config.PROGRESS_WARNING]
+        self.assertTrue(warnings, "hicbir olay uyari olarak isaretlenmedi")
+
+    def test_sandbox_step_comes_from_a_flag_not_the_word_sandbox(self):
+        """Adım numarası mesajda 'sandbox' kelimesi aranarak seçilmemeli."""
+        events = self._events()
+        sandbox_events = [e for e in events if e["step"] == 5 and e["percent"] < 100]
+        self.assertTrue(sandbox_events, "sandbox adimi hic raporlanmadi")
+
+    def test_generator_passes_level_through(self):
+        """Kod üretimi başarısız olduğunda satır uyarı seviyesinde gelmeli."""
+        from ai_data_studio import config
+        from ai_data_studio.core.generator import generate_and_execute
+        from ai_data_studio.core.schema_contract import SchemaContract
+        from ai_data_studio.tests import fake_llm
+
+        seen = []
+        client = fake_llm.FakeLLMClient([fake_llm.BROKEN_RUNTIME_CODE,
+                                         fake_llm.GOOD_CODE])
+        schema = SchemaContract.from_dict({**fake_llm.SCHEMA_JSON,
+                                           "row_count_target": 1000})
+        generate_and_execute(schema, client, timeout=90,
+                             on_progress=lambda m, lv=config.PROGRESS_INFO,
+                             sb=False: seen.append((m, lv)))
+
+        self.assertTrue([m for m, lv in seen if lv == config.PROGRESS_WARNING],
+                        "basarisiz deneme uyari olarak bildirilmedi")
+
+    def test_validator_passes_level_through(self):
+        """Korelasyon uyarısı validator'dan uyarı seviyesiyle çıkmalı."""
+        import pandas as pd
+        from ai_data_studio import config
+        from ai_data_studio.core import validator
+        from ai_data_studio.core.schema_contract import SchemaContract
+
+        schema = SchemaContract.from_dict({
+            "domain": "test", "description": "test", "row_count_target": 300,
+            "columns": [
+                {"name": "a", "type": "float", "min": 0, "max": 100},
+                {"name": "b", "type": "float", "min": 0, "max": 100},
+            ],
+            "correlations": [{"columns": ["a", "b"], "expected_sign": "positive",
+                              "min_r": 0.9}],
+        })
+        rng = __import__("numpy").random.default_rng(3)
+        df = pd.DataFrame({"a": rng.uniform(0, 100, 300),
+                           "b": rng.uniform(0, 100, 300)})
+
+        seen = []
+        validator.run_validation(
+            df, schema,
+            on_progress=lambda m, lv=config.PROGRESS_INFO: seen.append((m, lv)))
+
+        self.assertTrue([m for m, lv in seen if lv == config.PROGRESS_WARNING],
+                        "karsilanmayan korelasyon uyari olarak bildirilmedi")
+
+
 if __name__ == "__main__":
     unittest.main()
 
@@ -360,7 +495,10 @@ class TestSchemaSelfHealing(unittest.TestCase):
         client = self._client(["hâlâ JSON değil"])
         with self.assertRaises(SchemaValidationError) as ctx:
             client.generate_schema("test", row_count=100, seed=1)
-        self.assertIn("denemede geçerli Schema Contract üretilemedi", str(ctx.exception))
+        from ai_data_studio.i18n import t
+
+        self.assertIn(t("service.error.schema_retries", attempts=3,
+                        error="").split(".")[0], str(ctx.exception))
 
     def test_user_settings_still_override_after_retry(self):
         import json
@@ -865,12 +1003,17 @@ class TestProjectPlannerPipeline(unittest.TestCase):
 
     # -- konsol dokumu ----------------------------------------------------- #
     def test_console_explains_the_decisions(self):
+        from ai_data_studio.i18n import t
+
         events, _ = self._run()
         text = "\n".join(e["message"] for e in events)
-        self.assertIn("Hedef değişken", text)
-        self.assertIn("Sınıf dengesi", text)
+        # Karsilastirma katalog uzerinden: metin dile bagli, anahtar degil.
+        self.assertIn(t("run.plan.target", target="customers.churned"), text)
+        self.assertIn(t("run.plan.class_balance", pct="20.0"), text)
         self.assertIn("cancellation_reason", text)
-        self.assertIn("Train/test", text)
+        self.assertIn(t("run.plan.split", kind="temporal (customers.signup_at)",
+                        reason="gelecegi tahmin ediyoruz; rastgele bolme zaman sizdirir"),
+                      text)
 
     # -- sinir degerler ---------------------------------------------------- #
     def test_single_table_plan_is_allowed(self):
