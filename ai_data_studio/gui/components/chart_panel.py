@@ -133,14 +133,24 @@ class ChartPanel(ctk.CTkFrame):
     def __init__(self, master, **kwargs):
         super().__init__(master, **kwargs)
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(1, weight=1)
+        self.grid_rowconfigure(2, weight=1)
 
-        ctk.CTkLabel(self, text="Validasyon Grafikleri",
+        header = ctk.CTkFrame(self, fg_color="transparent")
+        header.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 4))
+        header.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(header, text="Validasyon Grafikleri",
                      font=ctk.CTkFont(size=13, weight="bold")).grid(
-            row=0, column=0, sticky="w", padx=10, pady=(10, 4)
-        )
+            row=0, column=0, sticky="w")
+
+        # Tablo secici yalnizca cok tablolu kosuda gorunur; tek tabloda panel
+        # eskisiyle birebir ayni kalir.
+        self.table_menu = ctk.CTkOptionMenu(header, values=[""], width=180,
+                                            command=self._on_table_change)
+        self.table_menu.grid(row=0, column=2, sticky="e")
+        self.table_menu.grid_remove()
+
         self.scroll = ctk.CTkScrollableFrame(self, fg_color="transparent")
-        self.scroll.grid(row=1, column=0, sticky="nsew", padx=6, pady=(0, 8))
+        self.scroll.grid(row=2, column=0, sticky="nsew", padx=6, pady=(0, 8))
         self.scroll.grid_columnconfigure(0, weight=1)
 
         self.placeholder = ctk.CTkLabel(
@@ -149,19 +159,71 @@ class ChartPanel(ctk.CTkFrame):
         )
         self.placeholder.grid(row=0, column=0, pady=30)
         self._images: List[ctk.CTkImage] = []   # GC'ye karsi referans tut
+        self._tables: Dict[str, Any] = {}
+        self._contract = None
+        self._report: Dict[str, Any] = {}
 
     def clear(self) -> None:
         for widget in self.scroll.winfo_children():
             widget.destroy()
         self._images.clear()
+        self._tables = {}
+        self._contract = None
+        self._report = {}
+        self.table_menu.grid_remove()
         self.placeholder = ctk.CTkLabel(
             self.scroll, text="Pipeline çalıştırıldıktan sonra grafikler burada görünür.",
             text_color="#8a8a8a",
         )
         self.placeholder.grid(row=0, column=0, pady=30)
 
-    def render(self, df, schema, report: Dict[str, Any]) -> None:
-        """Temiz veri + rapordan grafikleri üretip yerleştirir."""
+    def render(self, df, schema, report: Dict[str, Any], contract=None,
+               tables: Optional[Dict[str, Any]] = None) -> None:
+        """Temiz veri + rapordan grafikleri üretip yerleştirir.
+
+        ``contract`` ve ``tables`` verilirse (çok tablolu koşu) panelin üstünde
+        bir tablo seçici belirir ve seçim değişince yalnız grafikler yeniden
+        çizilir. Tek tabloda ikisi de ``None`` gelir, davranış değişmez.
+        """
+        self._contract = contract
+        self._report = report or {}
+        self._tables = dict(tables or {})
+
+        names = list(self._tables) if (contract is not None and len(self._tables) > 1) else []
+        if names:
+            # Uretim sirasi kullaniciya en anlamli sira: once kok, sonra cocuklar.
+            try:
+                names = [n for n in contract.generation_order() if n in self._tables]
+            except Exception:
+                names.sort()
+            self.table_menu.configure(values=names)
+            self.table_menu.set(contract.root_table if contract.root_table in names
+                                else names[0])
+            self.table_menu.grid()
+        else:
+            self.table_menu.grid_remove()
+
+        self._render_charts(df, schema, report)
+
+    def _on_table_change(self, name: str) -> None:
+        """Tablo seçimi değişti - yalnız grafikleri yeniden çiz."""
+        if not self._tables or self._contract is None:
+            return
+        table_df = self._tables.get(name)
+        if table_df is None:
+            return
+        try:
+            schema = self._contract.table(name)
+        except Exception as exc:
+            log.warning("Tablo şeması bulunamadı (%s): %s", name, exc)
+            return
+        # Ayiklama grafigi tabloya ozgu: iliskiselde her tablonun kendi raporu var.
+        table_report = (self._report.get("tables") or {}).get(name) or self._report
+        self._render_charts(table_df, schema, table_report)
+
+    def _render_charts(self, df, schema, report: Dict[str, Any]) -> None:
+        # Widget'lari once yok et, SONRA yeni listeyi doldur: _images referanslari
+        # CTkImage'lari cop toplayicidan koruyor, sirayi bozmak bellegi buyutur.
         for widget in self.scroll.winfo_children():
             widget.destroy()
         self._images.clear()

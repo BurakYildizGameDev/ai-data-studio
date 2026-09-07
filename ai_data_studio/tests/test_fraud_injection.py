@@ -203,5 +203,90 @@ class TestOrchestratorCLIArgs(unittest.TestCase):
         self.assertEqual(args.fraud_target_col, "fraud_label")
 
 
+class TestFraudTargetTable(unittest.TestCase):
+    """--fraud-table: enjeksiyon artık kök tabloyla sınırlı değil.
+
+    Asıl risk enjeksiyonun kendisi değil, muafiyet: anomali koruması köke
+    sabitliyken çocuk tabloya enjekte edilen satırlar temizlik adımında
+    silinip gidiyordu. Bu yüzden testler "hata vermedi"yi değil, enjekte
+    edilen satırların SAYISINI ölçüyor.
+    """
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        from ai_data_studio.core.state_manager import StateManager
+
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._tmp.name)
+        self.state = StateManager(self.tmp / "state.db")
+
+    def tearDown(self):
+        self.state.close()
+        self._tmp.cleanup()
+
+    def _run(self, **overrides):
+        import threading
+        from ai_data_studio.core import orchestrator
+        from ai_data_studio.tests import fake_llm
+
+        params = dict(domain_prompt="saas faturalama", provider="fake",
+                      row_count=1200, relational=True, inject_fraud=True,
+                      fraud_rate=0.02, contamination=0.05,
+                      export_formats=["csv"], output_dir=self.tmp / "out")
+        params.update(overrides)
+        cfg = orchestrator.PipelineConfig(**params)
+        iterator = orchestrator.run_pipeline(
+            cfg, threading.Event(), self.state,
+            llm_client=fake_llm.FakeRelationalLLMClient())
+        while True:
+            try:
+                next(iterator)
+            except StopIteration as stop:
+                return stop.value
+
+    def test_injects_into_the_named_child_table(self):
+        result = self._run(fraud_table="orders")
+        self.assertIn("is_fraud", result.tables["orders"].columns)
+        self.assertNotIn("is_fraud", result.tables["customers"].columns)
+
+    def test_injected_rows_survive_cleaning_in_a_child_table(self):
+        """Muafiyet enjeksiyonun yapıldığı tabloya bağlı olmasaydı bu test düşerdi.
+
+        Hedef kolon bilerek ``is_fraud`` DEĞİL: validator tanıdığı adları
+        (`is_fraud`, `is_anomaly`, `fraud_label`, ...) kendiliğinden koruyor, o
+        yüzden varsayılan adla koşulan bir test muafiyetin doğru tabloya bağlı
+        olup olmadığını ölçmez. Ölçüm (1.200 satır, `--contamination 0.05`):
+        özel kolon adıyla düzeltmeden önce **0**, düzeltmeden sonra **69** satır
+        sağ kalıyor.
+        """
+        result = self._run(fraud_table="orders", fraud_target_column="suspicious_flag")
+        survivors = int(result.tables["orders"]["suspicious_flag"].astype(float).sum())
+        self.assertGreater(survivors, 0,
+                           "cocuk tabloya enjekte edilen dolandiricilik satirlari silindi")
+
+    def test_root_table_is_untouched_when_a_child_is_targeted(self):
+        result = self._run(fraud_table="orders", fraud_target_column="suspicious_flag")
+        self.assertNotIn("suspicious_flag", result.tables["customers"].columns)
+
+    def test_default_still_targets_the_root_table(self):
+        result = self._run()
+        self.assertIn("is_fraud", result.tables[result.contract.root_table].columns)
+
+    def test_unknown_table_is_rejected(self):
+        with self.assertRaises(ValueError) as ctx:
+            self._run(fraud_table="boyle_bir_tablo_yok")
+        self.assertIn("boyle_bir_tablo_yok", str(ctx.exception))
+
+    def test_cli_exposes_the_flag(self):
+        from ai_data_studio.core import orchestrator
+
+        parser = orchestrator._build_arg_parser()
+        self.assertEqual(parser.parse_args(["--domain", "x"]).fraud_table, "")
+        self.assertEqual(
+            parser.parse_args(["--domain", "x", "--fraud-table", "orders"]).fraud_table,
+            "orders")
+
+
 if __name__ == "__main__":
     unittest.main()

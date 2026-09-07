@@ -255,5 +255,137 @@ class TestValidatorIntegration(unittest.TestCase):
         self.assertTrue(audit_meta["hipaa"]["passed"])
 
 
+class TestPerTablePrivacyAudit(unittest.TestCase):
+    """--audit-table: denetim artık kök tabloyla sınırlı değil.
+
+    Önceki davranışta bayrak açık olsa bile denetim yalnız kök tabloya
+    uygulanıyordu; 4 tablolu bir veri setinde bu, denetimin dörtte birini
+    yapıp tamamını yaptığını sanmak demekti.
+    """
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        from ai_data_studio.core.state_manager import StateManager
+
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._tmp.name)
+        self.state = StateManager(self.tmp / "state.db")
+
+    def tearDown(self):
+        self.state.close()
+        self._tmp.cleanup()
+
+    def _run(self, **overrides):
+        import threading
+        from ai_data_studio.core import orchestrator
+        from ai_data_studio.tests import fake_llm
+
+        params = dict(domain_prompt="saas faturalama", provider="fake",
+                      row_count=1200, relational=True, audit_privacy=True,
+                      export_formats=["csv"], output_dir=self.tmp / "out")
+        params.update(overrides)
+        cfg = orchestrator.PipelineConfig(**params)
+        iterator = orchestrator.run_pipeline(
+            cfg, threading.Event(), self.state,
+            llm_client=fake_llm.FakeRelationalLLMClient())
+        events = []
+        while True:
+            try:
+                events.append(next(iterator))
+            except StopIteration as stop:
+                return events, stop.value
+
+    def _audited_tables(self, result):
+        return sorted(name for name, rep in (result.report.get("tables") or {}).items()
+                      if rep.get("privacy_audit"))
+
+    def test_default_audits_only_the_root_table(self):
+        """Varsayılan davranış bozulmamalı."""
+        _, result = self._run()
+        self.assertEqual(self._audited_tables(result), [result.contract.root_table])
+
+    def test_all_audits_every_table(self):
+        _, result = self._run(audit_table="all")
+        self.assertEqual(self._audited_tables(result),
+                         sorted(result.contract.table_names))
+
+    def test_named_table_audits_only_that_table(self):
+        _, result = self._run(audit_table="orders")
+        self.assertEqual(self._audited_tables(result), ["orders"])
+
+    def test_unknown_table_is_rejected_loudly(self):
+        """Sessiz kabul en kötüsü: kullanıcı denetim yaptığını sanır."""
+        with self.assertRaises(ValueError) as ctx:
+            self._run(audit_table="boyle_bir_tablo_yok")
+        self.assertIn("boyle_bir_tablo_yok", str(ctx.exception))
+        self.assertIn("customers", str(ctx.exception))
+
+    def test_one_markdown_report_per_audited_table(self):
+        _, result = self._run(audit_table="all")
+        for name in result.contract.table_names:
+            key = "privacy_report:%s" % name
+            self.assertIn(key, result.output_paths, "%s icin rapor yazilmadi" % name)
+            from pathlib import Path
+            body = Path(result.output_paths[key]).read_text(encoding="utf-8")
+            self.assertIn("**Tablo:** `%s`" % name, body)
+
+    def test_child_report_says_memorisation_was_not_measured(self):
+        """Seed veri kök tabloya ait; çocuk tabloda boş epsilon 'sorun yok' gibi
+        okunmamalı."""
+        from pathlib import Path
+        _, result = self._run(audit_table="all")
+        child = [n for n in result.contract.table_names
+                 if n != result.contract.root_table][0]
+        body = Path(result.output_paths["privacy_report:%s" % child]).read_text(
+            encoding="utf-8")
+        self.assertIn("ezberleme riski ölçülmedi", body)
+
+    def test_manifest_lists_every_privacy_report(self):
+        import json
+        from pathlib import Path
+        _, result = self._run(audit_table="all")
+        manifest = json.loads(Path(result.output_paths["manifest"]).read_text(
+            encoding="utf-8"))
+        for name in result.contract.table_names:
+            self.assertIn("privacy_report:%s" % name, manifest["files"])
+
+    def test_single_table_output_name_is_unchanged(self):
+        """Tek tabloda dosya adı ve çıktı anahtarı birebir eskisi gibi kalmalı."""
+        import threading
+        from ai_data_studio.core import orchestrator
+        from ai_data_studio.tests import fake_llm
+
+        cfg = orchestrator.PipelineConfig(
+            domain_prompt="e-ticaret", provider="fake", row_count=1200,
+            audit_privacy=True, export_formats=["csv"], output_dir=self.tmp / "out2")
+        iterator = orchestrator.run_pipeline(cfg, threading.Event(), self.state,
+                                             llm_client=fake_llm.FakeLLMClient())
+        while True:
+            try:
+                next(iterator)
+            except StopIteration as stop:
+                result = stop.value
+                break
+
+        self.assertIn("privacy_report", result.output_paths)
+        self.assertTrue(result.output_paths["privacy_report"].endswith(
+            "_privacy_report.md"))
+        from pathlib import Path
+        body = Path(result.output_paths["privacy_report"]).read_text(encoding="utf-8")
+        self.assertNotIn("**Tablo:**", body)
+
+
+class TestAuditTableCli(unittest.TestCase):
+    def test_flag_exists_and_defaults_to_root(self):
+        from ai_data_studio.core import orchestrator
+
+        parser = orchestrator._build_arg_parser()
+        self.assertEqual(parser.parse_args(["--domain", "x"]).audit_table, "")
+        self.assertEqual(
+            parser.parse_args(["--domain", "x", "--audit-table", "all"]).audit_table,
+            "all")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -479,6 +479,216 @@ class TestEngineControls(unittest.TestCase):
             self._inputs()
 
 
+def _relational_report():
+    return {
+        "rows_in": 100, "rows_out": 90, "retention_pct": 90.0, "stages": [],
+        "relational": {
+            "pass": False,
+            "repair_enabled": True,
+            "row_counts": {"customers": 2000, "orders": 5600},
+            "repair": {"removed_total": 12},
+            "foreign_keys": [{"relationship": "customers.customer_id -> orders.customer_id",
+                              "orphan_rows": 3, "orphan_pct": 0.05, "pass": False}],
+            "cardinality": [{"relationship": "customers.customer_id -> orders.customer_id",
+                             "observed_mean": 2.80, "expected_mean": 3.00,
+                             "pass": False, "violations": ["ortalama 2.80, beklenen 3.00"]}],
+            "primary_keys": [{"table": "orders", "primary_key": "order_id", "pass": True}],
+        },
+    }
+
+
+class TestRelationalLines(unittest.TestCase):
+    """İlişkisel özet metni - grafik ortamı gerektirmez."""
+
+    def test_empty_for_single_table_runs(self):
+        from ai_data_studio.gui.views.pipeline_view import relational_lines
+        self.assertEqual(relational_lines({}), [])
+        self.assertEqual(relational_lines({"rows_in": 10}), [])
+
+    def test_reports_row_counts_orphans_and_cardinality(self):
+        from ai_data_studio.gui.views.pipeline_view import relational_lines
+
+        text = "\n".join(relational_lines(_relational_report()))
+        self.assertIn("BAŞARISIZ", text)
+        self.assertIn("2,000", text)
+        self.assertIn("5,600", text)
+        self.assertIn("İHLAL", text)
+        self.assertIn("SAPMA", text)
+        self.assertIn("12", text)
+
+    def test_says_when_orphan_repair_is_off(self):
+        from ai_data_studio.gui.views.pipeline_view import relational_lines
+
+        report = _relational_report()
+        report["relational"]["repair_enabled"] = False
+        self.assertIn("KAPALI", "\n".join(relational_lines(report)))
+
+
+@unittest.skipUnless(GUI_AVAILABLE, "Grafik ortami yok")
+class TestRelationalControls(unittest.TestCase):
+    """Pipeline ekranındaki ilişkisel anahtarlar CLI bayraklarıyla eşleşmeli."""
+
+    def setUp(self):
+        from unittest import mock
+        from ai_data_studio import config
+        self._settings_patch = mock.patch.object(
+            config, "load_settings", return_value=dict(config.DEFAULT_SETTINGS)
+        )
+        self._settings_patch.start()
+        self.addCleanup(self._settings_patch.stop)
+
+        from ai_data_studio.gui.app_window import AppWindow
+        self.app = make_tk(AppWindow)
+        self.app.withdraw()
+        self.app.update_idletasks()
+        self.view = self.app.pipeline_view
+
+    def tearDown(self):
+        try:
+            self.app.destroy()
+        except Exception:
+            pass
+
+    def _inputs(self):
+        from unittest import mock
+        selector = self.view.model_selector
+        with mock.patch.object(type(selector), "is_ready", return_value=True):
+            return self.view.collect_inputs()
+
+    def test_defaults_are_single_table(self):
+        inputs = self._inputs()
+        self.assertFalse(inputs["relational"])
+        self.assertTrue(inputs["repair_orphans"])
+
+    def test_enabling_reaches_pipeline_config(self):
+        from ai_data_studio.core.orchestrator import PipelineConfig
+
+        self.view.relational_var.set(True)
+        self.view._toggle_relational()
+        self.view.max_tables_entry.delete(0, "end")
+        self.view.max_tables_entry.insert(0, "4")
+        self.view.repair_orphans_var.set(False)
+
+        cfg = PipelineConfig(**self._inputs())
+        self.assertTrue(cfg.relational)
+        self.assertEqual(cfg.max_tables, 4)
+        self.assertFalse(cfg.repair_orphans)
+
+    def test_project_mode_disables_the_relational_switch(self):
+        """Proje kipinde tablo sayısına planlayıcı karar verir - iki anahtar
+        çelişemez."""
+        from ai_data_studio.gui.views.pipeline_view import MODE_PROJECT
+
+        self.view.relational_var.set(True)
+        self.view._toggle_relational()
+        self.view.mode_selector.set(MODE_PROJECT)
+        self.view._on_mode_change(MODE_PROJECT)
+
+        self.assertFalse(self.view.relational_var.get())
+        self.assertEqual(str(self.view.relational_check.cget("state")), "disabled")
+        self.assertFalse(self._inputs()["relational"])
+
+    def test_parametric_engine_with_relational_is_rejected_in_the_form(self):
+        """Geç kalan bir hata yerine formda söylenmeli."""
+        from ai_data_studio.core.orchestrator import ENGINE_PARAMETRIC
+        from ai_data_studio.gui.views.pipeline_view import _engine_label
+
+        self.view.relational_var.set(True)
+        self.view._toggle_relational()
+        self.view.engine_menu.set(_engine_label(ENGINE_PARAMETRIC))
+        with self.assertRaises(ValueError) as ctx:
+            self._inputs()
+        self.assertIn("çok tablolu", str(ctx.exception))
+
+    def test_table_count_bounds_are_enforced(self):
+        self.view.relational_var.set(True)
+        self.view._toggle_relational()
+        for bad in ("1", "13", "abc"):
+            self.view.max_tables_entry.delete(0, "end")
+            self.view.max_tables_entry.insert(0, bad)
+            with self.assertRaises(ValueError):
+                self._inputs()
+
+
+@unittest.skipUnless(GUI_AVAILABLE, "Grafik ortami yok")
+class TestChartPanelTableSelector(unittest.TestCase):
+    """Grafik paneli çok tablolu koşuda tablo seçici gösterir."""
+
+    def setUp(self):
+        import customtkinter as ctk
+        from ai_data_studio.gui.components.chart_panel import ChartPanel
+
+        self.root = make_tk(ctk.CTk)
+        self.root.withdraw()
+        self.panel = ChartPanel(self.root)
+        self.panel.pack()
+
+    def tearDown(self):
+        try:
+            self.root.destroy()
+        except Exception:
+            pass
+
+    def _two_tables(self):
+        import pandas as pd
+        from ai_data_studio.core.dataset_contract import DatasetContract
+        from ai_data_studio.tests.fake_llm import DATASET_CONTRACT_JSON
+
+        contract = DatasetContract.from_dict(DATASET_CONTRACT_JSON)
+        tables = {
+            "customers": pd.DataFrame({"customer_id": range(50),
+                                       "tenure_months": range(50),
+                                       "monthly_fee": [float(i) for i in range(50)]}),
+            "orders": pd.DataFrame({"order_id": range(80), "customer_id": range(80),
+                                    "order_amount": [float(i) for i in range(80)]}),
+        }
+        return contract, tables
+
+    def test_selector_is_hidden_for_a_single_table(self):
+        import pandas as pd
+        from ai_data_studio.core.schema_contract import SchemaContract
+        from ai_data_studio.tests.fake_llm import SCHEMA_JSON
+
+        schema = SchemaContract.from_dict(SCHEMA_JSON)
+        df = pd.DataFrame({c.name: [1, 2, 3] for c in schema.columns})
+        self.panel.render(df, schema, {"stages": []})
+        self.root.update_idletasks()
+        self.assertEqual(self.panel.table_menu.winfo_manager(), '')
+
+    def test_selector_lists_every_table_in_generation_order(self):
+        contract, tables = self._two_tables()
+        self.panel.render(tables["customers"], contract.table("customers"),
+                          {"stages": []}, contract=contract, tables=tables)
+        self.root.update_idletasks()
+        self.assertEqual(self.panel.table_menu.winfo_manager(), 'grid')
+        self.assertEqual(list(self.panel.table_menu.cget("values")),
+                         list(contract.generation_order()))
+        self.assertEqual(self.panel.table_menu.get(), contract.root_table)
+
+    def test_switching_table_redraws_without_leaking_images(self):
+        """Eski görüntüler temizlenmeli: _images listesi çöp toplayıcıya karşı
+        referans tutuyor, temizlenmezse bellek büyür."""
+        contract, tables = self._two_tables()
+        self.panel.render(tables["customers"], contract.table("customers"),
+                          {"stages": []}, contract=contract, tables=tables)
+        first = len(self.panel._images)
+        self.assertGreater(first, 0)
+
+        self.panel._on_table_change("orders")
+        self.root.update_idletasks()
+        self.assertGreater(len(self.panel._images), 0)
+        self.assertLessEqual(len(self.panel._images), first + 1)
+
+    def test_clear_hides_the_selector_again(self):
+        contract, tables = self._two_tables()
+        self.panel.render(tables["customers"], contract.table("customers"),
+                          {"stages": []}, contract=contract, tables=tables)
+        self.panel.clear()
+        self.root.update_idletasks()
+        self.assertEqual(self.panel.table_menu.winfo_manager(), '')
+        self.assertEqual(self.panel._images, [])
+
+
 @unittest.skipUnless(GUI_AVAILABLE, "Grafik ortami yok")
 class TestChartRendering(unittest.TestCase):
     """Matplotlib Agg backend ve CTkImage render deseni."""

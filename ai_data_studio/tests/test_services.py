@@ -698,5 +698,76 @@ class TestAgyStreamRunner(unittest.TestCase):
         self.assertEqual(code, 3)
 
 
+class TestMultiTableDatasetCard(unittest.TestCase):
+    """Çok tablolu kart: tablo listesi + ilişki şeması.
+
+    Kart LLM olmadan da doğru olmalı, o yüzden bölümler deterministik şablonda
+    üretiliyor. Tek tablo çıktısı birebir korunur - yeni bölümler yalnız
+    ilişkiselde görünür.
+    """
+
+    def setUp(self):
+        from ai_data_studio.core.dataset_contract import DatasetContract
+        from ai_data_studio.tests.fake_llm import DATASET_CONTRACT_JSON
+
+        self.contract = DatasetContract.from_dict(DATASET_CONTRACT_JSON)
+        self.schema = self.contract.table(self.contract.root_table)
+        self.report = {
+            "rows_in": 8000, "rows_out": 7600, "retention_pct": 95.0,
+            "business_rules": [], "correlations": [],
+            "distributions": {"skipped": True}, "column_stats": {},
+            "relational": {"row_counts": {"customers": 2000, "orders": 5600}},
+        }
+
+    def test_lists_every_table_with_its_key_and_size(self):
+        card = hf_service.build_dataset_card(self.schema, self.report,
+                                             contract=self.contract)
+        self.assertIn("## Tables", card)
+        for name in self.contract.table_names:
+            self.assertIn("`%s`" % name, card)
+        self.assertIn("2,000", card)
+        self.assertIn("5,600", card)
+        self.assertIn("`customer_id`", card)
+
+    def test_documents_the_relationship_schema(self):
+        card = hf_service.build_dataset_card(self.schema, self.report,
+                                             contract=self.contract)
+        self.assertIn("## Relationships", card)
+        for rel in self.contract.relationships:
+            self.assertIn("`%s.%s`" % (rel.parent_table, rel.parent_key), card)
+            self.assertIn("`%s.%s`" % (rel.child_table, rel.child_key), card)
+
+    def test_says_which_table_this_repo_actually_holds(self):
+        """Sadece kök tablo yükleniyor; tablo listesini gören okuyucu hepsinin
+        burada olduğunu sanmamalı."""
+        card = hf_service.build_dataset_card(self.schema, self.report,
+                                             contract=self.contract)
+        self.assertIn("This repository holds the root table", card)
+        self.assertIn("| In this repo |", card)
+
+    def test_single_table_card_is_unchanged(self):
+        """N=1 aynı koddan geçer ama çıktıya hiçbir şey eklemez."""
+        from ai_data_studio.core.dataset_contract import DatasetContract
+
+        single = DatasetContract.from_schema(SchemaContract.from_dict(SCHEMA_JSON))
+        report = {"rows_in": 100, "rows_out": 90, "retention_pct": 90.0,
+                  "business_rules": [], "correlations": [],
+                  "distributions": {"skipped": True}, "column_stats": {}}
+
+        without = hf_service.build_dataset_card(single.table(single.root_table), report)
+        with_contract = hf_service.build_dataset_card(
+            single.table(single.root_table), report, contract=single)
+        self.assertEqual(without, with_contract)
+        self.assertNotIn("## Tables", with_contract)
+        self.assertNotIn("## Relationships", with_contract)
+
+    def test_falls_back_to_contract_targets_when_report_is_empty(self):
+        """Rapor satır sayısı taşımıyorsa sözleşmedeki hedef kullanılmalı."""
+        card = hf_service.build_dataset_card(self.schema, {}, contract=self.contract)
+        self.assertIn("## Tables", card)
+        self.assertNotIn("| - |", card.split("## Relationships")[0].replace(
+            "| Table | Rows | Primary key | Columns | In this repo |", ""))
+
+
 if __name__ == "__main__":
     unittest.main()

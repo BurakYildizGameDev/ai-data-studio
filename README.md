@@ -211,6 +211,13 @@ python -m ai_data_studio.core.orchestrator \
     --audit-privacy \
     --provider gemini
 
+# Multi-table run: audit every table, inject fraud into a child table.
+python -m ai_data_studio.core.orchestrator \
+    --domain "retail banking customers, accounts and card transactions" \
+    --relational --rows 20000 \
+    --audit-privacy --audit-table all \
+    --inject-fraud --fraud-table transactions
+
 # Fraud Detection with preserved extreme anomalies:
 python -m ai_data_studio.core.orchestrator \
     --domain "credit card transactions with e-commerce fraud patterns" \
@@ -451,8 +458,20 @@ one pass, so this path asks more of the model than single-table generation.
 ### Scope
 
 `--rows` applies to the **root table** only; child table sizes follow from the
-cardinalities in the contract. Fraud injection, the privacy audit, the HuggingFace
-dataset card, and the GUI chart panel apply to the root table in relational mode.
+cardinalities in the contract.
+
+The modules around the pipeline now take a table of their own:
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--audit-table <name\|all>` | root table | Runs the privacy / HIPAA audit per table and writes one `job_<id>_<table>_privacy_report.md` for each. A child table has no reference data, so its report says the memorisation risk was **not measured** rather than leaving an empty epsilon to read as "fine". An unknown table name is rejected instead of silently auditing nothing |
+| `--fraud-table <name>` | root table | Injects the fraud scenario into that table. The anomaly-preservation exemption follows the injection, so injected rows survive cleaning wherever they were put — measured with a custom label column: 0 survivors before, 69 after |
+
+The HuggingFace dataset card lists every table with its primary key and row count plus
+the relationship schema, and states which table the repository actually holds. The
+desktop chart panel gets a table selector. Enrichment engines (`--time-series`,
+`--expand-features`, `--dirty-rate`) still apply to the root table.
+
 Single-table runs are untouched: same flat report shape, same file names, same
 behaviour as before.
 

@@ -439,6 +439,9 @@ def run_validation(
     preserve_anomaly_column: Optional[str] = None,
     preserve_anomaly_value: Any = None,
     audit_privacy: bool = False,
+    # Cok tablolu kosuda denetlenen tablonun adi; gizlilik raporunun basligina
+    # girer. Tek tabloda bos kalir ve rapor metni birebir eskisi gibi uretilir.
+    audit_table_name: str = "",
     cancel_event: Optional[threading.Event] = None,
     on_progress: Optional[Callable[[str], None]] = None,
     reference_df: Optional[pd.DataFrame] = None,
@@ -668,7 +671,8 @@ def run_validation(
     if audit_privacy or seed_df is not None:
         try:
             from .privacy_auditor import audit_dataset_privacy
-            priv_rep = audit_dataset_privacy(df, seed_df=seed_df, seed=schema.random_seed)
+            priv_rep = audit_dataset_privacy(df, seed_df=seed_df, seed=schema.random_seed,
+                                             table_name=audit_table_name)
             report["privacy_audit"] = priv_rep.to_dict()
             if priv_rep.dcr and priv_rep.nndr and priv_rep.has_reference_data:
                 emit("  -> Gizlilik & NNDR: DCR=%.4f, NNDR=%.4f (Ezberleme Riski: %s)"

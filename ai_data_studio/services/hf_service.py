@@ -182,13 +182,17 @@ def load_seed_dataframe(dataset_id: str, max_rows: int = 2000,
 # Dataset card (Bolum 6.5)
 # --------------------------------------------------------------------------- #
 def build_dataset_card(schema, report: Optional[Dict[str, Any]] = None,
-                       llm_client=None, repo_id: str = "") -> str:
+                       llm_client=None, repo_id: str = "", contract=None) -> str:
     """push_to_hub oncesi README.md üretir.
 
     LLM verilmisse şema bazli bir kart yazdirilir; LLM yoksa veya çağrı başarısız
     olursa deterministik bir sablona düşülür (push hiçbir zaman kart yuzunden kirilmaz).
+
+    ``contract`` verilir ve cok tabloluysa karta tablo listesi ve iliski semasi
+    eklenir. Tek tablolu sozlesme N=1 ozel durumu olarak ayni koddan gecer ve
+    ciktiya hicbir sey eklenmez - tek tablo karti birebir korunur.
     """
-    stats = _card_stats(schema, report)
+    stats = _card_stats(schema, report, contract)
     if llm_client is not None:
         try:
             card = llm_client.generate_dataset_card(schema, stats)
@@ -200,9 +204,52 @@ def build_dataset_card(schema, report: Optional[Dict[str, Any]] = None,
     return _fallback_card(schema, stats, repo_id)
 
 
-def _card_stats(schema, report: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+def _relational_stats(contract, report: Dict[str, Any]) -> Dict[str, Any]:
+    """Sözleşmeden tablo listesi ve ilişki şeması çıkarır (tek tabloda boş).
+
+    Satir sayilari rapordan okunur; yoksa sozlesmedeki hedef kullanilir. Kart
+    LLM'siz de dogru olmali, o yuzden buradaki her sey deterministik.
+    """
+    if contract is None or not getattr(contract, "is_relational", False):
+        return {}
+
+    row_counts = ((report.get("relational") or {}).get("row_counts")) or {}
+    table_reports = report.get("tables") or {}
+    tables = []
+    for name in contract.table_names:
+        table = contract.table(name)
+        rows = row_counts.get(name)
+        if rows is None:
+            rows = (table_reports.get(name) or {}).get("rows_out")
+        if rows is None:
+            rows = getattr(table, "row_count_target", None)
+        tables.append({
+            "name": name,
+            "rows": rows,
+            "primary_key": getattr(table, "primary_key", None),
+            "columns": len(table.columns),
+            "is_root": name == contract.root_table,
+        })
+    return {
+        "root_table": contract.root_table,
+        "tables": tables,
+        "relationships": [
+            {
+                "parent_table": rel.parent_table,
+                "parent_key": rel.parent_key,
+                "child_table": rel.child_table,
+                "child_key": rel.child_key,
+                "mean_per_parent": rel.mean_per_parent,
+            }
+            for rel in contract.relationships
+        ],
+    }
+
+
+def _card_stats(schema, report: Optional[Dict[str, Any]], contract=None) -> Dict[str, Any]:
     report = report or {}
     return {
+        "relational": _relational_stats(contract, report),
         "rows_generated": report.get("rows_in"),
         "rows_after_validation": report.get("rows_out"),
         "retention_pct": report.get("retention_pct"),
@@ -294,6 +341,56 @@ def _engine_section(stats: Dict[str, Any]) -> List[str]:
     return lines
 
 
+def _relational_section(stats: Dict[str, Any]) -> List[str]:
+    """Çok tablolu veri setinde tablo listesi ve ilişki şeması (tek tabloda boş).
+
+    Bu depoya yalnizca KOK tablo yukleniyor; kart bunu acikca soylemeli, yoksa
+    tablo listesini goren okuyucu hepsinin burada oldugunu saniyor.
+    """
+    rel = stats.get("relational") or {}
+    tables = rel.get("tables") or []
+    if not tables:
+        return []
+
+    lines = [
+        "## Tables",
+        "",
+        "This dataset was generated as a **multi-table** set with enforced foreign-key "
+        "integrity. This repository holds the root table (`%s`); the tables below are "
+        "part of the same contract." % rel.get("root_table", ""),
+        "",
+        "| Table | Rows | Primary key | Columns | In this repo |",
+        "|---|---:|---|---:|---|",
+    ]
+    for table in tables:
+        rows = format(table["rows"], ",") if isinstance(table["rows"], int) else "-"
+        lines.append("| `%s` | %s | %s | %d | %s |" % (
+            table["name"], rows,
+            "`%s`" % table["primary_key"] if table["primary_key"] else "-",
+            table["columns"], "yes" if table["is_root"] else "no"))
+    lines.append("")
+
+    relationships = rel.get("relationships") or []
+    if relationships:
+        lines += [
+            "## Relationships",
+            "",
+            "| Parent | Child | Foreign key | Mean children per parent |",
+            "|---|---|---|---:|",
+        ]
+        for r in relationships:
+            lines.append("| `%s.%s` | `%s.%s` | `%s` | %.2f |" % (
+                r["parent_table"], r["parent_key"], r["child_table"], r["child_key"],
+                r["child_key"], float(r.get("mean_per_parent") or 0.0)))
+        lines += [
+            "",
+            "Every foreign key was checked against its parent after generation; "
+            "orphan rows were repaired or reported before export.",
+            "",
+        ]
+    return lines
+
+
 def _fallback_card(schema, stats: Dict[str, Any], repo_id: str = "") -> str:
     rows_out = stats.get("rows_after_validation")
     size_cat = _size_category(rows_out or 0)
@@ -325,6 +422,8 @@ def _fallback_card(schema, stats: Dict[str, Any], repo_id: str = "") -> str:
     ]
     if schema.description:
         lines += [schema.description, ""]
+
+    lines += _relational_section(stats)
 
     lines += ["## Columns", "", "| Column | Type | Description |", "|---|---|---|"]
     for col in schema.columns:
@@ -406,7 +505,8 @@ def push_dataset(df: pd.DataFrame, repo_id: str, schema,
                  report: Optional[Dict[str, Any]] = None,
                  llm_client=None, private: bool = True,
                  token: Optional[str] = None,
-                 commit_message: str = "Add synthetic dataset") -> str:
+                 commit_message: str = "Add synthetic dataset",
+                 contract=None) -> str:
     """Temiz veriyi kullanicinin HF namespace'ine yukler ve dataset card ekler.
 
     Returns:
@@ -435,7 +535,7 @@ def push_dataset(df: pd.DataFrame, repo_id: str, schema,
 
     # Dataset card - basarisiz olsa bile push'u gecersiz kilmaz.
     try:
-        card = build_dataset_card(schema, report, llm_client, repo_id)
+        card = build_dataset_card(schema, report, llm_client, repo_id, contract=contract)
         _api(hf_token).upload_file(
             path_or_fileobj=card.encode("utf-8"),
             path_in_repo="README.md",

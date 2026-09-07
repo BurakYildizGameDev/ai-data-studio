@@ -192,6 +192,9 @@ class PrivacyAuditReport:
     """Bütünleşik Gizlilik ve HIPAA Denetim Raporu."""
 
     has_reference_data: bool = False
+    # Cok tablolu kosuda hangi tablonun denetlendigi. Tek tabloda BOS birakilir:
+    # tek tablo ciktisi (dosya adi ve markdown govdesi) birebir korunuyor.
+    table_name: str = ""
     dcr: Optional[DCRResult] = None
     nndr: Optional[NNDRResult] = None
     empirical_epsilon: Optional[float] = None
@@ -202,6 +205,7 @@ class PrivacyAuditReport:
     def to_dict(self) -> Dict[str, Any]:
         return {
             "has_reference_data": self.has_reference_data,
+            "table_name": self.table_name,
             "overall_privacy_status": self.overall_privacy_status,
             "privacy_guarantee": self.privacy_guarantee,
             "empirical_epsilon": self.empirical_epsilon,
@@ -232,6 +236,10 @@ class PrivacyAuditReport:
         lines = [
             "# HIPAA Safe Harbor & Diferansiyel Gizlilik Denetim Raporu",
             "**Standard:** HIPAA Safe Harbor (45 CFR § 164.514(b)) & NNDR/DCR Memorization Audit",
+        ]
+        if self.table_name:
+            lines.append("**Tablo:** `%s`" % self.table_name)
+        lines += [
             "",
             "## 1. Yönetici Özeti",
             "- **Genel Gizlilik Durumu:** `%s`" % self.overall_privacy_status,
@@ -245,7 +253,14 @@ class PrivacyAuditReport:
             "## 2. Referans Veri Ezberleme (Memorization) Analizi",
         ]
         if not self.has_reference_data or not self.dcr:
-            lines.append("*Referans (seed) veri sağlanmadığı için DCR/NNDR karşılaştırması atlandı. Veri sıfırdan sentetik üretildi.*")
+            # Cok tablolu kosuda seed veri KOK tabloya ait; cocuk tablolar icin
+            # referans yok. "Sifirdan uretildi" demek burada yaniltici olurdu -
+            # bos bir epsilon sessizce "sorun yok" gibi okunmamali.
+            lines.append(
+                "*Bu tablo için referans (seed) veri yok; DCR/NNDR karşılaştırması "
+                "yapılamadı, yani **ezberleme riski ölçülmedi**.*"
+                if self.table_name else
+                "*Referans (seed) veri sağlanmadığı için DCR/NNDR karşılaştırması atlandı. Veri sıfırdan sentetik üretildi.*")
         else:
             lines += [
                 "Sentetik verinin referans hasta/müşteri kayıtlarını birebir kopyalamadığını teyit etmek için En Yakın Komşu analizi uygulanmıştır:",
@@ -606,7 +621,14 @@ def audit_dataset_privacy(
     seed_df: Optional[pd.DataFrame] = None,
     sample_size: int = 2000,
     seed: int = 42,
+    table_name: str = "",
 ) -> PrivacyAuditReport:
-    """Tek fonksiyonla tam gizlilik ve HIPAA denetimi gerçekleştirir."""
+    """Tek fonksiyonla tam gizlilik ve HIPAA denetimi gerçekleştirir.
+
+    ``table_name`` yalnizca cok tablolu kosuda doldurulur; rapor o zaman hangi
+    tabloya ait oldugunu basliginda soyler.
+    """
     auditor = PrivacyAuditor(sample_size=sample_size, random_seed=seed)
-    return auditor.audit(synth_df, seed_df)
+    report = auditor.audit(synth_df, seed_df)
+    report.table_name = table_name
+    return report

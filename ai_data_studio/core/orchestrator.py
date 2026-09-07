@@ -107,7 +107,12 @@ class PipelineConfig:
     inject_fraud: bool = False
     fraud_rate: float = 0.005
     fraud_target_column: str = "is_fraud"
+    # Enjeksiyonun uygulanacagi tablo: bos -> kok tablo (bugunku davranis).
+    fraud_table: str = ""
     audit_privacy: bool = False
+    # Hangi tablo(lar) gizlilik denetiminden gecsin: bos -> yalniz kok tablo
+    # (bugunku davranis), "all" -> butun tablolar, tablo adi -> yalniz o tablo.
+    audit_table: str = ""
     # Cok tablolu (iliskisel) uretim. Kapaliyken davranis birebir eskisi gibidir:
     # tek Schema Contract, tek DataFrame, duz rapor, ayni dosya adlari.
     relational: bool = False
@@ -357,6 +362,26 @@ def run_pipeline(cfg: PipelineConfig,
             yield from _plan_detail_events(plan, progress)
         yield from _schema_detail_events(contract, progress)
 
+        # Gecersiz bir --audit-table SESSIZCE kabul edilmemeli: kullanici denetim
+        # yaptigini sanip hic yapmamis olur. Sozlesme ancak burada bilindigi icin
+        # kontrol bu noktada.
+        if cfg.fraud_table and cfg.fraud_table not in contract.table_names:
+            raise ValueError(
+                "--fraud-table '%s' sözleşmede yok. Geçerli tablolar: %s"
+                % (cfg.fraud_table, ", ".join(contract.table_names))
+            )
+        if cfg.audit_table and cfg.audit_table.lower() != "all":
+            if cfg.audit_table not in contract.table_names:
+                raise ValueError(
+                    "--audit-table '%s' sözleşmede yok. Geçerli tablolar: %s (ya da 'all')"
+                    % (cfg.audit_table, ", ".join(contract.table_names))
+                )
+        if cfg.audit_privacy:
+            audited = [n for n in contract.generation_order()
+                       if _should_audit(n, cfg, contract)]
+            yield progress(2, "Gizlilik denetimi yapılacak tablolar: %s"
+                           % ", ".join(audited), 1.0)
+
         # ---------------------------------------------------------------- #
         # [4] + [5] Kod uretimi (self-healing) & sandbox calistirma
         # ---------------------------------------------------------------- #
@@ -468,22 +493,26 @@ def run_pipeline(cfg: PipelineConfig,
                 pass
 
         # Fraud / Anomali Senaryo Enjeksiyonu (isteğe bağlı)
+        fraud_target_table = cfg.fraud_table or contract.root_table
         if cfg.inject_fraud:
             from .fraud_injector import inject_fraud_scenarios
-            # Iliskisel kosuda enjeksiyon KOK tabloya uygulanir (bkz. README).
-            raw_df, fraud_info = inject_fraud_scenarios(
-                raw_df,
+            injected, fraud_info = inject_fraud_scenarios(
+                raw_tables[fraud_target_table],
                 fraud_rate=cfg.fraud_rate,
                 target_column=cfg.fraud_target_column,
                 seed=cfg.random_seed,
             )
-            raw_tables[contract.root_table] = raw_df
+            raw_tables[fraud_target_table] = injected
+            if fraud_target_table == contract.root_table:
+                raw_df = injected
             if not cfg.preserve_anomaly_column:
                 cfg.preserve_anomaly_column = cfg.fraud_target_column
             yield progress(
                 5,
-                "Dolandırıcılık senaryoları enjekte edildi: %d satır (oran: %%%.2f, kolon: %s)"
-                % (fraud_info["injected_fraud_count"], fraud_info["fraud_rate"] * 100, cfg.fraud_target_column),
+                "Dolandırıcılık senaryoları enjekte edildi: %d satır (oran: %%%.2f, "
+                "tablo: %s, kolon: %s)"
+                % (fraud_info["injected_fraud_count"], fraud_info["fraud_rate"] * 100,
+                   fraud_target_table, cfg.fraud_target_column),
                 1.0,
                 fraud=fraud_info,
             )
@@ -573,13 +602,19 @@ def run_pipeline(cfg: PipelineConfig,
                     # Kok tabloya ozgu secenekler (seed karsilastirmasi, anomali
                     # koruma, gizlilik denetimi) yalnizca kok tabloda calisir.
                     is_root = name == contract.root_table
+                    # Anomali muafiyeti, enjeksiyonun YAPILDIGI tabloya baglanir.
+                    # Koke sabitlenseydi, cocuk tabloya enjekte edilen dolandiricilik
+                    # satirlari Z-Score / IsolationForest tarafindan silinir ve kimse
+                    # fark etmezdi.
+                    preserves = name == fraud_target_table if cfg.inject_fraud else is_root
                     clean, rep = validator.run_validation(
                         raw_tables[name], contract.table(name),
                         seed_df=seed_df if is_root else None,
                         z_threshold=cfg.z_threshold, contamination=cfg.contamination,
-                        preserve_anomaly_column=cfg.preserve_anomaly_column if is_root else None,
+                        preserve_anomaly_column=cfg.preserve_anomaly_column if preserves else None,
                         preserve_anomaly_value=cfg.preserve_anomaly_value,
-                        audit_privacy=cfg.audit_privacy and is_root,
+                        audit_privacy=_should_audit(name, cfg, contract),
+                        audit_table_name=name if contract.is_relational else "",
                         cancel_event=cancel_event, on_progress=emit,
                         correlation_guard=cfg.correlation_guard,
                     )
@@ -720,7 +755,7 @@ def run_pipeline(cfg: PipelineConfig,
         if cfg.push_to_hub:
             check_cancel()
             yield progress(7, "HuggingFace'e yükleniyor: %s" % cfg.push_to_hub, 0.8)
-            hub_url = _push_to_hub(clean_df, schema, report, llm_client, cfg)
+            hub_url = _push_to_hub(clean_df, schema, report, llm_client, cfg, contract)
             yield progress(7, "Yüklendi: %s" % hub_url, 0.9, hub_url=hub_url)
 
         cost = state.get_cost_summary(job_id)
@@ -925,6 +960,80 @@ if __name__ == "__main__":
 '''
 
 
+def _privacy_report_from_dict(pa_data: Dict[str, Any]):
+    """Rapordaki sözlüğü tekrar :class:`PrivacyAuditReport` nesnesine çevirir."""
+    from .privacy_auditor import DCRResult, HIPAAAuditResult, NNDRResult, PrivacyAuditReport
+
+    dcr_obj = DCRResult(**pa_data["dcr"]) if pa_data.get("dcr") else None
+    nndr_obj = NNDRResult(**pa_data["nndr"]) if pa_data.get("nndr") else None
+    hipaa_obj = HIPAAAuditResult(
+        identifiers_found=pa_data["hipaa"]["identifiers_found"],
+        age_greater_than_89_count=pa_data["hipaa"]["age_greater_than_89_count"],
+        passed=pa_data["hipaa"]["passed"],
+        summary=pa_data["hipaa"]["summary"],
+    ) if pa_data.get("hipaa") else HIPAAAuditResult()
+    return PrivacyAuditReport(
+        has_reference_data=pa_data.get("has_reference_data", False),
+        table_name=pa_data.get("table_name", ""),
+        dcr=dcr_obj,
+        nndr=nndr_obj,
+        empirical_epsilon=pa_data.get("empirical_epsilon"),
+        privacy_guarantee=pa_data.get("privacy_guarantee", "Standard"),
+        hipaa_audit=hipaa_obj,
+        overall_privacy_status=pa_data.get("overall_privacy_status", "COMPLIANT"),
+    )
+
+
+def _write_privacy_reports(report: Dict[str, Any], contract: DatasetContract,
+                           out_dir: Path, stem: str, job_id: int) -> Dict[str, str]:
+    """Gizlilik denetimi yapılan HER tablo için markdown rapor yazar.
+
+    Tek tabloda dosya adı ve çıktı anahtarı birebir eskisi gibi kalır
+    (``job_<id>_<domain>_privacy_report.md`` / ``privacy_report``); ilişkiselde
+    tablo başına ``job_<id>_<tablo>_privacy_report.md`` yazılır ve anahtar
+    ``privacy_report:<tablo>`` olur.
+    """
+    written: Dict[str, str] = {}
+
+    # (cikti_anahtari, dosya_govde_adi, denetim_sozlugu)
+    targets: List[Tuple[str, str, Dict[str, Any]]] = []
+    if not contract.is_relational:
+        if report.get("privacy_audit"):
+            targets.append(("privacy_report", stem, report["privacy_audit"]))
+    else:
+        for name in contract.generation_order():
+            table_report = (report.get("tables") or {}).get(name) or {}
+            if table_report.get("privacy_audit"):
+                targets.append(("privacy_report:%s" % name,
+                                "job_%d_%s" % (job_id, name),
+                                table_report["privacy_audit"]))
+
+    for key, file_stem, pa_data in targets:
+        try:
+            audit_obj = _privacy_report_from_dict(pa_data)
+            md_path = out_dir / (file_stem + "_privacy_report.md")
+            config.write_text(md_path, audit_obj.to_markdown())
+            written[key] = str(md_path)
+        except Exception as exc:
+            log.warning("Gizlilik raporu markdown yazılamadı (%s): %s", key, exc)
+    return written
+
+
+def _should_audit(name: str, cfg: PipelineConfig, contract: DatasetContract) -> bool:
+    """Bu tablo gizlilik denetiminden geçsin mi?
+
+    ``audit_table`` boşsa yalnız kök tablo denetlenir - eski davranış. ``"all"``
+    bütün tabloları, bir tablo adı yalnız o tabloyu denetler.
+    """
+    if not cfg.audit_privacy:
+        return False
+    if not cfg.audit_table:
+        return name == contract.root_table
+    if cfg.audit_table.lower() == "all":
+        return True
+    return name == cfg.audit_table
+
+
 def _key_columns(contract: DatasetContract) -> set:
     """Sözleşmedeki bütün anahtar kolon adları (küçük harfe indirgenmiş).
 
@@ -1089,32 +1198,7 @@ def _write_outputs(tables: Dict[str, pd.DataFrame], contract: DatasetContract,
         config.write_text(out_dir / (stem + "_plan.json"), plan.to_json())
         paths["plan"] = str(out_dir / (stem + "_plan.json"))
 
-    if "privacy_audit" in report and report["privacy_audit"]:
-        try:
-            from .privacy_auditor import PrivacyAuditReport, DCRResult, NNDRResult, HIPAAAuditResult
-            pa_data = report["privacy_audit"]
-            dcr_obj = DCRResult(**pa_data["dcr"]) if pa_data.get("dcr") else None
-            nndr_obj = NNDRResult(**pa_data["nndr"]) if pa_data.get("nndr") else None
-            hipaa_obj = HIPAAAuditResult(
-                identifiers_found=pa_data["hipaa"]["identifiers_found"],
-                age_greater_than_89_count=pa_data["hipaa"]["age_greater_than_89_count"],
-                passed=pa_data["hipaa"]["passed"],
-                summary=pa_data["hipaa"]["summary"],
-            ) if pa_data.get("hipaa") else HIPAAAuditResult()
-            audit_obj = PrivacyAuditReport(
-                has_reference_data=pa_data.get("has_reference_data", False),
-                dcr=dcr_obj,
-                nndr=nndr_obj,
-                empirical_epsilon=pa_data.get("empirical_epsilon"),
-                privacy_guarantee=pa_data.get("privacy_guarantee", "Standard"),
-                hipaa_audit=hipaa_obj,
-                overall_privacy_status=pa_data.get("overall_privacy_status", "COMPLIANT"),
-            )
-            md_path = out_dir / (stem + "_privacy_report.md")
-            config.write_text(md_path, audit_obj.to_markdown())
-            paths["privacy_report"] = str(md_path)
-        except Exception as exc:
-            log.warning("Gizlilik raporu markdown yazılamadı: %s", exc)
+    paths.update(_write_privacy_reports(report, contract, out_dir, stem, job_id))
 
     if contract.is_relational:
         manifest_path = out_dir / (stem + "_manifest.json")
@@ -1159,16 +1243,18 @@ def _build_manifest(tables: Dict[str, pd.DataFrame], contract: DatasetContract,
             "primary_keys": relational.get("primary_keys", []),
         },
         "files": {k: v for k, v in paths.items()
-                  if k in ("schema", "code", "report", "privacy_report", "plan")},
+                  if k in ("schema", "code", "report", "plan")
+                  or k.split(":", 1)[0] == "privacy_report"},
     }
 
 
 def _push_to_hub(df: pd.DataFrame, schema: SchemaContract, report: Dict[str, Any],
-                 llm_client: BaseLLMClient, cfg: PipelineConfig) -> str:
+                 llm_client: BaseLLMClient, cfg: PipelineConfig,
+                 contract: Optional[DatasetContract] = None) -> str:
     from ..services import hf_service
     return hf_service.push_dataset(
         df, cfg.push_to_hub, schema, report=report, llm_client=llm_client,
-        private=cfg.hub_private,
+        private=cfg.hub_private, contract=contract,
     )
 
 
@@ -1285,6 +1371,12 @@ def _build_arg_parser() -> argparse.ArgumentParser:
                    help="Dolandırıcılık etiket kolonu (varsayılan: is_fraud)")
     p.add_argument("--audit-privacy", action="store_true",
                    help="NNDR, Diferansiyel Gizlilik ve HIPAA Safe Harbor denetimi yap")
+    p.add_argument("--fraud-table", default="",
+                   help="Dolandırıcılık enjeksiyonu hangi tabloya uygulansın "
+                        "(varsayılan: kök tablo)")
+    p.add_argument("--audit-table", default="",
+                   help="Gizlilik denetimi hangi tabloya uygulansın: boş = kök tablo "
+                        "(varsayılan), 'all' = bütün tablolar, ya da bir tablo adı")
     p.add_argument("--gemini-backend", default=None,
                    choices=[config.GEMINI_BACKEND_AISTUDIO, config.GEMINI_BACKEND_CLI],
                    help="Gemini arka ucunu bu koşu için seç: 'aistudio' (API anahtarı, hızlı) "
@@ -1427,7 +1519,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         inject_fraud=args.inject_fraud,
         fraud_rate=args.fraud_rate,
         fraud_target_column=args.fraud_target_col,
+        fraud_table=args.fraud_table,
         audit_privacy=args.audit_privacy,
+        audit_table=args.audit_table,
         relational=args.relational,
         max_tables=args.max_tables,
         repair_orphans=not args.no_repair_orphans,

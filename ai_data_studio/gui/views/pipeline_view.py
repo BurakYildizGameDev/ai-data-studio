@@ -122,6 +122,53 @@ def engine_lines(report: Dict[str, Any]) -> List[str]:
     return lines
 
 
+def relational_lines(report: Dict[str, Any]) -> List[str]:
+    """İlişkisel bütünlük sonucunu Sonuç sekmesi için metin bloğuna çevirir.
+
+    CLI bunları konsola basıyor; arayüzün sessiz kalması kullanıcıyı yetim
+    yabancı anahtarlara ve kardinalite sapmalarına kör bırakır.
+    """
+    rel = (report or {}).get("relational") or {}
+    if not rel:
+        return []
+
+    lines = ["", "İLİŞKİSEL BÜTÜNLÜK", "-" * 62,
+             "  Sonuç                  : %s" % ("GEÇTİ" if rel.get("pass") else "BAŞARISIZ")]
+    if not rel.get("repair_enabled", True):
+        lines.append("  Yetim onarımı          : KAPALI (yalnızca raporlanıyor)")
+
+    row_counts = rel.get("row_counts") or {}
+    if row_counts:
+        lines.append("  Tablo satır sayıları:")
+        for name in sorted(row_counts):
+            lines.append("    %-24s %s" % (name, format(row_counts[name], ",")))
+
+    removed = (rel.get("repair") or {}).get("removed_total")
+    if removed:
+        lines.append("  Onarımda silinen yetim : %s satır" % format(removed, ","))
+
+    for fk in rel.get("foreign_keys") or []:
+        lines.append("  FK [%s]: %s yetim (%%%.2f) %s"
+                     % (fk.get("relationship", "?"),
+                        format(fk.get("orphan_rows", 0), ","),
+                        fk.get("orphan_pct", 0.0),
+                        "" if fk.get("pass") else "<- İHLAL"))
+
+    for card in rel.get("cardinality") or []:
+        lines.append("  Kardinalite [%s]: ort %.2f (beklenen %.2f) %s"
+                     % (card.get("relationship", "?"),
+                        card.get("observed_mean", 0.0), card.get("expected_mean", 0.0),
+                        "" if card.get("pass") else "<- SAPMA"))
+        for violation in card.get("violations") or []:
+            lines.append("      * %s" % violation)
+
+    for pk in rel.get("primary_keys") or []:
+        if not pk.get("pass"):
+            lines.append("  UYARI: '%s' birincil anahtarı '%s' tekil değil"
+                         % (pk.get("table"), pk.get("primary_key")))
+    return lines
+
+
 def plan_lines(plan) -> List[str]:
     """Proje planini Sonuç sekmesi için metin bloğuna çevirir.
 
@@ -323,6 +370,41 @@ class PipelineView(ctk.CTkFrame):
         self.dirty_entry.grid(row=4, column=1, sticky="w", padx=(0, 10), pady=(0, 10))
         self._toggle_dirty()
 
+        # --- Ilişkisel (çok tablolu) mod ---------------------------------- #
+        # CLI'daki --relational / --max-tables / --no-repair-orphans karsiligi.
+        relational_frame = ctk.CTkFrame(left)
+        relational_frame.grid(row=row, column=0, sticky="ew", padx=6, pady=(0, 8))
+        relational_frame.grid_columnconfigure(1, weight=1)
+        row += 1
+
+        self.relational_var = ctk.BooleanVar(value=False)
+        self.relational_check = ctk.CTkCheckBox(
+            relational_frame, text="İlişkisel (çok tablolu) veri seti üret",
+            variable=self.relational_var, command=self._toggle_relational)
+        self.relational_check.grid(row=0, column=0, columnspan=2, sticky="w",
+                                   padx=10, pady=(10, 4))
+
+        self.max_tables_label = ctk.CTkLabel(relational_frame, text="En fazla tablo")
+        self.max_tables_label.grid(row=1, column=0, sticky="w", padx=(10, 8), pady=4)
+        self.max_tables_entry = ctk.CTkEntry(relational_frame, width=70)
+        self.max_tables_entry.insert(0, "6")
+        self.max_tables_entry.grid(row=1, column=1, sticky="w", padx=(0, 10), pady=4)
+
+        self.repair_orphans_var = ctk.BooleanVar(value=True)
+        self.repair_orphans_check = ctk.CTkCheckBox(
+            relational_frame, text="Yetim yabancı anahtarları onar (kapalıysa yalnız raporlanır)",
+            variable=self.repair_orphans_var)
+        self.repair_orphans_check.grid(row=2, column=0, columnspan=2, sticky="w",
+                                       padx=10, pady=(4, 10))
+
+        self.relational_hint = ctk.CTkLabel(
+            relational_frame, text="", font=ctk.CTkFont(size=11),
+            text_color=COLOR_MUTED, wraplength=430, justify="left")
+        self.relational_hint.grid(row=3, column=0, columnspan=2, sticky="w",
+                                  padx=10, pady=(0, 8))
+        self.relational_hint.grid_remove()
+        self._toggle_relational()
+
         # --- ilerleme (kaydirma alaninin DISINDA, hep gorunur) ------------- #
         self.progress_panel = ProgressPanel(left_col, on_start=on_start,
                                             on_cancel=on_cancel)
@@ -373,6 +455,30 @@ class PipelineView(ctk.CTkFrame):
     def _toggle_dirty(self) -> None:
         self.dirty_entry.configure(state="normal" if self.dirty_var.get() else "disabled")
 
+    def _toggle_relational(self) -> None:
+        """İlişkisel kutusunun bağlı alanlarını ve proje kipi çakışmasını yönetir.
+
+        Proje kipinde tablo sayısına PLANLAYICI karar veriyor; iki anahtarın aynı
+        anda açık olması kullanıcının birbiriyle çelişen iki şey söylemesi demek
+        olurdu, o yüzden proje kipinde kutu devre dışı bırakılır.
+        """
+        project_mode = self.mode_selector.get() == MODE_PROJECT
+        if project_mode:
+            self.relational_var.set(False)
+            self.relational_check.configure(state="disabled")
+            self.relational_hint.configure(
+                text="Proje kipinde tablo sayısına planlayıcı karar verir; "
+                     "ilişkisel anahtarı bu yüzden kapalı.")
+            self.relational_hint.grid()
+        else:
+            self.relational_check.configure(state="normal")
+            self.relational_hint.grid_remove()
+
+        enabled = self.relational_var.get() and not project_mode
+        state = "normal" if enabled else "disabled"
+        self.max_tables_entry.configure(state=state)
+        self.repair_orphans_check.configure(state=state)
+
     def _on_engine_change(self, _label: str) -> None:
         self.engine_hint.configure(text=ENGINE_HINTS.get(self.engine, ""))
 
@@ -401,6 +507,7 @@ class PipelineView(ctk.CTkFrame):
         """Kip degisince ipucu metnini, satir etiketini ve - metin dokunulmamissa -
         ornegi degistirir."""
         self.prompt_hint.configure(text=_HINT.get(mode, ""))
+        self._toggle_relational()
         self.rows_label.configure(text=_ROWS_LABEL.get(mode, _ROWS_LABEL[MODE_DOMAIN]))
         current = self.prompt_box.get("1.0", "end-1c").strip()
         if current in ("", _EXAMPLE[MODE_DOMAIN], _EXAMPLE[MODE_PROJECT]):
@@ -449,7 +556,26 @@ class PipelineView(ctk.CTkFrame):
             raise ValueError(self.model_selector.readiness_message())
         model = self.model_selector.model
 
+        relational = bool(self.relational_var.get()) and not self.is_project_mode
+        max_tables = 6
+        if relational:
+            try:
+                max_tables = int(str(self.max_tables_entry.get()).strip())
+            except ValueError:
+                raise ValueError("En fazla tablo bir tam sayı olmalı.") from None
+            if not 2 <= max_tables <= 12:
+                raise ValueError("İlişkisel modda tablo sayısı 2 ile 12 arasında olmalı.")
+            if self.engine == ENGINE_PARAMETRIC:
+                raise ValueError(
+                    "Parametrik motor çok tablolu üretimi desteklemiyor: yabancı "
+                    "anahtar tutarlılığını kuramıyor. Üretim motorunu 'LLM kod "
+                    "üretimi' yapın ya da ilişkisel kutusunu kapatın."
+                )
+
         return {
+            "relational": relational,
+            "max_tables": max_tables,
+            "repair_orphans": bool(self.repair_orphans_var.get()),
             "engine": self.engine,
             "time_series": bool(self.time_series_var.get()),
             "expand_features": bool(self.expand_features_var.get()),
@@ -493,6 +619,8 @@ class PipelineView(ctk.CTkFrame):
 
         # Motor bloğu: veriyi neyin ürettiği ve üzerine ne enjekte edildiği.
         lines += engine_lines(report)
+        # İlişkisel bütünlük: yetim FK ve kardinalite sapmaları CLI'da basılıyor.
+        lines += relational_lines(report)
 
         lines += [
             "",
@@ -555,7 +683,9 @@ class PipelineView(ctk.CTkFrame):
         self.open_folder_button.configure(state="normal")
 
         try:
-            self.chart_panel.render(result.dataframe, result.schema, report)
+            self.chart_panel.render(result.dataframe, result.schema, report,
+                                    contract=getattr(result, "contract", None),
+                                    tables=getattr(result, "tables", None))
         except Exception as exc:
             self.console.write("Grafikler çizilemedi: %s" % exc, "warning")
 
