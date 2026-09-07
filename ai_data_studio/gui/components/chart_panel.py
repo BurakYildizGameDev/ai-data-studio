@@ -18,6 +18,8 @@ import customtkinter as ctk  # noqa: E402
 import matplotlib.pyplot as plt  # noqa: E402
 from PIL import Image  # noqa: E402
 
+from ...i18n import t  # noqa: E402
+
 log = logging.getLogger(__name__)
 
 DARK_BG = "#242424"
@@ -62,8 +64,8 @@ def make_retention_chart(report: Dict[str, Any], size=(420, 260)) -> Optional[ct
         labels = [s["stage"] for s in stages][::-1]
         removed = [s["removed"] for s in stages][::-1]
         ax.barh(labels, removed, color=ACCENT_WARN, height=0.55)
-        ax.set_xlabel("Ayıklanan satır", fontsize=8)
-        ax.set_title("Validasyon aşamaları", fontsize=10)
+        ax.set_xlabel(t("charts.retention.x_label"), fontsize=8)
+        ax.set_title(t("charts.retention.title"), fontsize=10)
         for i, value in enumerate(removed):
             if value:
                 ax.text(value, i, " %s" % format(value, ","), va="center",
@@ -84,9 +86,9 @@ def make_distribution_chart(df, column: str, size=(420, 260)) -> Optional[ctk.CT
         if series.empty:
             return None
         ax.hist(series, bins=40, color=ACCENT, edgecolor=DARK_BG, linewidth=0.4)
-        ax.set_title("%s dağılımı" % column, fontsize=10)
+        ax.set_title(t("charts.distribution.title", column=column), fontsize=10)
         ax.set_xlabel(column, fontsize=8)
-        ax.set_ylabel("Frekans", fontsize=8)
+        ax.set_ylabel(t("charts.distribution.y_label"), fontsize=8)
         fig.tight_layout()
         return render_chart_to_ctkimage(fig, size)
     except Exception as exc:
@@ -117,7 +119,7 @@ def make_correlation_chart(df, columns: List[str], size=(420, 320)) -> Optional[
                         color="#101010" if abs(value) > 0.5 else DARK_FG)
         colorbar = fig.colorbar(image, ax=ax, fraction=0.046, pad=0.04)
         colorbar.ax.tick_params(colors=DARK_FG, labelsize=7)
-        ax.set_title("Korelasyon matrisi", fontsize=10)
+        ax.set_title(t("charts.correlation.title"), fontsize=10)
         fig.tight_layout()
         return render_chart_to_ctkimage(fig, size)
     except Exception as exc:
@@ -138,7 +140,7 @@ class ChartPanel(ctk.CTkFrame):
         header = ctk.CTkFrame(self, fg_color="transparent")
         header.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 4))
         header.grid_columnconfigure(1, weight=1)
-        ctk.CTkLabel(header, text="Validasyon Grafikleri",
+        ctk.CTkLabel(header, text=t("charts.panel.title"),
                      font=ctk.CTkFont(size=13, weight="bold")).grid(
             row=0, column=0, sticky="w")
 
@@ -154,9 +156,7 @@ class ChartPanel(ctk.CTkFrame):
         self.scroll.grid_columnconfigure(0, weight=1)
 
         self.placeholder = ctk.CTkLabel(
-            self.scroll, text="Pipeline çalıştırıldıktan sonra grafikler burada görünür.",
-            text_color="#8a8a8a",
-        )
+            self.scroll, text=t("charts.panel.placeholder"), text_color="#8a8a8a")
         self.placeholder.grid(row=0, column=0, pady=30)
         self._images: List[ctk.CTkImage] = []   # GC'ye karsi referans tut
         self._tables: Dict[str, Any] = {}
@@ -172,9 +172,7 @@ class ChartPanel(ctk.CTkFrame):
         self._report = {}
         self.table_menu.grid_remove()
         self.placeholder = ctk.CTkLabel(
-            self.scroll, text="Pipeline çalıştırıldıktan sonra grafikler burada görünür.",
-            text_color="#8a8a8a",
-        )
+            self.scroll, text=t("charts.panel.placeholder"), text_color="#8a8a8a")
         self.placeholder.grid(row=0, column=0, pady=30)
 
     def render(self, df, schema, report: Dict[str, Any], contract=None,
@@ -229,8 +227,8 @@ class ChartPanel(ctk.CTkFrame):
         self._images.clear()
 
         charts: List[Tuple[str, Optional[ctk.CTkImage]]] = [
-            ("Ayıklama", make_retention_chart(report)),
-            ("Korelasyon", make_correlation_chart(df, schema.numeric_columns)),
+            (t("charts.retention.title"), make_retention_chart(report)),
+            (t("charts.correlation.title"), make_correlation_chart(df, schema.numeric_columns)),
         ]
         for column in schema.numeric_columns[:3]:
             charts.append((column, make_distribution_chart(df, column)))
@@ -245,5 +243,5 @@ class ChartPanel(ctk.CTkFrame):
             row += 1
 
         if row == 0:
-            ctk.CTkLabel(self.scroll, text="Grafik üretilemedi.",
+            ctk.CTkLabel(self.scroll, text=t("charts.panel.empty"),
                          text_color="#8a8a8a").grid(row=0, column=0, pady=30)

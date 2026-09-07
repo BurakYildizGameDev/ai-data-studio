@@ -637,6 +637,45 @@ ai_data_studio/
 
 ---
 
+---
+
+## Language
+
+The desktop studio ships in **English (default) and Turkish**. Pick one in
+*Settings → Defaults → Language*; the choice is stored in `settings.json` and applies
+the next time the app starts (widget text is not swapped live — the restart keeps the
+implementation honest rather than half-updating a window).
+
+```python
+from ai_data_studio import i18n
+
+i18n.set_language("tr")
+i18n.t("pipeline.engine.parametric")   # "Parametrik (hızlı, LLM'siz)"
+```
+
+Two things are deliberately **not** translated:
+
+- **LLM prompts** (`services/prompt_blocks.py`, `planner_prompts.py`,
+  `relational_prompts.py`, `llm_base.py`). The data a model generates must not change
+  because a user switched the interface language. A test asserts these modules never
+  call `t()`.
+- **Log records.** A fixed log language keeps the same failure searchable; otherwise
+  one error produces two different lines depending on who ran it.
+
+### Adding a language
+
+Catalogs are plain Python dicts (no `gettext`, no `.mo` files to ship inside the
+PyInstaller bundle). Copy `ai_data_studio/locales/en.py` to `<code>.py`, translate every
+value, and add the code to `i18n.LANGUAGE_NAMES`. `tests/test_i18n.py` walks the source
+with AST and fails on a key that is used but undefined, a key missing from a
+translation, or `{placeholders}` that do not match between languages — a partial
+translation cannot land quietly.
+
+**Current coverage:** the desktop GUI is fully translated (294 keys). The CLI and the
+core/services layer still emit Turkish; they are translated next, and the progress
+messages need a severity field first so the console stops inferring warnings from the
+text of a message.
+
 ## Further Reading
 
 - [`docs/ENGINEERING_REPORT_TR.md`](docs/ENGINEERING_REPORT_TR.md) — a long-form

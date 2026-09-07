@@ -14,6 +14,7 @@ import customtkinter as ctk
 
 from ... import config
 from ...core.orchestrator import ENGINE_AUTO, ENGINE_LLM, ENGINE_PARAMETRIC
+from ...i18n import t
 from ..components.chart_panel import ChartPanel
 from ..components.console_log import ConsoleLog
 from ..components.model_selector import ModelSelector
@@ -28,48 +29,46 @@ ROW_PRESETS = ["1000", "10000", "50000", "100000", "250000", "500000"]
 
 # Giris kipleri. Metinler kullaniciya gorunur; karsilastirmalar bu sabitler uzerinden
 # yapilir, serbest metinle degil.
-MODE_DOMAIN = "Veri tarifi"
-MODE_PROJECT = "Proje tarifi"
+MODE_DOMAIN = t("pipeline.mode.domain")
+MODE_PROJECT = t("pipeline.mode.project")
 
 _EXAMPLE = {
-    MODE_DOMAIN: ("Mobil oyun reklamlarında kullanıcı etkileşim verisi: "
-                  "yaş, gelir, reklam süresi, izleme süresi ve tıklama."),
-    MODE_PROJECT: ("Online mağazamdan alışverişi kesecek müşterileri önceden "
-                   "tespit etmek istiyorum ki elde tutma ekibi onlara kampanya "
-                   "gönderebilsin."),
+    MODE_DOMAIN: t("pipeline.example.domain"),
+    MODE_PROJECT: t("pipeline.example.project"),
 }
 
 # Satir sayisi kip'e gore farkli seyi ifade eder: veri tarifinde tek tablonun
 # satir sayisi, proje tarifinde KOK tablonunki - cocuk tablolarin buyuklugu
 # kardinaliteden cikar.
 _ROWS_LABEL = {
-    MODE_DOMAIN: "Satır sayısı",
-    MODE_PROJECT: "Kök tablo satır sayısı",
+    MODE_DOMAIN: t("pipeline.rows.label"),
+    MODE_PROJECT: t("pipeline.rows.label_root"),
 }
 
 _HINT = {
-    MODE_DOMAIN: "Domain'i serbest metinle anlatın; LLM şemayı kendisi çıkaracak.",
-    MODE_PROJECT: ("Projenizi anlatın; sistem hangi verinin gerektiğine, hedef "
-                   "değişkene, sınıf dengesine, ayıklanacak sızıntı kolonlarına ve "
-                   "train/test ayrımına kendisi karar verir."),
+    MODE_DOMAIN: t("pipeline.hint.domain"),
+    MODE_PROJECT: t("pipeline.hint.project"),
 }
+
+
+# Ic sekme adlari: add() ve tab() AYNI degeri kullanmak zorunda.
+TAB_CONSOLE = t("pipeline.tab.console")
+TAB_RESULT = t("pipeline.tab.result")
+TAB_CHARTS = t("pipeline.tab.charts")
 
 
 # Uretim motorlari. Etiket kullaniciya gorunur, deger PipelineConfig.engine'e gider;
 # karsilastirmalar her zaman DEGER uzerinden yapilir, etiket metniyle degil.
 ENGINE_LABELS = {
-    "LLM kod üretimi": ENGINE_LLM,
-    "Parametrik (hızlı, LLM'siz)": ENGINE_PARAMETRIC,
-    "Otomatik (LLM, olmazsa parametrik)": ENGINE_AUTO,
+    t("pipeline.engine.llm"): ENGINE_LLM,
+    t("pipeline.engine.parametric"): ENGINE_PARAMETRIC,
+    t("pipeline.engine.auto"): ENGINE_AUTO,
 }
 
 ENGINE_HINTS = {
-    ENGINE_LLM: ("LLM üretici Python kodu yazar, sandbox'ta koşar; hata olursa "
-                 "kendini onarır. En esnek yol."),
-    ENGINE_PARAMETRIC: ("Şema doğrudan vektörlere derlenir: LLM kodu yok, sandbox "
-                        "yok, milisaniyeler sürer. Şu an tek tablo destekleniyor."),
-    ENGINE_AUTO: ("Önce kod üretimi denenir; denemeler tükenirse koşu düşmez, "
-                  "parametrik motora geçilir."),
+    ENGINE_LLM: t("pipeline.engine.llm_hint"),
+    ENGINE_PARAMETRIC: t("pipeline.engine.parametric_hint"),
+    ENGINE_AUTO: t("pipeline.engine.auto_hint"),
 }
 
 
@@ -81,6 +80,14 @@ def _engine_label(value: str) -> str:
     return next(iter(ENGINE_LABELS))
 
 
+def _field(key: str, value) -> str:
+    """Sonuç sekmesi için hizalı `etiket : değer` satırı.
+
+    Etiket genişliği sabit tutuluyor; çeviri uzunlukları dilden dile değiştiği
+    için hizalamayı metne değil biçimlendiriciye bırakıyoruz.
+    """
+    return "  %-36s: %s" % (t(key), value)
+
 def engine_lines(report: Dict[str, Any]) -> List[str]:
     """Hangi motorların koştuğunu Sonuç sekmesi için metin bloğuna çevirir.
 
@@ -91,34 +98,41 @@ def engine_lines(report: Dict[str, Any]) -> List[str]:
     if not engines:
         return []
 
-    lines = ["", "MOTORLAR", "-" * 62,
-             "  Üretim                 : %s" % engines.get("generation", "-")]
+    lines = ["", t("result.section.engines"), "-" * 62,
+             _field("result.engines.generation", engines.get("generation", "-"))]
 
     ts = engines.get("time_series")
     if ts:
-        lines.append("  Zaman serisi           : %s tekil varlık, %d hız patlaması"
-                     % (format(ts.get("unique_entities", 0), ","),
-                        ts.get("burst_anomalies_count", 0)))
-        lines.append("    Aralık               : %s" % ts.get("time_range", "-"))
+        lines.append(_field("result.engines.time_series",
+                            t("result.engines.time_series_value",
+                              entities=format(ts.get("unique_entities", 0), ","),
+                              bursts=ts.get("burst_anomalies_count", 0))))
+        lines.append(_field("result.engines.time_range", ts.get("time_range", "-")))
 
     fe = engines.get("feature_expander")
     if fe:
-        lines.append("  Özellik genişletme     : +%d kolon (toplam %d)"
-                     % (fe.get("added_columns_count", 0), fe.get("total_columns", 0)))
+        lines.append(_field("result.engines.feature_expander",
+                            t("result.engines.feature_value",
+                              added=fe.get("added_columns_count", 0),
+                              total=fe.get("total_columns", 0))))
         added = fe.get("added_columns") or []
         if added:
-            lines.append("    Eklenen              : %s" % ", ".join(added))
+            lines.append(_field("result.engines.added_columns", ", ".join(added)))
 
     dirty = engines.get("dirty_data")
     if dirty:
         breakdown = dirty.get("corruption_breakdown", {})
-        lines.append("  Kontrollü kirlilik     : %s satır (%%%.1f), doğrulamadan SONRA"
-                     % (format(dirty.get("corrupted_rows", 0), ","),
-                        dirty.get("corrupted_rate", 0.0) * 100))
-        lines.append("    Dağılım              : eksik %d, yazım %d, uç değer %d, harf/boşluk %d"
-                     % (breakdown.get("missing", 0), breakdown.get("typo", 0),
-                        breakdown.get("outlier_spike", 0), breakdown.get("casing", 0)))
-        lines.append("    Not                  : kolon istatistikleri kirlilikten ÖNCE hesaplandı")
+        lines.append(_field("result.engines.dirty",
+                            t("result.engines.dirty_value",
+                              rows=format(dirty.get("corrupted_rows", 0), ","),
+                              rate="%.1f" % (dirty.get("corrupted_rate", 0.0) * 100))))
+        lines.append(_field("result.engines.dirty_breakdown",
+                            t("result.engines.dirty_breakdown_value",
+                              missing=breakdown.get("missing", 0),
+                              typo=breakdown.get("typo", 0),
+                              spike=breakdown.get("outlier_spike", 0),
+                              casing=breakdown.get("casing", 0))))
+        lines.append(_field("result.engines.note", t("result.engines.stats_note")))
     return lines
 
 
@@ -132,40 +146,46 @@ def relational_lines(report: Dict[str, Any]) -> List[str]:
     if not rel:
         return []
 
-    lines = ["", "İLİŞKİSEL BÜTÜNLÜK", "-" * 62,
-             "  Sonuç                  : %s" % ("GEÇTİ" if rel.get("pass") else "BAŞARISIZ")]
+    lines = ["", t("result.section.relational"), "-" * 62,
+             _field("result.relational.verdict",
+                    t("history.verdict.pass") if rel.get("pass")
+                    else t("result.relational.failed"))]
     if not rel.get("repair_enabled", True):
-        lines.append("  Yetim onarımı          : KAPALI (yalnızca raporlanıyor)")
+        lines.append(_field("result.relational.repair", t("result.relational.repair_off")))
 
     row_counts = rel.get("row_counts") or {}
     if row_counts:
-        lines.append("  Tablo satır sayıları:")
+        lines.append("  " + t("result.relational.row_counts"))
         for name in sorted(row_counts):
             lines.append("    %-24s %s" % (name, format(row_counts[name], ",")))
 
     removed = (rel.get("repair") or {}).get("removed_total")
     if removed:
-        lines.append("  Onarımda silinen yetim : %s satır" % format(removed, ","))
+        lines.append(_field("result.relational.orphans_removed",
+                            t("result.rows_value", rows=format(removed, ","))))
 
     for fk in rel.get("foreign_keys") or []:
-        lines.append("  FK [%s]: %s yetim (%%%.2f) %s"
-                     % (fk.get("relationship", "?"),
-                        format(fk.get("orphan_rows", 0), ","),
-                        fk.get("orphan_pct", 0.0),
-                        "" if fk.get("pass") else "<- İHLAL"))
+        lines.append("  " + t("result.relational.fk",
+                              relationship=fk.get("relationship", "?"),
+                              orphans=format(fk.get("orphan_rows", 0), ","),
+                              pct="%.2f" % fk.get("orphan_pct", 0.0),
+                              verdict="" if fk.get("pass")
+                              else "<- " + t("result.relational.violation")))
 
     for card in rel.get("cardinality") or []:
-        lines.append("  Kardinalite [%s]: ort %.2f (beklenen %.2f) %s"
-                     % (card.get("relationship", "?"),
-                        card.get("observed_mean", 0.0), card.get("expected_mean", 0.0),
-                        "" if card.get("pass") else "<- SAPMA"))
+        lines.append("  " + t("result.relational.cardinality",
+                              relationship=card.get("relationship", "?"),
+                              observed="%.2f" % card.get("observed_mean", 0.0),
+                              expected="%.2f" % card.get("expected_mean", 0.0),
+                              verdict="" if card.get("pass")
+                              else "<- " + t("result.relational.deviation")))
         for violation in card.get("violations") or []:
             lines.append("      * %s" % violation)
 
     for pk in rel.get("primary_keys") or []:
         if not pk.get("pass"):
-            lines.append("  UYARI: '%s' birincil anahtarı '%s' tekil değil"
-                         % (pk.get("table"), pk.get("primary_key")))
+            lines.append("  " + t("result.relational.pk_not_unique",
+                                  table=pk.get("table"), key=pk.get("primary_key")))
     return lines
 
 
@@ -175,34 +195,36 @@ def plan_lines(plan) -> List[str]:
     CLI aynı kararları basıyor; arayüzün sessiz kalması kullanıcıyı hedef değişkene,
     sınıf dengesine ve ayıklanan sızıntı kolonlarına kör bırakıyordu.
     """
-    lines = ["", "PROJE PLANI", "-" * 62,
-             "  Görev tipi             : %s" % plan.task_type,
-             "  Tablo sayısı           : %d" % len(plan.contract.tables)]
+    lines = ["", t("result.section.plan"), "-" * 62,
+             _field("result.plan.task_type", plan.task_type),
+             _field("result.plan.table_count", len(plan.contract.tables))]
     if plan.target is not None:
-        lines.append("  Hedef değişken         : %s" % plan.target.label())
+        lines.append(_field("result.plan.target", plan.target.label()))
     if plan.positive_class_ratio is not None:
-        lines.append("  Sınıf dengesi          : pozitif %%%.1f"
-                     % (plan.positive_class_ratio * 100))
+        lines.append(_field("result.plan.class_balance",
+                            t("result.plan.positive_pct",
+                              pct="%.1f" % (plan.positive_class_ratio * 100))))
     if plan.split is not None:
         detail = plan.split.kind
         if plan.split.column:
             detail += " (%s.%s)" % (plan.split.table, plan.split.column)
-        lines.append("  Train/test ayrımı      : %s" % detail)
+        lines.append(_field("result.plan.split", detail))
         if plan.split.reason:
-            lines.append("      gerekçe: %s" % plan.split.reason)
+            lines.append("      " + t("result.plan.reason", reason=plan.split.reason))
     if plan.rationale:
-        lines.append("  Plan gerekçesi         : %s" % plan.rationale)
+        lines.append(_field("result.plan.rationale", plan.rationale))
 
     if plan.excluded_leakage:
-        lines.append("  Ayıklanan sızıntı kolonları (%d adet):" % len(plan.excluded_leakage))
+        lines.append("  " + t("result.plan.leakage_header",
+                              count=len(plan.excluded_leakage)))
         for excl in plan.excluded_leakage:
             lines.append("    - %s : %s" % (excl.column, excl.reason))
     else:
         # Bos liste bir karardir, sessizlik degil: plan "sizinti yok" demis.
-        lines.append("  Ayıklanan sızıntı      : yok")
+        lines.append(_field("result.plan.leakage", t("result.plan.leakage_none")))
 
     for warning in plan.warnings:
-        lines.append("  UYARI: %s" % warning)
+        lines.append("  " + t("result.warning", message=warning))
     return lines
 
 
@@ -233,7 +255,7 @@ class PipelineView(ctk.CTkFrame):
         left.grid_columnconfigure(0, weight=1)
         row = 0
 
-        ctk.CTkLabel(left, text="Ne üretmek istiyorsunuz?",
+        ctk.CTkLabel(left, text=t("pipeline.form.title"),
                      font=ctk.CTkFont(size=14, weight="bold")).grid(
             row=row, column=0, sticky="w", padx=10, pady=(2, 4))
         row += 1
@@ -278,19 +300,19 @@ class PipelineView(ctk.CTkFrame):
         self.rows_box.set(str(settings.get("row_count_target", config.DEFAULT_ROW_TARGET)))
         self.rows_box.grid(row=0, column=1, sticky="ew", padx=(0, 10), pady=6)
 
-        ctk.CTkLabel(params, text="Random seed").grid(row=1, column=0, sticky="w",
+        ctk.CTkLabel(params, text=t("pipeline.form.seed")).grid(row=1, column=0, sticky="w",
                                                       padx=(10, 8), pady=6)
         self.seed_entry = ctk.CTkEntry(params)
         self.seed_entry.insert(0, str(settings.get("random_seed", config.DEFAULT_RANDOM_SEED)))
         self.seed_entry.grid(row=1, column=1, sticky="ew", padx=(0, 10), pady=6)
 
-        ctk.CTkLabel(params, text="Faker locale").grid(row=2, column=0, sticky="w",
+        ctk.CTkLabel(params, text=t("pipeline.form.locale")).grid(row=2, column=0, sticky="w",
                                                        padx=(10, 8), pady=6)
         self.locale_menu = ctk.CTkOptionMenu(params, values=FAKER_LOCALES)
         self.locale_menu.set(settings.get("faker_locale", "tr_TR"))
         self.locale_menu.grid(row=2, column=1, sticky="ew", padx=(0, 10), pady=6)
 
-        ctk.CTkLabel(params, text="Çıktı formatları").grid(row=3, column=0, sticky="w",
+        ctk.CTkLabel(params, text=t("pipeline.form.formats")).grid(row=3, column=0, sticky="w",
                                                            padx=(10, 8), pady=6)
         formats_frame = ctk.CTkFrame(params, fg_color="transparent")
         formats_frame.grid(row=3, column=1, sticky="ew", padx=(0, 10), pady=6)
@@ -309,20 +331,20 @@ class PipelineView(ctk.CTkFrame):
         row += 1
 
         self.hf_seed_var = ctk.BooleanVar(value=settings.get("use_hf_seed", False))
-        ctk.CTkCheckBox(seed_frame, text="HuggingFace'ten referans (seed) veri kullan",
+        ctk.CTkCheckBox(seed_frame, text=t("pipeline.seed.hf"),
                         variable=self.hf_seed_var, command=self._toggle_seeds).grid(
             row=0, column=0, sticky="w", padx=10, pady=(8, 4))
         self.hf_query_entry = ctk.CTkEntry(
-            seed_frame, placeholder_text="HF arama sorgusu veya dataset ID")
+            seed_frame, placeholder_text=t("pipeline.seed.hf_placeholder"))
         self.hf_query_entry.insert(0, settings.get("hf_seed_query", ""))
         self.hf_query_entry.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 8))
 
         self.web_seed_var = ctk.BooleanVar(value=settings.get("use_web_seed", False))
-        ctk.CTkCheckBox(seed_frame, text="Web'den canlı referans veri topla (Arama / URL)",
+        ctk.CTkCheckBox(seed_frame, text=t("pipeline.seed.web"),
                         variable=self.web_seed_var, command=self._toggle_seeds).grid(
             row=2, column=0, sticky="w", padx=10, pady=(4, 4))
         self.web_query_entry = ctk.CTkEntry(
-            seed_frame, placeholder_text="Arama konusu veya doğrudan https:// URL'i")
+            seed_frame, placeholder_text=t("pipeline.seed.web_placeholder"))
         self.web_query_entry.insert(0, settings.get("web_seed_query", ""))
         self.web_query_entry.grid(row=3, column=0, sticky="ew", padx=10, pady=(0, 10))
         self._toggle_seeds()
@@ -336,7 +358,7 @@ class PipelineView(ctk.CTkFrame):
         engines_frame.grid_columnconfigure(1, weight=1)
         row += 1
 
-        ctk.CTkLabel(engines_frame, text="Üretim motoru").grid(
+        ctk.CTkLabel(engines_frame, text=t("pipeline.engine.label")).grid(
             row=0, column=0, sticky="w", padx=(10, 8), pady=(10, 6))
         self.engine_menu = ctk.CTkOptionMenu(
             engines_frame, values=list(ENGINE_LABELS), command=self._on_engine_change)
@@ -351,18 +373,18 @@ class PipelineView(ctk.CTkFrame):
 
         self.time_series_var = ctk.BooleanVar(value=settings.get("time_series", False))
         ctk.CTkCheckBox(engines_frame,
-                        text="Zaman serisi ve hız analizi ekle",
+                        text=t("pipeline.engine.time_series"),
                         variable=self.time_series_var).grid(
             row=2, column=0, columnspan=2, sticky="w", padx=10, pady=(0, 4))
 
         self.expand_features_var = ctk.BooleanVar(value=settings.get("expand_features", False))
         ctk.CTkCheckBox(engines_frame,
-                        text="Özellikleri genişlet (oranlar, gruplar, zaman türevleri)",
+                        text=t("pipeline.engine.expand_features"),
                         variable=self.expand_features_var).grid(
             row=3, column=0, columnspan=2, sticky="w", padx=10, pady=(0, 4))
 
         self.dirty_var = ctk.BooleanVar(value=float(settings.get("dirty_rate", 0.0)) > 0)
-        ctk.CTkCheckBox(engines_frame, text="Kontrollü kirli veri enjekte et (oran %)",
+        ctk.CTkCheckBox(engines_frame, text=t("pipeline.engine.dirty"),
                         variable=self.dirty_var, command=self._toggle_dirty).grid(
             row=4, column=0, sticky="w", padx=10, pady=(0, 10))
         self.dirty_entry = ctk.CTkEntry(engines_frame, width=70)
@@ -379,12 +401,13 @@ class PipelineView(ctk.CTkFrame):
 
         self.relational_var = ctk.BooleanVar(value=False)
         self.relational_check = ctk.CTkCheckBox(
-            relational_frame, text="İlişkisel (çok tablolu) veri seti üret",
+            relational_frame, text=t("pipeline.relational.enable"),
             variable=self.relational_var, command=self._toggle_relational)
         self.relational_check.grid(row=0, column=0, columnspan=2, sticky="w",
                                    padx=10, pady=(10, 4))
 
-        self.max_tables_label = ctk.CTkLabel(relational_frame, text="En fazla tablo")
+        self.max_tables_label = ctk.CTkLabel(relational_frame,
+                                             text=t("pipeline.relational.max_tables"))
         self.max_tables_label.grid(row=1, column=0, sticky="w", padx=(10, 8), pady=4)
         self.max_tables_entry = ctk.CTkEntry(relational_frame, width=70)
         self.max_tables_entry.insert(0, "6")
@@ -392,7 +415,7 @@ class PipelineView(ctk.CTkFrame):
 
         self.repair_orphans_var = ctk.BooleanVar(value=True)
         self.repair_orphans_check = ctk.CTkCheckBox(
-            relational_frame, text="Yetim yabancı anahtarları onar (kapalıysa yalnız raporlanır)",
+            relational_frame, text=t("pipeline.relational.repair"),
             variable=self.repair_orphans_var)
         self.repair_orphans_check.grid(row=2, column=0, columnspan=2, sticky="w",
                                        padx=10, pady=(4, 10))
@@ -418,30 +441,31 @@ class PipelineView(ctk.CTkFrame):
 
         self.tabs = ctk.CTkTabview(right)
         self.tabs.grid(row=0, column=0, sticky="nsew")
-        self.tabs.add("Konsol")
-        self.tabs.add("Sonuç")
-        self.tabs.add("Grafikler")
+        self.tabs.add(TAB_CONSOLE)
+        self.tabs.add(TAB_RESULT)
+        self.tabs.add(TAB_CHARTS)
         left_align_tabs(self.tabs)
 
-        self.console = ConsoleLog(self.tabs.tab("Konsol"))
+        self.console = ConsoleLog(self.tabs.tab(TAB_CONSOLE))
         self.console.pack(fill="both", expand=True)
 
-        result_tab = self.tabs.tab("Sonuç")
+        result_tab = self.tabs.tab(TAB_RESULT)
         result_tab.grid_columnconfigure(0, weight=1)
         result_tab.grid_rowconfigure(0, weight=1)
         self.result_box = ctk.CTkTextbox(result_tab, wrap="word",
                                          font=ctk.CTkFont(family="Consolas", size=12))
         self.result_box.grid(row=0, column=0, sticky="nsew", padx=8, pady=8)
-        self.result_box.insert("1.0", "Henüz sonuç yok.")
+        self.result_box.insert("1.0", t("pipeline.result.empty"))
         self.result_box.configure(state="disabled")
 
         actions = ctk.CTkFrame(result_tab, fg_color="transparent")
         actions.grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 8))
         self.open_folder_button = ctk.CTkButton(
-            actions, text="Çıktı klasörünü aç", command=self._open_output_folder, state="disabled")
+            actions, text=t("pipeline.result.open_folder"),
+            command=self._open_output_folder, state="disabled")
         self.open_folder_button.pack(side="left")
 
-        self.chart_panel = ChartPanel(self.tabs.tab("Grafikler"))
+        self.chart_panel = ChartPanel(self.tabs.tab(TAB_CHARTS))
         self.chart_panel.pack(fill="both", expand=True)
 
     # ------------------------------------------------------------------ #
@@ -467,8 +491,7 @@ class PipelineView(ctk.CTkFrame):
             self.relational_var.set(False)
             self.relational_check.configure(state="disabled")
             self.relational_hint.configure(
-                text="Proje kipinde tablo sayısına planlayıcı karar verir; "
-                     "ilişkisel anahtarı bu yüzden kapalı.")
+                text=t("pipeline.relational.project_mode_note"))
             self.relational_hint.grid()
         else:
             self.relational_check.configure(state="normal")
@@ -500,7 +523,7 @@ class PipelineView(ctk.CTkFrame):
             else:
                 subprocess.Popen(["xdg-open", folder])
         except Exception as exc:
-            self.console.write("Klasör açılamadı: %s" % exc, "error")
+            self.console.write(t("pipeline.error.folder_open", error=exc), "error")
 
     # ------------------------------------------------------------------ #
     def _on_mode_change(self, mode: str) -> None:
@@ -523,34 +546,34 @@ class PipelineView(ctk.CTkFrame):
         prompt = self.prompt_box.get("1.0", "end-1c").strip()
         if not prompt:
             raise ValueError(
-                "Önce projenizi anlatın." if self.is_project_mode
-                else "Önce ne üretmek istediğinizi yazın."
+                t("pipeline.error.empty_project") if self.is_project_mode
+                else t("pipeline.error.empty_domain")
             )
 
         try:
             rows = int(str(self.rows_box.get()).replace(",", "").replace(".", "").strip())
         except ValueError:
-            raise ValueError("Satır sayısı bir tam sayı olmalı.") from None
+            raise ValueError(t("pipeline.error.rows_not_int")) from None
         if rows <= 0:
-            raise ValueError("Satır sayısı pozitif olmalı.")
+            raise ValueError(t("pipeline.error.rows_not_positive"))
 
         try:
             seed = int(self.seed_entry.get().strip())
         except ValueError:
-            raise ValueError("Random seed bir tam sayı olmalı.") from None
+            raise ValueError(t("pipeline.error.seed_not_int")) from None
 
         formats = [fmt for fmt, var in self.format_vars.items() if var.get()]
         if not formats:
-            raise ValueError("En az bir çıktı formatı seçin.")
+            raise ValueError(t("pipeline.error.no_format"))
 
         dirty_rate = 0.0
         if self.dirty_var.get():
             try:
                 dirty_rate = float(str(self.dirty_entry.get()).replace(",", ".").strip()) / 100.0
             except ValueError:
-                raise ValueError("Kirlilik oranı sayı olmalı (örn. 5).") from None
+                raise ValueError(t("pipeline.error.dirty_not_number")) from None
             if not 0 < dirty_rate <= 1:
-                raise ValueError("Kirlilik oranı %0 ile %100 arasında olmalı.")
+                raise ValueError(t("pipeline.error.dirty_range"))
 
         if not self.model_selector.is_ready():
             raise ValueError(self.model_selector.readiness_message())
@@ -562,15 +585,11 @@ class PipelineView(ctk.CTkFrame):
             try:
                 max_tables = int(str(self.max_tables_entry.get()).strip())
             except ValueError:
-                raise ValueError("En fazla tablo bir tam sayı olmalı.") from None
+                raise ValueError(t("pipeline.error.max_tables_not_int")) from None
             if not 2 <= max_tables <= 12:
-                raise ValueError("İlişkisel modda tablo sayısı 2 ile 12 arasında olmalı.")
+                raise ValueError(t("pipeline.error.max_tables_range"))
             if self.engine == ENGINE_PARAMETRIC:
-                raise ValueError(
-                    "Parametrik motor çok tablolu üretimi desteklemiyor: yabancı "
-                    "anahtar tutarlılığını kuramıyor. Üretim motorunu 'LLM kod "
-                    "üretimi' yapın ya da ilişkisel kutusunu kapatın."
-                )
+                raise ValueError(t("pipeline.error.parametric_relational"))
 
         return {
             "relational": relational,
@@ -604,13 +623,15 @@ class PipelineView(ctk.CTkFrame):
             "JOB #%d - %s" % (result.job_id, result.schema.domain),
             "=" * 62,
             "",
-            "Üretilen ham satır     : %s" % format(report["rows_in"], ","),
-            "Validasyondan geçen    : %s" % format(report["rows_out"], ","),
-            "Korunan oran           : %%%.1f" % report["retention_pct"],
-            "Kod üretim denemesi    : %d" % result.generation_meta.get("attempts", 1),
-            "Sandbox süresi         : %.1f sn" % result.generation_meta.get("duration_s", 0),
-            "Tahmini LLM maliyeti   : $%.4f (%s çağrı)"
-            % (result.cost.get("cost_usd", 0.0), result.cost.get("calls", 0)),
+            _field("result.rows_raw", format(report["rows_in"], ",")),
+            _field("result.rows_validated", format(report["rows_out"], ",")),
+            _field("result.retention", "%%%.1f" % report["retention_pct"]),
+            _field("result.attempts", result.generation_meta.get("attempts", 1)),
+            _field("result.sandbox_seconds",
+                   "%.1f" % result.generation_meta.get("duration_s", 0)),
+            _field("result.cost", "$%.4f (%s)" % (
+                result.cost.get("cost_usd", 0.0),
+                t("history.field.calls", calls=result.cost.get("calls", 0)))),
         ]
         # Proje kipinde plan, sonucun kendisi kadar onemli: hangi hedefi ve hangi
         # sizinti ayiklamasini kabul ettigini gormeden kullanici veriye guvenemez.
@@ -622,11 +643,7 @@ class PipelineView(ctk.CTkFrame):
         # İlişkisel bütünlük: yetim FK ve kardinalite sapmaları CLI'da basılıyor.
         lines += relational_lines(report)
 
-        lines += [
-            "",
-            "AYIKLAMA AŞAMALARI",
-            "-" * 62,
-        ]
+        lines += ["", t("result.section.stages"), "-" * 62]
         for stage in report.get("stages", []):
             lines.append("  %-24s %8s -> %8s  (-%s)"
                          % (stage["stage"], format(stage["rows_before"], ","),
@@ -634,43 +651,50 @@ class PipelineView(ctk.CTkFrame):
 
         rules = [r for r in report.get("business_rules", []) if r.get("status") == "applied"]
         if rules:
-            lines += ["", "IS KURALLARI", "-" * 62]
+            lines += ["", t("result.section.rules"), "-" * 62]
             for rule in rules:
-                lines.append("  %-44s %s ihlal" % (rule["rule"][:44],
-                                                   format(rule["violations"], ",")))
+                lines.append("  %-44s %s" % (
+                    rule["rule"][:44],
+                    t("result.rule_violations",
+                      count=format(rule["violations"], ","))))
 
         corrs = report.get("correlations", [])
         if corrs:
-            lines += ["", "KORELASYON DOĞRULAMASI", "-" * 62]
+            lines += ["", t("result.section.correlations"), "-" * 62]
             for corr in corrs:
                 lines.append("  %-28s r=%-7s beklenen %s>=%s  [%s]"
                              % ("/".join(corr["pair"]), corr.get("actual_r"),
                                 corr.get("expected_sign"), corr.get("min_r"),
-                                "GEÇTİ" if corr.get("pass") else "KALDI"))
+                                t("history.verdict.pass") if corr.get("pass")
+                                else t("history.verdict.fail")))
 
         pres = report.get("preserved_anomalies") or {}
         if pres.get("total_preserved", 0) > 0:
-            lines += ["", "KORUNAN ANOMALİLER (FRAUD / OUTLIER MUAFİYETİ)", "-" * 62,
-                      "  Hedef anomali kolonu               : %s (değer: %s)"
-                      % (pres.get("column"), pres.get("value")),
-                      "  Z-Score tarafından korunan         : %s satır"
-                      % format(pres.get("z_score_preserved", 0), ","),
-                      "  IsolationForest tarafından korunan : %s satır"
-                      % format(pres.get("isolation_forest_preserved", 0), ","),
-                      "  Toplam korunan anomali             : %s satır"
-                      % format(pres.get("total_preserved", 0), ",")]
+            lines += ["", t("result.section.preserved"), "-" * 62,
+                      _field("result.preserved.column",
+                             "%s (%s)" % (pres.get("column"), pres.get("value"))),
+                      _field("result.preserved.z_score",
+                             t("result.rows_value",
+                               rows=format(pres.get("z_score_preserved", 0), ","))),
+                      _field("result.preserved.isolation_forest",
+                             t("result.rows_value",
+                               rows=format(pres.get("isolation_forest_preserved", 0), ","))),
+                      _field("result.preserved.total",
+                             t("result.rows_value",
+                               rows=format(pres.get("total_preserved", 0), ",")))]
 
         dist = report.get("distributions") or {}
         if not dist.get("skipped"):
-            lines += ["", "DAĞILIM (KS) TESTİ", "-" * 62,
-                      "  %s/%s kolon referans dağılıma uyuyor (p > 0.05)"
-                      % (dist.get("passed"), dist.get("total"))]
+            lines += ["", t("result.section.distribution"), "-" * 62,
+                      "  " + t("result.distribution.summary",
+                              passed=dist.get("passed"), total=dist.get("total"))]
             for name, entry in (dist.get("columns") or {}).items():
                 lines.append("  %-24s KS=%-7s p=%-8s [%s]"
                              % (name, entry["ks_stat"], entry["p_value"],
-                                "GEÇTİ" if entry["pass"] else "KALDI"))
+                                t("history.verdict.pass") if entry["pass"]
+                                else t("history.verdict.fail")))
 
-        lines += ["", "ÇIKTI DOSYALARI", "-" * 62]
+        lines += ["", t("result.section.outputs"), "-" * 62]
         for kind, path in sorted(result.output_paths.items()):
             lines.append("  %-8s %s" % (kind, path))
         if result.hub_url:
@@ -687,6 +711,6 @@ class PipelineView(ctk.CTkFrame):
                                     contract=getattr(result, "contract", None),
                                     tables=getattr(result, "tables", None))
         except Exception as exc:
-            self.console.write("Grafikler çizilemedi: %s" % exc, "warning")
+            self.console.write(t("result.charts_failed", error=exc), "warning")
 
-        self.tabs.set("Sonuç")
+        self.tabs.set(TAB_RESULT)

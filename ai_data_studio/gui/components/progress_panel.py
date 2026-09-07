@@ -6,6 +6,7 @@ from typing import Callable, Optional
 import customtkinter as ctk
 
 from ...core.orchestrator import STEP_NAMES, TOTAL_STEPS
+from ...i18n import t
 
 IDLE_COLOR = "#3a3a3a"
 ACTIVE_COLOR = "#1f6aa5"
@@ -46,7 +47,7 @@ class ProgressPanel(ctk.CTkFrame):
         self.progress_bar.grid(row=1, column=0, sticky="ew", padx=10, pady=(8, 4))
         self.progress_bar.set(0)
 
-        self.status_label = ctk.CTkLabel(self, text="Hazır", anchor="w",
+        self.status_label = ctk.CTkLabel(self, text=t("progress.status.ready"), anchor="w",
                                          font=ctk.CTkFont(size=12))
         self.status_label.grid(row=2, column=0, sticky="ew", padx=10)
 
@@ -56,12 +57,12 @@ class ProgressPanel(ctk.CTkFrame):
         buttons.grid_columnconfigure(0, weight=1)
         buttons.grid_columnconfigure(1, weight=1)
 
-        self.start_button = ctk.CTkButton(buttons, text="Pipeline'i Başlat", height=36,
+        self.start_button = ctk.CTkButton(buttons, text=t("progress.button.start"), height=36,
                                           command=self.on_start,
                                           font=ctk.CTkFont(size=13, weight="bold"))
         self.start_button.grid(row=0, column=0, sticky="ew", padx=(0, 5))
 
-        self.cancel_button = ctk.CTkButton(buttons, text="İptal", height=36,
+        self.cancel_button = ctk.CTkButton(buttons, text=t("progress.button.cancel"), height=36,
                                            command=self.on_cancel, state="disabled",
                                            fg_color="#8b3a3a", hover_color="#a04545")
         self.cancel_button.grid(row=0, column=1, sticky="ew", padx=(5, 0))
@@ -82,9 +83,9 @@ class ProgressPanel(ctk.CTkFrame):
             else:
                 badge.configure(fg_color=IDLE_COLOR)
 
-    def set_finished(self, message: str = "Tamamlandı") -> None:
+    def set_finished(self, message: str = "") -> None:
         self.progress_bar.set(1.0)
-        self.status_label.configure(text=message)
+        self.status_label.configure(text=message or t("progress.status.finished"))
         for badge in self.step_badges.values():
             badge.configure(fg_color=DONE_COLOR)
         self.set_running(False)
@@ -97,7 +98,7 @@ class ProgressPanel(ctk.CTkFrame):
 
     def reset(self) -> None:
         self.progress_bar.set(0)
-        self.status_label.configure(text="Hazır")
+        self.status_label.configure(text=t("progress.status.ready"))
         for badge in self.step_badges.values():
             badge.configure(fg_color=IDLE_COLOR)
         self.set_running(False)

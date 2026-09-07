@@ -38,6 +38,10 @@ HIDDEN_IMPORTS = [
     "anthropic",
     "google.genai",
     "huggingface_hub",
+    # Ceviri kataloglari importlib ile YUKLENIR (bkz. ai_data_studio/i18n.py);
+    # PyInstaller'in statik analizi bu cagriyi goremez, elle bildirmek sart.
+    "ai_data_studio.locales.en",
+    "ai_data_studio.locales.tr",
 ]
 
 # Paketlemeye gerek olmayan agir/gereksiz bagimliliklar - boyutu ciddi dusurur.

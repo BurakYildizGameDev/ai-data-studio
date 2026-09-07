@@ -10,6 +10,8 @@ from typing import Callable, Dict, List, Optional
 
 import customtkinter as ctk
 
+from ...i18n import t
+
 from ...services import ollama_service
 from ..thread_bridge import post_to_ui
 
@@ -44,15 +46,14 @@ class OllamaDialog(ctk.CTkToplevel):
         self.daemon_label = ctk.CTkLabel(header, text="", anchor="w",
                                          font=ctk.CTkFont(size=12))
         self.daemon_label.grid(row=0, column=0, sticky="ew")
-        ctk.CTkButton(header, text="Yenile", width=80, command=self.refresh).grid(
+        ctk.CTkButton(header, text=t("history.refresh"), width=80, command=self.refresh).grid(
             row=0, column=1)
 
-        ctk.CTkLabel(self, text="Yeşil = kurulu (hemen kullanılabilir)   |   "
-                                "Gri = kurulu değil (indirilebilir)",
+        ctk.CTkLabel(self, text=t("ollama.legend"),
                      font=ctk.CTkFont(size=11), text_color=MUTED, anchor="w").grid(
             row=1, column=0, sticky="ew", padx=16, pady=(0, 6))
 
-        self.list_frame = ctk.CTkScrollableFrame(self, label_text="Modeller")
+        self.list_frame = ctk.CTkScrollableFrame(self, label_text=t("model.manage"))
         self.list_frame.grid(row=2, column=0, sticky="nsew", padx=12, pady=(0, 8))
         self.list_frame.grid_columnconfigure(0, weight=1)
 
@@ -60,12 +61,12 @@ class OllamaDialog(ctk.CTkToplevel):
         manual = ctk.CTkFrame(self)
         manual.grid(row=3, column=0, sticky="ew", padx=12, pady=(0, 8))
         manual.grid_columnconfigure(1, weight=1)
-        ctk.CTkLabel(manual, text="Başka model").grid(row=0, column=0, sticky="w",
+        ctk.CTkLabel(manual, text=t("ollama.other_model")).grid(row=0, column=0, sticky="w",
                                                        padx=(12, 8), pady=10)
         self.manual_entry = ctk.CTkEntry(
-            manual, placeholder_text="ollama.com/library üzerindeki tam ad, or: llama3.2:3b")
+            manual, placeholder_text=t("ollama.manual_placeholder"))
         self.manual_entry.grid(row=0, column=1, sticky="ew", padx=(0, 8), pady=10)
-        self.manual_button = ctk.CTkButton(manual, text="İndir", width=90,
+        self.manual_button = ctk.CTkButton(manual, text=t("settings.ollama.pull"), width=90,
                                            command=self._pull_manual)
         self.manual_button.grid(row=0, column=2, padx=(0, 12), pady=10)
 
@@ -80,11 +81,11 @@ class OllamaDialog(ctk.CTkToplevel):
         footer = ctk.CTkFrame(self, fg_color="transparent")
         footer.grid(row=6, column=0, sticky="ew", padx=16, pady=(0, 14))
         footer.grid_columnconfigure(0, weight=1)
-        self.cancel_button = ctk.CTkButton(footer, text="İndirmeyi iptal et", width=150,
+        self.cancel_button = ctk.CTkButton(footer, text=t("ollama.cancel_pull"), width=150,
                                            fg_color="#8b3a3a", hover_color="#a04545",
                                            state="disabled", command=self._cancel_pull)
         self.cancel_button.grid(row=0, column=0, sticky="w")
-        ctk.CTkButton(footer, text="Kapat", width=100, command=self._close).grid(
+        ctk.CTkButton(footer, text=t("ollama.close"), width=100, command=self._close).grid(
             row=0, column=1, sticky="e")
 
         self.protocol("WM_DELETE_WINDOW", self._close)
@@ -115,22 +116,20 @@ class OllamaDialog(ctk.CTkToplevel):
 
     def _render(self, available: bool, version, entries: List[Dict]) -> None:
         if not available:
-            self.daemon_label.configure(
-                text="Ollama daemon çalışmıyor - başlatmak için: ollama serve",
-                text_color=ERR_COLOR)
-            ctk.CTkLabel(self.list_frame,
-                         text="Daemon çalışmadığı için model listesi alınamadı.",
+            self.daemon_label.configure(text=t("settings.ollama.down"),
+                                        text_color=ERR_COLOR)
+            ctk.CTkLabel(self.list_frame, text=t("ollama.list_unavailable"),
                          text_color=MUTED).grid(row=0, column=0, pady=30)
             return
 
         installed = [e for e in entries if e["installed"]]
         self.daemon_label.configure(
-            text="Ollama %s çalışıyor - %d model kurulu" % (version or "?", len(installed)),
+            text=t("ollama.daemon_running", version=version or "?", count=len(installed)),
             text_color=OK_COLOR)
 
         row = 0
-        for section, want_installed in (("INDIRILENLER", True),
-                                        ("INDIRILEBILECEKLER", False)):
+        for section, want_installed in ((t("ollama.section.installed"), True),
+                                        (t("ollama.section.available"), False)):
             subset = [e for e in entries if e["installed"] is want_installed]
             if not subset:
                 continue
@@ -160,15 +159,15 @@ class OllamaDialog(ctk.CTkToplevel):
                                             padx=(0, 8), pady=(0, 8))
 
         if entry["installed"]:
-            ctk.CTkButton(card, text="Seç ve kullan", width=110,
+            ctk.CTkButton(card, text=t("ollama.choose"), width=110,
                           command=lambda n=entry["name"]: self._choose(n)).grid(
                 row=0, column=2, rowspan=2, padx=4)
-            ctk.CTkButton(card, text="Sil", width=60, fg_color="#8b3a3a",
+            ctk.CTkButton(card, text=t("ollama.delete"), width=60, fg_color="#8b3a3a",
                           hover_color="#a04545",
                           command=lambda n=entry["name"]: self._delete(n)).grid(
                 row=0, column=3, rowspan=2, padx=(0, 10))
         else:
-            ctk.CTkButton(card, text="İndir", width=110,
+            ctk.CTkButton(card, text=t("settings.ollama.pull"), width=110,
                           command=lambda n=entry["name"]: self._pull(n)).grid(
                 row=0, column=2, rowspan=2, padx=(4, 10))
         return row + 1
@@ -181,28 +180,28 @@ class OllamaDialog(ctk.CTkToplevel):
     def _delete(self, name: str) -> None:
         try:
             ollama_service.delete_model(name)
-            self._set_status("Silindi: %s" % name, MUTED)
+            self._set_status(t("ollama.deleted", name=name), MUTED)
         except Exception as exc:
-            self._set_status("Silinemedi: %s" % exc, ERR_COLOR)
+            self._set_status(t("ollama.delete_failed", error=exc), ERR_COLOR)
         self.refresh()
 
     def _pull_manual(self) -> None:
         name = self.manual_entry.get().strip()
         if not name:
-            self._set_status("Önce bir model adı girin.", WARN_COLOR)
+            self._set_status(t("ollama.need_name"), WARN_COLOR)
             return
         self._pull(name)
 
     def _pull(self, name: str) -> None:
         if self._busy:
-            self._set_status("Zaten devam eden bir indirme var.", WARN_COLOR)
+            self._set_status(t("ollama.already_pulling"), WARN_COLOR)
             return
         self._busy = True
         self._cancel = threading.Event()
         self.progress.set(0)
         self.manual_button.configure(state="disabled")
         self.cancel_button.configure(state="normal")
-        self._set_status("İndiriliyor: %s" % name, INFO_COLOR)
+        self._set_status(t("ollama.pulling", name=name), INFO_COLOR)
         threading.Thread(target=self._pull_worker, args=(name,), daemon=True,
                          name="ollama-pull").start()
 
@@ -216,13 +215,13 @@ class OllamaDialog(ctk.CTkToplevel):
             ok = ollama_service.pull_model(name, on_progress=on_progress,
                                            cancel_event=self._cancel)
             if self._cancel.is_set():
-                message, color = "İndirme iptal edildi.", WARN_COLOR
+                message, color = t("ollama.pull_cancelled"), WARN_COLOR
             elif ok:
-                message, color = "İndirildi: %s" % name, OK_COLOR
+                message, color = t("ollama.pulled", name=name), OK_COLOR
             else:
-                message, color = "İndirilemedi: %s" % name, ERR_COLOR
+                message, color = t("ollama.pull_failed", name=name), ERR_COLOR
         except Exception as exc:
-            message, color = "Hata: %s" % exc, ERR_COLOR
+            message, color = t("app.error.prefix", message=exc), ERR_COLOR
         post_to_ui(self, lambda: self._finish_pull(message, color, name))
 
     def _update_progress(self, percent, label: str, name: str) -> None:
@@ -244,7 +243,7 @@ class OllamaDialog(ctk.CTkToplevel):
 
     def _cancel_pull(self) -> None:
         self._cancel.set()
-        self._set_status("İptal ediliyor...", WARN_COLOR)
+        self._set_status(t("ollama.cancelling"), WARN_COLOR)
 
     def _set_status(self, message: str, color: str = MUTED) -> None:
         self.status.configure(text=message, text_color=color)

@@ -97,11 +97,17 @@ class TestAppWindow(unittest.TestCase):
             pass
 
     def test_window_opens_with_all_tabs(self):
+        from ai_data_studio.i18n import t
+
         names = self.app.tabview._name_list
-        self.assertEqual(names, ["Pipeline", "Geçmiş", "Ayarlar"])
+        # Sekme adlari cevrilir; karsilastirma katalog uzerinden yapilmali.
+        self.assertEqual(names, [t("app.tab.pipeline"), t("app.tab.history"),
+                                 t("app.tab.settings")])
 
     def test_can_switch_between_views(self):
-        for name in ("Geçmiş", "Ayarlar", "Pipeline"):
+        from ai_data_studio.i18n import t
+
+        for name in (t("app.tab.history"), t("app.tab.settings"), t("app.tab.pipeline")):
             self.app.tabview.set(name)
             self.app.update_idletasks()
             self.assertEqual(self.app.tabview.get(), name)
@@ -113,15 +119,21 @@ class TestAppWindow(unittest.TestCase):
 
     def test_model_selector_switches_to_ollama(self):
         selector = self.app.pipeline_view.model_selector
-        selector._on_provider_change("Ollama (yerel)")
+        from ai_data_studio.gui.components.model_selector import PROVIDER_LABELS
+
+        selector._on_provider_change(PROVIDER_LABELS["ollama"])
         self.app.update_idletasks()
         self.assertEqual(selector.provider, "ollama")
         # Daemon kapaliysa bile cokmemeli - liste ya modeller ya da uyari gosterir.
         self.assertTrue(selector.model_menu.cget("values"))
 
     def test_inner_pipeline_tabs(self):
+        from ai_data_studio.i18n import t
+
         tabs = self.app.pipeline_view.tabs
-        self.assertEqual(tabs._name_list, ["Konsol", "Sonuç", "Grafikler"])
+        self.assertEqual(tabs._name_list, [t("pipeline.tab.console"),
+                                           t("pipeline.tab.result"),
+                                           t("pipeline.tab.charts")])
 
     def test_collect_inputs_returns_pipeline_config_fields(self):
         from unittest import mock
@@ -154,26 +166,30 @@ class TestAppWindow(unittest.TestCase):
         """Proje kipinde satir sayisi KOK tabloya uygulanir; etiket bunu soylemeli."""
         from ai_data_studio.gui.views.pipeline_view import MODE_DOMAIN, MODE_PROJECT
 
+        from ai_data_studio.i18n import t
+
         view = self.app.pipeline_view
-        self.assertEqual(view.rows_label.cget("text"), "Satır sayısı")
+        self.assertEqual(view.rows_label.cget("text"), t("pipeline.rows.label"))
 
         view.mode_selector.set(MODE_PROJECT)
         view._on_mode_change(MODE_PROJECT)
-        self.assertIn("Kök tablo", view.rows_label.cget("text"))
+        self.assertEqual(view.rows_label.cget("text"), t("pipeline.rows.label_root"))
 
         view.mode_selector.set(MODE_DOMAIN)
         view._on_mode_change(MODE_DOMAIN)
-        self.assertEqual(view.rows_label.cget("text"), "Satır sayısı")
+        self.assertEqual(view.rows_label.cget("text"), t("pipeline.rows.label"))
 
     def test_result_tab_shows_project_plan(self):
         """CLI'in bastigi plan kararlari Sonuç sekmesinde de gorunmeli (F5)."""
         view = self.app.pipeline_view
+        from ai_data_studio.i18n import t
+
         view.show_result(_fake_result(with_plan=True))
         text = view.result_box.get("1.0", "end-1c")
 
-        self.assertIn("PROJE PLANI", text)
+        self.assertIn(t("result.section.plan"), text)
         self.assertIn("customers.churned", text)        # hedef degisken
-        self.assertIn("pozitif %18.0", text)            # sinif dengesi
+        self.assertIn(t("result.plan.positive_pct", pct="18.0"), text)  # sinif dengesi
         self.assertIn("temporal", text)                 # train/test ayrimi
         self.assertIn("cancellation_reason", text)      # ayiklanan sizinti kolonu
 
@@ -183,8 +199,10 @@ class TestAppWindow(unittest.TestCase):
         view.show_result(_fake_result(with_plan=False))
         text = view.result_box.get("1.0", "end-1c")
 
-        self.assertNotIn("PROJE PLANI", text)
-        self.assertIn("AYIKLAMA AŞAMALARI", text)
+        from ai_data_studio.i18n import t
+
+        self.assertNotIn(t("result.section.plan"), text)
+        self.assertIn(t("result.section.stages"), text)
 
     def test_start_is_blocked_with_actionable_message_when_no_credential(self):
         """Kullanicinin en çok takildigi yer: kimlik yokken 'Başlat' ne diyor?"""
@@ -204,6 +222,7 @@ class TestAppWindow(unittest.TestCase):
     def test_readiness_reflects_credential_and_model(self):
         from unittest import mock
         from ai_data_studio import config
+        from ai_data_studio.i18n import t
 
         selector = self.app.pipeline_view.model_selector
         with mock.patch.object(config, "credential_status",
@@ -219,7 +238,7 @@ class TestAppWindow(unittest.TestCase):
                                              "checked_env_vars": ["X"]}):
             selector._update_readiness()
             self.assertFalse(selector.is_ready())
-            self.assertIn("Ayarla", selector.readiness_message())
+            self.assertIn(t("model.configure"), selector.readiness_message())
 
     def test_empty_prompt_is_rejected(self):
         view = self.app.pipeline_view
@@ -269,8 +288,11 @@ class TestAppWindow(unittest.TestCase):
         self.app.handle_event("error", "test hatası")
         self.assertIn("test hatası", self.app.console.get_text())
 
+        from ai_data_studio.i18n import t
+
         self.app.handle_event("cancelled", None)
-        self.assertIn("iptal edildi", self.app.console.get_text().lower())
+        self.assertIn(t("app.cancelled.console").lower(),
+                      self.app.console.get_text().lower())
 
     def test_llm_progress_event_goes_to_console_without_moving_the_bar(self):
         """LLM cagrisinin icinden gelen ara durum: konsola dusmeli, yuzdeye dokunmamali."""
@@ -343,10 +365,12 @@ class TestAppWindow(unittest.TestCase):
         self.app.poll_queue()
         self.app.update_idletasks()
 
+        from ai_data_studio.i18n import t
+
         self.assertIsNotNone(self.app._last_result, "Pipeline sonuç uretmedi")
         text = self.app.console.get_text()
-        self.assertIn("TAMAMLANDI", text)
-        self.assertIn("temiz satır", text)
+        self.assertIn(t("app.done.separator"), text)
+        self.assertIn("clean rows", text)
         # Sonuc sekmesi doldu ve grafikler cizildi
         self.assertIn("JOB #", self.app.pipeline_view.result_box.get("1.0", "end-1c"))
         self.assertGreater(len(self.app.pipeline_view.chart_panel._images), 0)
@@ -377,11 +401,14 @@ class TestEngineLines(unittest.TestCase):
     def test_renders_every_engine_block(self):
         from ai_data_studio.gui.views.pipeline_view import engine_lines
 
+        from ai_data_studio.i18n import t
+
         text = "\n".join(engine_lines(self._report()))
         self.assertIn("parametric", text)
         self.assertIn("250", text)                 # tekil varlik
         self.assertIn("age_group", text)           # turetilen kolon
-        self.assertIn("doğrulamadan SONRA", text)  # kirlilik sirasi yazili olmali
+        # Kirlilik sirasi mutlaka yazili olmali - hangi dilde olursa olsun.
+        self.assertIn(t("result.engines.dirty_value", rows="100", rate="5.0"), text)
 
     def test_engine_label_round_trip(self):
         from ai_data_studio.gui.views import pipeline_view as pv
@@ -508,20 +535,25 @@ class TestRelationalLines(unittest.TestCase):
     def test_reports_row_counts_orphans_and_cardinality(self):
         from ai_data_studio.gui.views.pipeline_view import relational_lines
 
+        from ai_data_studio.i18n import t
+
         text = "\n".join(relational_lines(_relational_report()))
-        self.assertIn("BAŞARISIZ", text)
-        self.assertIn("2,000", text)
+        self.assertIn(t("result.relational.failed"), text)
+        self.assertIn("2,000", text)                              # tablo satir sayisi
         self.assertIn("5,600", text)
-        self.assertIn("İHLAL", text)
-        self.assertIn("SAPMA", text)
-        self.assertIn("12", text)
+        self.assertIn(t("result.relational.violation"), text)     # yetim FK
+        self.assertIn(t("result.relational.deviation"), text)     # kardinalite
+        self.assertIn("12", text)                                 # onarimda silinen
 
     def test_says_when_orphan_repair_is_off(self):
         from ai_data_studio.gui.views.pipeline_view import relational_lines
 
         report = _relational_report()
+        from ai_data_studio.i18n import t
+
         report["relational"]["repair_enabled"] = False
-        self.assertIn("KAPALI", "\n".join(relational_lines(report)))
+        self.assertIn(t("result.relational.repair_off"),
+                      "\n".join(relational_lines(report)))
 
 
 @unittest.skipUnless(GUI_AVAILABLE, "Grafik ortami yok")
@@ -598,7 +630,9 @@ class TestRelationalControls(unittest.TestCase):
         self.view.engine_menu.set(_engine_label(ENGINE_PARAMETRIC))
         with self.assertRaises(ValueError) as ctx:
             self._inputs()
-        self.assertIn("çok tablolu", str(ctx.exception))
+        from ai_data_studio.i18n import t as _t
+
+        self.assertEqual(str(ctx.exception), _t("pipeline.error.parametric_relational"))
 
     def test_table_count_bounds_are_enforced(self):
         self.view.relational_var.set(True)
@@ -816,18 +850,19 @@ class TestAuthAndOllamaDialogs(unittest.TestCase):
     def test_auth_dialog_offers_both_methods(self):
         from ai_data_studio import config
         from ai_data_studio.gui.components.auth_dialog import AuthDialog
+        from ai_data_studio.i18n import t
 
         # Etiket sağlayıcıya göre değişir: Gemini'nin anahtarsız yolu Antigravity CLI.
         gemini = AuthDialog(self.root, config.PROVIDER_GEMINI)
         self.root.update_idletasks()
         self.assertEqual(list(gemini.method.cget("values")),
-                         ["API anahtarı", "Antigravity CLI girişi"])
+                         [t("auth.method.api_key"), t("auth.method.agy")])
         gemini.destroy()
 
         claude = AuthDialog(self.root, config.PROVIDER_ANTHROPIC)
         self.root.update_idletasks()
         self.assertEqual(list(claude.method.cget("values")),
-                         ["API anahtarı", "OAuth / CLI girişi"])
+                         [t("auth.method.api_key"), t("auth.method.oauth")])
         claude.destroy()
 
     def test_auth_dialog_opens_for_both_providers(self):
@@ -881,9 +916,11 @@ class TestAuthAndOllamaDialogs(unittest.TestCase):
             dialog._render(True, "0.6.2", catalog)
             self.root.update_idletasks()
 
+        from ai_data_studio.i18n import t
+
         labels = _all_text(dialog.list_frame)
-        self.assertIn("INDIRILENLER", labels)
-        self.assertIn("INDIRILEBILECEKLER", labels)
+        self.assertIn(t("ollama.section.installed"), labels)
+        self.assertIn(t("ollama.section.available"), labels)
         self.assertIn("qwen2.5-coder:14b", labels)
         self.assertIn("llama3.1:8b", labels)
         self.assertIn("9.0 GB", labels)

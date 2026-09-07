@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import Callable, List, Optional
 
 import customtkinter as ctk
+from ...i18n import t
 
 STATUS_COLORS = {
     "done": "#81c784",
@@ -31,11 +32,11 @@ class HistoryView(ctk.CTkFrame):
         header = ctk.CTkFrame(self, fg_color="transparent")
         header.grid(row=0, column=0, sticky="ew", pady=(0, 6))
         header.grid_columnconfigure(0, weight=1)
-        ctk.CTkLabel(header, text="Geçmiş İşler",
+        ctk.CTkLabel(header, text=t("history.title"),
                      font=ctk.CTkFont(size=14, weight="bold")).grid(row=0, column=0, sticky="w")
-        ctk.CTkButton(header, text="Yenile", width=70, command=self.refresh).grid(
+        ctk.CTkButton(header, text=t("history.refresh"), width=70, command=self.refresh).grid(
             row=0, column=1, sticky="e", padx=(0, 6))
-        ctk.CTkButton(header, text="Temizle", width=70, fg_color="#b71c1c", hover_color="#c62828",
+        ctk.CTkButton(header, text=t("history.clear"), width=70, fg_color="#b71c1c", hover_color="#c62828",
                       command=self._on_clear).grid(row=0, column=2, sticky="e")
 
         body = ctk.CTkFrame(self, fg_color="transparent")
@@ -44,7 +45,7 @@ class HistoryView(ctk.CTkFrame):
         body.grid_columnconfigure(1, weight=3, uniform="h")
         body.grid_rowconfigure(0, weight=1)
 
-        self.job_list = ctk.CTkScrollableFrame(body, label_text="İşler")
+        self.job_list = ctk.CTkScrollableFrame(body, label_text=t("history.jobs"))
         self.job_list.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
         self.job_list.grid_columnconfigure(0, weight=1)
 
@@ -55,7 +56,7 @@ class HistoryView(ctk.CTkFrame):
         self.detail_box = ctk.CTkTextbox(detail, wrap="word",
                                          font=ctk.CTkFont(family="Consolas", size=12))
         self.detail_box.grid(row=0, column=0, sticky="nsew", padx=8, pady=8)
-        self.detail_box.insert("1.0", "Soldan bir is seçin.")
+        self.detail_box.insert("1.0", t("history.pick_job"))
         self.detail_box.configure(state="disabled")
 
         self._buttons: List[ctk.CTkButton] = []
@@ -66,7 +67,7 @@ class HistoryView(ctk.CTkFrame):
         self.state.clear_history()
         self.detail_box.configure(state="normal")
         self.detail_box.delete("1.0", "end")
-        self.detail_box.insert("1.0", "Tüm geçmiş işler temizlendi.")
+        self.detail_box.insert("1.0", t("history.cleared"))
         self.detail_box.configure(state="disabled")
         self.refresh()
 
@@ -77,7 +78,7 @@ class HistoryView(ctk.CTkFrame):
 
         jobs = self.state.list_jobs(limit=100)
         if not jobs:
-            ctk.CTkLabel(self.job_list, text="Henüz çalıştırılmış bir is yok.",
+            ctk.CTkLabel(self.job_list, text=t("history.empty"),
                          text_color="#8a8a8a").grid(row=0, column=0, pady=20)
             return
 
@@ -105,46 +106,58 @@ class HistoryView(ctk.CTkFrame):
         report = self.state.get_report(job_id)
         cost = self.state.get_cost_summary(job_id)
 
+        def field(key, value):
+            """Etiketi sabit genişlikte hizalar - çeviri uzunlukları farklıdır."""
+            return "%-22s: %s" % (t(key), value)
+
         lines: List[str] = [
             "JOB #%d" % job_id,
             "=" * 60,
-            "Durum          : %s" % job["status"],
-            "Domain         : %s" % (job["domain"] or "-"),
-            "İstek          : %s" % (job["prompt"] or "-"),
-            "Sağlayıcı      : %s / %s" % (job["provider"] or "-", job["model"] or "-"),
-            "Oluşturuldu    : %s" % (job["created_at"] or "").replace("T", " "),
-            "Güncellendi    : %s" % (job["updated_at"] or "").replace("T", " "),
-            "Adım           : %s/%s - %s" % (job["current_step"], 7, job["step_name"] or "-"),
-            "Random seed    : %s" % job["random_seed"],
-            "Üretilen satır : %s" % format(job["generated_rows_count"] or 0, ","),
-            "Temiz satır    : %s" % format(job["validated_rows_count"] or 0, ","),
-            "LLM maliyeti   : $%.4f (%s çağrı)" % (cost.get("cost_usd", 0.0),
-                                                   cost.get("calls", 0)),
+            field("history.field.status", job["status"]),
+            field("history.field.domain", job["domain"] or "-"),
+            field("history.field.prompt", job["prompt"] or "-"),
+            field("history.field.provider",
+                  "%s / %s" % (job["provider"] or "-", job["model"] or "-")),
+            field("history.field.created", (job["created_at"] or "").replace("T", " ")),
+            field("history.field.updated", (job["updated_at"] or "").replace("T", " ")),
+            field("history.field.step",
+                  "%s/%s - %s" % (job["current_step"], 7, job["step_name"] or "-")),
+            field("history.field.seed", job["random_seed"]),
+            field("history.field.rows_generated",
+                  format(job["generated_rows_count"] or 0, ",")),
+            field("history.field.rows_clean",
+                  format(job["validated_rows_count"] or 0, ",")),
+            field("history.field.cost", "$%.4f (%s)" % (
+                cost.get("cost_usd", 0.0),
+                t("history.field.calls", calls=cost.get("calls", 0)))),
         ]
         if job["output_path"]:
-            lines.append("Çıktı          : %s" % job["output_path"])
+            lines.append(field("history.field.output", job["output_path"]))
         if job["error"]:
-            lines += ["", "HATA", "-" * 60, str(job["error"])]
+            lines += ["", t("history.section.error"), "-" * 60, str(job["error"])]
 
         schema = self.state.get_schema(job_id)
         if schema:
-            lines += ["", "ŞEMA", "-" * 60,
-                      "Kolonlar: " + ", ".join(c["name"] for c in schema.get("columns", []))]
+            lines += ["", t("history.section.schema"), "-" * 60,
+                      t("history.schema.columns",
+                        columns=", ".join(c["name"] for c in schema.get("columns", [])))]
             for rule in schema.get("business_rules", []):
-                lines.append("  kural: %s" % rule)
+                lines.append("  " + t("history.schema.rule", rule=rule))
 
         if report:
-            lines += ["", "VALIDASYON", "-" * 60,
-                      "  %s -> %s satır (%%%.1f korundu)"
-                      % (format(report.get("rows_in", 0), ","),
-                         format(report.get("rows_out", 0), ","),
-                         report.get("retention_pct", 0.0))]
+            lines += ["", t("history.section.validation"), "-" * 60,
+                      "  " + t("history.validation.rows",
+                               rows_in=format(report.get("rows_in", 0), ","),
+                               rows_out=format(report.get("rows_out", 0), ","),
+                               retention="%.1f" % report.get("retention_pct", 0.0))]
             for stage in report.get("stages", []):
                 lines.append("  %-24s -%s" % (stage["stage"], format(stage["removed"], ",")))
             for corr in report.get("correlations", []):
-                lines.append("  korelasyon %s: r=%s [%s]"
-                             % ("/".join(corr["pair"]), corr.get("actual_r"),
-                                "GEÇTİ" if corr.get("pass") else "KALDI"))
+                lines.append("  " + t(
+                    "history.validation.correlation",
+                    pair="/".join(corr["pair"]), r=corr.get("actual_r"),
+                    verdict=t("history.verdict.pass") if corr.get("pass")
+                    else t("history.verdict.fail")))
 
         self.detail_box.configure(state="normal")
         self.detail_box.delete("1.0", "end")

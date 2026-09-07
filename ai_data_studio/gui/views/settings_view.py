@@ -12,6 +12,7 @@ from typing import Any, Dict
 import customtkinter as ctk
 
 from ... import config
+from ...i18n import LANGUAGE_NAMES, get_language, t
 from ...services import ollama_service
 from ..thread_bridge import post_to_ui
 
@@ -36,12 +37,11 @@ class SettingsView(ctk.CTkScrollableFrame):
         keys_frame.grid_columnconfigure(1, weight=1)
         row += 1
 
-        ctk.CTkLabel(keys_frame, text="API Anahtarları",
+        ctk.CTkLabel(keys_frame, text=t("settings.keys.title"),
                      font=ctk.CTkFont(size=14, weight="bold")).grid(
             row=0, column=0, columnspan=3, sticky="w", padx=12, pady=(12, 2))
         ctk.CTkLabel(keys_frame,
-                     text="Anahtarlar Windows Credential Manager'da (keyring) saklanır, "
-                          "hiçbir zaman düz metin dosyaya yazılmaz.",
+                     text=t("settings.keys.storage_note"),
                      font=ctk.CTkFont(size=11), text_color="#8a8a8a",
                      wraplength=560, justify="left").grid(
             row=1, column=0, columnspan=3, sticky="w", padx=12, pady=(0, 8))
@@ -52,13 +52,14 @@ class SettingsView(ctk.CTkScrollableFrame):
             grid_row = 2 + i * 2
             ctk.CTkLabel(keys_frame, text=label).grid(
                 row=grid_row, column=0, sticky="w", padx=(12, 8), pady=(6, 0))
-            entry = ctk.CTkEntry(keys_frame, show="*", placeholder_text="(boş bırakılırsa %s kullanılır)" % env_var)
+            entry = ctk.CTkEntry(keys_frame, show="*",
+                                 placeholder_text=t("settings.keys.placeholder", env_var=env_var))
             entry.grid(row=grid_row, column=1, sticky="ew", padx=(0, 8), pady=(6, 0))
             button_row = ctk.CTkFrame(keys_frame, fg_color="transparent")
             button_row.grid(row=grid_row, column=2, padx=(0, 12), pady=(6, 0))
-            ctk.CTkButton(button_row, text="Kaydet", width=64,
+            ctk.CTkButton(button_row, text=t("settings.keys.save"), width=64,
                           command=lambda p=provider: self._save_key(p)).pack(side="left")
-            ctk.CTkButton(button_row, text="Test et", width=64, fg_color="#3a5a78",
+            ctk.CTkButton(button_row, text=t("settings.keys.test"), width=64, fg_color="#3a5a78",
                           hover_color="#46698a",
                           command=lambda p=provider: self._test_credential(p)).pack(
                 side="left", padx=(6, 0))
@@ -78,13 +79,11 @@ class SettingsView(ctk.CTkScrollableFrame):
         oauth_frame.grid_columnconfigure(1, weight=1)
         row += 1
 
-        ctk.CTkLabel(oauth_frame, text="OAuth / CLI ile Giriş",
+        ctk.CTkLabel(oauth_frame, text=t("settings.oauth.title"),
                      font=ctk.CTkFont(size=14, weight="bold")).grid(
             row=0, column=0, columnspan=3, sticky="w", padx=12, pady=(12, 2))
         ctk.CTkLabel(oauth_frame,
-                     text="API anahtarı yerine tarayıcıdan oturum açabilirsiniz. "
-                          "Giriş komutu ayrı bir konsol penceresinde çalışır; "
-                          "bittikten sonra 'Yeniden tara' deyin.",
+                     text=t("settings.oauth.note"),
                      font=ctk.CTkFont(size=11), text_color="#8a8a8a",
                      wraplength=560, justify="left").grid(
             row=1, column=0, columnspan=3, sticky="w", padx=12, pady=(0, 8))
@@ -101,7 +100,7 @@ class SettingsView(ctk.CTkScrollableFrame):
                 row=grid_row, column=0, sticky="w", padx=(12, 8), pady=(4, 0))
             status = ctk.CTkLabel(oauth_frame, text="", font=ctk.CTkFont(size=11), anchor="w")
             status.grid(row=grid_row, column=1, sticky="ew", padx=(0, 8), pady=(4, 0))
-            ctk.CTkButton(oauth_frame, text="Giriş yap", width=90,
+            ctk.CTkButton(oauth_frame, text=t("settings.oauth.login"), width=90,
                           command=lambda p=provider: self._oauth_login(p)).grid(
                 row=grid_row, column=2, padx=(0, 12), pady=(4, 0))
             hint = ctk.CTkLabel(oauth_frame, text="", font=ctk.CTkFont(family="Consolas", size=10),
@@ -109,7 +108,7 @@ class SettingsView(ctk.CTkScrollableFrame):
             hint.grid(row=grid_row + 1, column=1, columnspan=2, sticky="ew", padx=(0, 12))
             self.oauth_status_labels[provider] = (status, hint)
 
-        ctk.CTkButton(oauth_frame, text="Yeniden tara", width=110,
+        ctk.CTkButton(oauth_frame, text=t("settings.oauth.rescan"), width=110,
                       fg_color="#3a5a78", hover_color="#46698a",
                       command=self._refresh_oauth_status).grid(
             row=2 + len(oauth_fields) * 2, column=2, padx=(0, 12), pady=(8, 12))
@@ -121,24 +120,24 @@ class SettingsView(ctk.CTkScrollableFrame):
         ollama_frame.grid_columnconfigure(1, weight=1)
         row += 1
 
-        ctk.CTkLabel(ollama_frame, text="Ollama (yerel modeller)",
+        ctk.CTkLabel(ollama_frame, text=t("settings.ollama.title"),
                      font=ctk.CTkFont(size=14, weight="bold")).grid(
             row=0, column=0, columnspan=3, sticky="w", padx=12, pady=(12, 6))
 
-        self.ollama_status = ctk.CTkLabel(ollama_frame, text="Kontrol ediliyor...",
+        self.ollama_status = ctk.CTkLabel(ollama_frame, text=t("settings.ollama.checking"),
                                           font=ctk.CTkFont(size=11), anchor="w")
         self.ollama_status.grid(row=1, column=0, columnspan=2, sticky="ew", padx=12)
-        ctk.CTkButton(ollama_frame, text="Yenile", width=70,
+        ctk.CTkButton(ollama_frame, text=t("settings.ollama.refresh"), width=70,
                       command=self.refresh_ollama).grid(row=1, column=2, padx=(0, 12))
 
-        ctk.CTkButton(ollama_frame, text="Model yöneticisini aç", width=180,
+        ctk.CTkButton(ollama_frame, text=t("settings.ollama.open_manager"), width=180,
                       command=self._open_ollama_dialog).grid(
             row=2, column=0, columnspan=2, sticky="w", padx=12, pady=(10, 0))
-        ctk.CTkLabel(ollama_frame, text="Hızlı indir").grid(
+        ctk.CTkLabel(ollama_frame, text=t("settings.ollama.quick_pull")).grid(
             row=3, column=0, sticky="w", padx=(12, 8), pady=(10, 12))
         self.pull_entry = ctk.CTkEntry(ollama_frame, placeholder_text="or: qwen2.5-coder:7b")
         self.pull_entry.grid(row=3, column=1, sticky="ew", padx=(0, 8), pady=(10, 12))
-        self.pull_button = ctk.CTkButton(ollama_frame, text="İndir", width=70,
+        self.pull_button = ctk.CTkButton(ollama_frame, text=t("settings.ollama.pull"), width=70,
                                          command=self._pull_model)
         self.pull_button.grid(row=3, column=2, padx=(0, 12), pady=(10, 12))
 
@@ -155,29 +154,43 @@ class SettingsView(ctk.CTkScrollableFrame):
         defaults_frame.grid_columnconfigure(1, weight=1)
         row += 1
 
-        ctk.CTkLabel(defaults_frame, text="Varsayılanlar",
+        ctk.CTkLabel(defaults_frame, text=t("settings.defaults.title"),
                      font=ctk.CTkFont(size=14, weight="bold")).grid(
             row=0, column=0, columnspan=2, sticky="w", padx=12, pady=(12, 6))
 
-        ctk.CTkLabel(defaults_frame, text="Tema").grid(row=1, column=0, sticky="w",
+        ctk.CTkLabel(defaults_frame, text=t("settings.defaults.theme")).grid(row=1, column=0, sticky="w",
                                                        padx=(12, 8), pady=6)
         self.appearance_menu = ctk.CTkOptionMenu(
             defaults_frame, values=["dark", "light", "system"], command=self._change_appearance)
         self.appearance_menu.set(self.settings.get("appearance", "dark"))
         self.appearance_menu.grid(row=1, column=1, sticky="w", padx=(0, 12), pady=6)
 
-        ctk.CTkLabel(defaults_frame, text="Veri dizini").grid(row=2, column=0, sticky="w",
-                                                              padx=(12, 8), pady=6)
+        ctk.CTkLabel(defaults_frame, text=t("settings.defaults.language")).grid(
+            row=2, column=0, sticky="w", padx=(12, 8), pady=6)
+        self.language_menu = ctk.CTkOptionMenu(
+            defaults_frame, values=list(LANGUAGE_NAMES.values()),
+            command=self._change_language)
+        self.language_menu.set(LANGUAGE_NAMES.get(get_language(),
+                                                  LANGUAGE_NAMES["en"]))
+        self.language_menu.grid(row=2, column=1, sticky="w", padx=(0, 12), pady=6)
+        self.language_hint = ctk.CTkLabel(
+            defaults_frame, text="", font=ctk.CTkFont(size=11), text_color="#4fc3f7",
+            anchor="w", wraplength=420, justify="left")
+        self.language_hint.grid(row=3, column=1, sticky="ew", padx=(0, 12), pady=(0, 6))
+        self.language_hint.grid_remove()
+
+        ctk.CTkLabel(defaults_frame, text=t("settings.defaults.data_dir")).grid(
+            row=4, column=0, sticky="w", padx=(12, 8), pady=6)
         path_label = ctk.CTkLabel(defaults_frame, text=str(config.APP_DATA_DIR),
                                   font=ctk.CTkFont(size=11), text_color="#8a8a8a", anchor="w")
-        path_label.grid(row=2, column=1, sticky="ew", padx=(0, 12), pady=(6, 12))
+        path_label.grid(row=4, column=1, sticky="ew", padx=(0, 12), pady=(6, 12))
 
         # ================= Maliyet ====================================== #
         cost_frame = ctk.CTkFrame(self)
         cost_frame.grid(row=row, column=0, sticky="ew", padx=6, pady=(0, 10))
         cost_frame.grid_columnconfigure(0, weight=1)
         row += 1
-        ctk.CTkLabel(cost_frame, text="LLM Maliyet Özeti",
+        ctk.CTkLabel(cost_frame, text=t("settings.cost.title"),
                      font=ctk.CTkFont(size=14, weight="bold")).grid(
             row=0, column=0, sticky="w", padx=12, pady=(12, 6))
         self.cost_label = ctk.CTkLabel(cost_frame, text="-", anchor="w",
@@ -193,18 +206,20 @@ class SettingsView(ctk.CTkScrollableFrame):
         for provider, _, _ in KEY_FIELDS:
             status = config.credential_status(provider)
             if status["explicit"]:
-                text, color = "Tanımlı - kaynak: %s" % status["source"], "#81c784"
+                text = t("settings.keys.defined_source", source=status["source"])
+                color = "#81c784"
             elif status["configured"]:
-                text = "Anahtar girilmemis ama %s bulundu - denenecek" % status["source"]
+                text = t("settings.keys.implicit_source", source=status["source"])
                 color = "#4fc3f7"
             else:
-                text = "Tanımlı değil (bakılan: %s)" % ", ".join(status["checked_env_vars"])
+                text = "%s (%s)" % (t("settings.keys.missing"),
+                                    ", ".join(status["checked_env_vars"]))
                 color = "#ffb74d"
             self.key_status[provider].configure(text=text, text_color=color)
 
     def _test_credential(self, provider: str) -> None:
         """Kimliği gerçek bir API çağrısıyla doğrular (arka planda)."""
-        self.key_status[provider].configure(text="Test ediliyor...", text_color="#8a8a8a")
+        self.key_status[provider].configure(text=t("settings.keys.testing"), text_color="#8a8a8a")
         threading.Thread(target=self._test_worker, args=(provider,), daemon=True,
                          name="credential-test").start()
 
@@ -217,13 +232,13 @@ class SettingsView(ctk.CTkScrollableFrame):
                 client = create_client(provider)
                 ok = client.health_check()
                 detail = client.last_health_error if not ok else (
-                    "Bağlantı başarılı - kaynak: %s" % client.credential.source)
+                    t("settings.keys.test_ok", detail=client.credential.source))
         except Exception as exc:
             ok, detail = False, str(exc)
         color = "#81c784" if ok else "#e57373"
-        prefix = "OK - " if ok else "BAŞARISIZ - "
+        text = detail if ok else t("settings.keys.test_failed", error=detail)
         post_to_ui(self, lambda: self.key_status[provider].configure(
-            text=(prefix + detail)[:110], text_color=color))
+            text=text[:110], text_color=color))
 
     @staticmethod
     def _test_huggingface():
@@ -242,7 +257,9 @@ class SettingsView(ctk.CTkScrollableFrame):
         saved = config.set_api_key(provider, value)
         if not saved:
             self.key_status[provider].configure(
-                text="keyring kullanılamıyor - ortam değişkeni kullanın", text_color="#e57373")
+                text=t("settings.keys.save_failed",
+                       error=t("settings.keys.keyring_unavailable")),
+                text_color="#e57373")
             return
         self.key_entries[provider].delete(0, "end")
         self._refresh_key_status()
@@ -258,16 +275,19 @@ class SettingsView(ctk.CTkScrollableFrame):
             info = config.oauth_status(provider)
             command = " ".join(info["command"])
             if info["logged_in"]:
-                status_label.configure(text="Giriş yapılmış - " + info["detail"],
-                                       text_color="#81c784")
+                status_label.configure(
+                    text=t("settings.oauth.logged_in", detail=info["detail"]),
+                    text_color="#81c784")
                 hint_label.configure(text="")
             elif not info["command"]:
                 status_label.configure(text=info["detail"], text_color="#8a8a8a")
                 hint_label.configure(text=info.get("note", ""))
             elif not config.cli_available(info["command"][0]):
                 status_label.configure(
-                    text="%s komutu kurulu değil" % info["command"][0], text_color="#ffb74d")
-                hint_label.configure(text="kurulum: " + info["install_hint"])
+                    text=t("settings.oauth.not_installed",
+                           command=info["command"][0], hint=info["install_hint"]),
+                    text_color="#ffb74d")
+                hint_label.configure(text=info["install_hint"])
             else:
                 status_label.configure(text=info["detail"], text_color="#ffb74d")
                 hint_label.configure(text=command + ("   |  " + info["note"] if info["note"] else ""))
@@ -299,14 +319,26 @@ class SettingsView(ctk.CTkScrollableFrame):
             return
         if not config.cli_available(command[0]):
             status_label.configure(text="%s bulunamadı" % command[0], text_color="#e57373")
-            hint_label.configure(text="önce kurun: " + info["install_hint"])
+            hint_label.configure(text=info["install_hint"])
             return
-        status_label.configure(text="Giriş penceresi açıldı, tarayıcıdan tamamlayın...",
+        status_label.configure(text=t("auth.oauth.console_opened"),
                                text_color="#4fc3f7")
         try:
             config.launch_login_process(command)
         except Exception as exc:
             status_label.configure(text="Başlatılamadı: %s" % exc, text_color="#e57373")
+
+    def _change_language(self, label: str) -> None:
+        """Dili kaydeder ve yeniden başlatma gerektiğini söyler.
+
+        Widget metinleri canlı değiştirilmiyor: bu boyutta bir arayüzde her
+        etiketi yeniden kurmak gereksiz iş ve kırılgan. Ayar kaydedilir, kullanıcı
+        uygulamayı yeniden açtığında yeni dil geçerli olur.
+        """
+        code = next((c for c, name in LANGUAGE_NAMES.items() if name == label), "en")
+        config.save_settings({"language": code})
+        self.language_hint.configure(text=t("settings.defaults.language_restart"))
+        self.language_hint.grid()
 
     def _change_appearance(self, mode: str) -> None:
         ctk.set_appearance_mode(mode)

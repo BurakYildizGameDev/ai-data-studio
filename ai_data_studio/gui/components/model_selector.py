@@ -15,6 +15,7 @@ from typing import Callable, Dict, List, Optional
 import customtkinter as ctk
 
 from ... import config
+from ...i18n import t
 from ...services import ollama_service
 from ..thread_bridge import post_to_ui
 from ..ui_utils import show_if
@@ -24,7 +25,7 @@ from .ollama_dialog import OllamaDialog
 PROVIDER_LABELS = {
     config.PROVIDER_ANTHROPIC: "Anthropic (Claude)",
     config.PROVIDER_GEMINI: "Google (Gemini)",
-    config.PROVIDER_OLLAMA: "Ollama (yerel)",
+    config.PROVIDER_OLLAMA: t("model.provider.ollama"),
 }
 LABEL_TO_PROVIDER = {v: k for k, v in PROVIDER_LABELS.items()}
 
@@ -33,8 +34,8 @@ CLOUD_MODELS = {
     config.PROVIDER_GEMINI: ["gemini-2.5-pro", "gemini-2.5-flash"],
 }
 
-NO_MODEL = "(kurulu model yok)"
-LOADING = "(yükleniyor...)"
+NO_MODEL = t("model.list.none")
+LOADING = t("model.list.loading")
 
 OK_COLOR = "#81c784"
 WARN_COLOR = "#ffb74d"
@@ -58,7 +59,7 @@ class ModelSelector(ctk.CTkFrame):
         self.grid_columnconfigure(1, weight=1)
 
         # --- saglayici ---------------------------------------------------- #
-        ctk.CTkLabel(self, text="Sağlayıcı").grid(row=0, column=0, sticky="w",
+        ctk.CTkLabel(self, text=t("model.provider")).grid(row=0, column=0, sticky="w",
                                                    padx=(10, 8), pady=(8, 4))
         self.provider_menu = ctk.CTkOptionMenu(
             self, values=list(PROVIDER_LABELS.values()), command=self._on_provider_change)
@@ -68,21 +69,21 @@ class ModelSelector(ctk.CTkFrame):
                                 padx=(0, 10), pady=(8, 4))
 
         # --- kimlik ------------------------------------------------------- #
-        ctk.CTkLabel(self, text="Kimlik").grid(row=1, column=0, sticky="w",
+        ctk.CTkLabel(self, text=t("model.credential")).grid(row=1, column=0, sticky="w",
                                                 padx=(10, 8), pady=4)
         self.auth_label = ctk.CTkLabel(self, text="", anchor="w",
                                        font=ctk.CTkFont(size=11))
         self.auth_label.grid(row=1, column=1, sticky="ew", padx=(0, 8), pady=4)
-        self.auth_button = ctk.CTkButton(self, text="Ayarla", width=90,
+        self.auth_button = ctk.CTkButton(self, text=t("model.configure"), width=90,
                                          command=self._open_auth)
         self.auth_button.grid(row=1, column=2, padx=(0, 10), pady=4)
 
         # --- model -------------------------------------------------------- #
-        ctk.CTkLabel(self, text="Model").grid(row=2, column=0, sticky="w",
+        ctk.CTkLabel(self, text=t("model.model")).grid(row=2, column=0, sticky="w",
                                                padx=(10, 8), pady=4)
         self.model_menu = ctk.CTkComboBox(self, values=[""], command=self._on_model_change)
         self.model_menu.grid(row=2, column=1, sticky="ew", padx=(0, 8), pady=4)
-        self.manage_button = ctk.CTkButton(self, text="Modeller", width=90,
+        self.manage_button = ctk.CTkButton(self, text=t("model.manage"), width=90,
                                            command=self._open_ollama)
         self.manage_button.grid(row=2, column=2, padx=(0, 10), pady=4)
 
@@ -103,7 +104,9 @@ class ModelSelector(ctk.CTkFrame):
     @property
     def model(self) -> str:
         value = (self.model_menu.get() or "").strip()
-        return "" if value.startswith("(") else value
+        # Yer tutucu girdiler model DEGILDIR. Karsilastirma sabitler uzerinden
+        # yapilir; cevrilmis metnin bicimine guvenilemez.
+        return "" if value in (NO_MODEL, LOADING) else value
 
     def is_ready(self) -> bool:
         """Pipeline başlatılabilir mi?"""
@@ -132,10 +135,10 @@ class ModelSelector(ctk.CTkFrame):
         show_if(self.auth_button, not is_ollama)
 
         if is_ollama:
-            self.auth_label.configure(text="Yerel - kimlik gerekmez", text_color=MUTED)
+            self.auth_label.configure(text=t("model.auth.local"), text_color=MUTED)
             self.model_menu.configure(values=[LOADING])
             self.model_menu.set(LOADING)
-            self._set_status("Ollama kontrol ediliyor...", MUTED)
+            self._set_status(t("model.ollama.checking"), MUTED)
             threading.Thread(target=self._load_ollama, args=(preferred,), daemon=True,
                              name="ollama-model-list").start()
             return
@@ -148,7 +151,7 @@ class ModelSelector(ctk.CTkFrame):
                 and config.gemini_backend() == config.GEMINI_BACKEND_CLI):
             self.model_menu.configure(values=[LOADING])
             self.model_menu.set(LOADING)
-            self._set_status("Antigravity CLI modelleri alınıyor...", MUTED)
+            self._set_status(t("model.agy.loading"), MUTED)
             threading.Thread(target=self._load_agy, args=(preferred,), daemon=True,
                              name="agy-model-list").start()
             return
@@ -171,26 +174,22 @@ class ModelSelector(ctk.CTkFrame):
     def _on_agy_loaded(self, models, preferred: Optional[str]) -> None:
         if not models:
             self._apply_models([NO_MODEL], NO_MODEL)
-            self._set_status(
-                "Antigravity CLI model listesi alınamadı. Bir terminalde `agy` "
-                "çalıştırıp giriş yaptığınızdan emin olun.", WARN_COLOR)
+            self._set_status(t("model.agy.list_failed"), WARN_COLOR)
             return
         names = [model_id for model_id, _label in models]
         default = preferred if preferred in names else (
             config.DEFAULT_AGY_MODEL if config.DEFAULT_AGY_MODEL in names else names[0])
         self._apply_models(names, default)
-        self._set_status(
-            "Antigravity CLI: %d model. Ajan CLI yavaştır - tek adım dakikalar "
-            "sürebilir." % len(names), OK_COLOR)
+        self._set_status(t("model.agy.loaded", count=len(names)), OK_COLOR)
 
     # ------------------------------------------------------------------ #
     def _show_cloud_auth(self) -> None:
         """Kimliğin API anahtarından mi OAuth'tan mi geldiğini gösterir."""
         cred = config.resolve_credential(self._provider)
         labels = {
-            config.KIND_API_KEY: ("API anahtarı", OK_COLOR),
-            config.KIND_AUTH_TOKEN: ("OAuth token", OK_COLOR),
-            config.KIND_SDK_DEFAULT: ("OAuth", INFO_COLOR),
+            config.KIND_API_KEY: (t("model.auth.api_key"), OK_COLOR),
+            config.KIND_AUTH_TOKEN: (t("model.auth.oauth_token"), OK_COLOR),
+            config.KIND_SDK_DEFAULT: (t("model.auth.oauth"), INFO_COLOR),
         }
         if cred.kind in labels:
             prefix, color = labels[cred.kind]
@@ -200,12 +199,13 @@ class ModelSelector(ctk.CTkFrame):
 
         oauth = config.oauth_status(self._provider)
         if not oauth.get("supported"):
-            hint = "'Ayarla' ile ücretsiz API anahtarı girin"
+            hint = t("model.auth.hint_key_only")
         elif oauth.get("logged_in"):
-            hint = "OAuth girişi var ama ayarlanmamış - 'Ayarla'ya basın"
+            hint = t("model.auth.hint_oauth_unset")
         else:
-            hint = "anahtar girin veya OAuth ile giriş yapın"
-        self.auth_label.configure(text="Tanımlı değil - " + hint, text_color=WARN_COLOR)
+            hint = t("model.auth.hint_key_or_oauth")
+        self.auth_label.configure(text=t("model.auth.missing", hint=hint),
+                                  text_color=WARN_COLOR)
 
     def _open_auth(self) -> None:
         AuthDialog(self.winfo_toplevel(), self._provider, on_done=self._after_auth)
@@ -254,16 +254,12 @@ class ModelSelector(ctk.CTkFrame):
                           version, preferred: Optional[str]) -> None:
         if not available:
             self._apply_models([NO_MODEL], NO_MODEL)
-            self._set_status(
-                "Ollama daemon çalışmıyor. Başlatmak için bir terminalde: ollama serve",
-                WARN_COLOR)
+            self._set_status(t("settings.ollama.down"), WARN_COLOR)
             return
         if not models:
             self._apply_models([NO_MODEL], NO_MODEL)
-            self._set_status(
-                "Ollama %s çalışıyor ama hiç model kurulu değil. "
-                "'Modeller' butonundan indirin." % (version or "?"),
-                WARN_COLOR)
+            self._set_status(t("model.ollama.no_models", version=version or "?"),
+                             WARN_COLOR)
             return
 
         names = [m["name"] for m in models]
@@ -279,14 +275,15 @@ class ModelSelector(ctk.CTkFrame):
             default = names[0]
         self._apply_models(names, default)
         sizes = {m["name"]: m["size_gb"] for m in models}
-        status = ("Ollama %s - %d model kurulu (%s). Başkasını indirmek için 'Modeller'."
-                  % (version or "?", len(names),
-                     ", ".join("%s %.1fGB" % (n.split(":")[0], sizes[n]) for n in names[:3])))
+        status = t("model.ollama.installed", version=version or "?", count=len(names),
+                   models=", ".join("%s %.1fGB" % (n.split(":")[0], sizes[n])
+                                    for n in names[:3]))
         if self._hardware is not None:
-            status += ("\nDonanım: %s - önerilen model %s%s"
-                       % (self._hardware.hardware_tier,
-                          self._hardware.recommended_model,
-                          "" if recommended in names else " (kurulu değil)"))
+            status += "\n" + t(
+                "model.hardware.recommendation",
+                tier=self._hardware.hardware_tier,
+                model=self._hardware.recommended_model,
+                note="" if recommended in names else " " + t("model.hardware.not_installed"))
         self._set_status(status, OK_COLOR)
 
     def _apply_models(self, values: List[str], selected: str) -> None:
@@ -305,9 +302,9 @@ class ModelSelector(ctk.CTkFrame):
         if not self.model:
             self._ready = False
             self._ready_reason = (
-                "Kullanılabilir model yok. 'Modeller' butonundan bir model indirin."
+                t("model.ready.no_models")
                 if self._provider == config.PROVIDER_OLLAMA
-                else "Önce bir model seçin.")
+                else t("model.ready.pick_model"))
             return
         if self._provider == config.PROVIDER_OLLAMA:
             self._ready, self._ready_reason = True, ""
@@ -316,9 +313,9 @@ class ModelSelector(ctk.CTkFrame):
             self._ready, self._ready_reason = True, ""
             return
         self._ready = False
-        self._ready_reason = (
-            "%s için kimlik tanımlı değil. 'Ayarla' ile API anahtarı girin veya "
-            "OAuth ile giriş yapın." % PROVIDER_LABELS.get(self._provider, self._provider))
+        self._ready_reason = t(
+            "model.ready.no_credential",
+            provider=PROVIDER_LABELS.get(self._provider, self._provider))
 
 
 def _short(text: str, limit: int = 34) -> str:

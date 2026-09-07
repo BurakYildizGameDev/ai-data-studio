@@ -17,6 +17,14 @@ def main() -> int:
     except Exception:
         pass
 
+    # Dil, ilk widget kurulmadan cozulmeli: modul duzeyindeki etiket sozlukleri
+    # (orn. pipeline_view.ENGINE_LABELS) import aninda t() cagiriyor.
+    try:
+        from ai_data_studio import config as _cfg, i18n as _i18n
+        _i18n.set_language(_cfg.load_settings().get("language", _i18n.DEFAULT_LANGUAGE))
+    except Exception:
+        pass
+
     try:
         from ai_data_studio.gui.app_window import launch
     except ImportError:

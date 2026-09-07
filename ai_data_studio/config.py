@@ -152,6 +152,9 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "hf_seed_query": "",
     "export_formats": ["csv", "parquet"],
     "appearance": "dark",
+    # Arayuz dili (bkz. ai_data_studio/i18n.py). Varsayilan Ingilizce; degisiklik
+    # yeniden baslatma ister, widget metinleri canli degistirilmiyor.
+    "language": "en",
     "gemini_backend": GEMINI_BACKEND_AISTUDIO,
     # Uretim / zenginlestirme motorlari (bkz. core/orchestrator ENGINES).
     # Deger olarak motor ADI saklanir, arayuz etiketi degil.

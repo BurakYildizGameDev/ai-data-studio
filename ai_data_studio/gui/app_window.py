@@ -37,6 +37,7 @@ from .ui_utils import (
     left_align_tabs,
     status_dot,
 )
+from ..i18n import t
 from .views.history_view import HistoryView
 from .views.pipeline_view import PipelineView
 from .views.settings_view import SettingsView
@@ -44,6 +45,12 @@ from .views.settings_view import SettingsView
 log = logging.getLogger(__name__)
 
 POLL_INTERVAL_MS = 100
+
+# Sekme adlari: add() ve tab() AYNI degeri kullanmak zorunda. Cevrilmis metin
+# dogrudan bir tanimlayici gibi kullanildigi icin tek yerden uretiliyor.
+TAB_PIPELINE = t("app.tab.pipeline")
+TAB_HISTORY = t("app.tab.history")
+TAB_SETTINGS = t("app.tab.settings")
 
 # Turkce'de "UYARI".lower() -> "uyari" ama "Uyarı".lower() -> "uyarı" olur;
 # ikisini de yakalayabilmek icin karsilastirmadan once diakritikleri duselim.
@@ -95,40 +102,39 @@ class AppWindow(ctk.CTk):
         ctk.CTkLabel(header, text="  AI Synthetic Data Studio",
                      font=ctk.CTkFont(size=18, weight="bold")).grid(
             row=0, column=0, sticky="w", padx=12, pady=12)
-        status_frame, self.header_dot, self.header_status = status_dot(header, "Hazır")
+        status_frame, self.header_dot, self.header_status = status_dot(
+            header, t("progress.status.ready"))
         status_frame.grid(row=0, column=1, sticky="e", padx=16)
 
         self.tabview = ctk.CTkTabview(self)
         self.tabview.grid(row=1, column=0, sticky="nsew", padx=10, pady=(6, 10))
-        self.tabview.add("Pipeline")
-        self.tabview.add("Geçmiş")
-        self.tabview.add("Ayarlar")
+        self.tabview.add(TAB_PIPELINE)
+        self.tabview.add(TAB_HISTORY)
+        self.tabview.add(TAB_SETTINGS)
         left_align_tabs(self.tabview)
 
         self.pipeline_view = PipelineView(
-            self.tabview.tab("Pipeline"),
+            self.tabview.tab(TAB_PIPELINE),
             on_start=self.start_pipeline,
             on_cancel=self.on_cancel_click,
             settings=self.settings,
         )
         self.pipeline_view.pack(fill="both", expand=True)
 
-        self.history_view = HistoryView(self.tabview.tab("Geçmiş"), self.state_manager)
+        self.history_view = HistoryView(self.tabview.tab(TAB_HISTORY), self.state_manager)
         self.history_view.pack(fill="both", expand=True)
 
-        self.settings_view = SettingsView(self.tabview.tab("Ayarlar"),
+        self.settings_view = SettingsView(self.tabview.tab(TAB_SETTINGS),
                                           on_settings_changed=self._on_settings_changed)
         self.settings_view.pack(fill="both", expand=True)
         self.settings_view.update_cost(self.state_manager.get_cost_summary())
 
         self.console = self.pipeline_view.console
-        self.console.write("AI Synthetic Data Studio hazır.", "success")
-        self.console.write("Veri dizini: %s" % config.APP_DATA_DIR, "muted")
+        self.console.write(t("app.console.ready"), "success")
+        self.console.write(t("app.console.data_dir", path=config.APP_DATA_DIR), "muted")
         backup = getattr(self.state_manager, "recovered_backup_path", None)
         if backup:
-            self.console.write(
-                "Durum veritabanı bozuktu ve yeniden oluşturuldu; iş geçmişi sıfırlandı. "
-                "Bozuk dosyanın yedeği: %s" % backup, "error")
+            self.console.write(t("app.console.db_recovered", path=backup), "error")
 
     def _set_header(self, text: str, color: str = COLOR_MUTED) -> None:
         """Sağ üst durum göstergesini (nokta + metin) günceller."""
@@ -146,7 +152,7 @@ class AppWindow(ctk.CTk):
         if not job:
             return
         dialog = ctk.CTkToplevel(self)
-        dialog.title("Yarım kalmış is")
+        dialog.title(t("app.resume.title"))
         dialog.geometry("480x220")
         dialog.transient(self)
         dialog.grab_set()
@@ -154,11 +160,11 @@ class AppWindow(ctk.CTk):
 
         step = job["current_step"] or 0
         rows = job["generated_rows_count"] or 0
-        message = ("Job #%d (%s) yarıda kalmış.\n\n"
-                   "Adım %s/7 - %s\nUretilmis satır: %s\n\n"
-                   "Bu işin ayarlarıyla yeniden başlatılsın mi?"
-                   % (job["job_id"], job["domain"] or job["prompt"][:40],
-                      step, job["step_name"] or "-", format(rows, ",")))
+        message = t("app.resume.message",
+                    job_id=job["job_id"],
+                    domain=job["domain"] or job["prompt"][:40],
+                    step=step, step_name=job["step_name"] or "-",
+                    rows=format(rows, ","))
         ctk.CTkLabel(dialog, text=message, justify="left", wraplength=430).grid(
             row=0, column=0, sticky="nsew", padx=20, pady=(20, 10))
 
@@ -172,11 +178,11 @@ class AppWindow(ctk.CTk):
 
         def dismiss() -> None:
             dialog.destroy()
-            self.console.write("Job #%d devam ettirilmedi." % job["job_id"], "muted")
+            self.console.write(t("app.resume.declined", job_id=job["job_id"]), "muted")
 
-        ctk.CTkButton(buttons, text="Evet, ayarları yükle", command=resume).grid(
+        ctk.CTkButton(buttons, text=t("app.resume.accept"), command=resume).grid(
             row=0, column=0, sticky="ew", padx=(0, 5))
-        ctk.CTkButton(buttons, text="Hayır", command=dismiss, fg_color="#555555",
+        ctk.CTkButton(buttons, text=t("app.resume.decline"), command=dismiss, fg_color="#555555",
                       hover_color="#666666").grid(row=0, column=1, sticky="ew", padx=(5, 0))
 
     def _prefill_from_job(self, job: Dict[str, Any]) -> None:
@@ -189,17 +195,15 @@ class AppWindow(ctk.CTk):
         schema = self.state_manager.get_schema(job["job_id"])
         if schema:
             view.rows_box.set(str(schema.get("row_count_target", config.DEFAULT_ROW_TARGET)))
-        self.console.write(
-            "Job #%d ayarları yüklendi - 'Pipeline'i Başlat' ile aynı seed'le tekrar "
-            "çalıştırabilirsiniz." % job["job_id"], "step")
-        self.tabview.set("Pipeline")
+        self.console.write(t("app.resume.loaded", job_id=job["job_id"]), "step")
+        self.tabview.set(TAB_PIPELINE)
 
     # ------------------------------------------------------------------ #
     # Pipeline baslatma / iptal (Bolum 6.6)
     # ------------------------------------------------------------------ #
     def start_pipeline(self) -> None:
         if self.worker is not None and self.worker.is_alive():
-            self.console.write("Zaten çalışan bir pipeline var.", "warning")
+            self.console.write(t("app.error.already_running"), "warning")
             return
 
         try:
@@ -231,16 +235,16 @@ class AppWindow(ctk.CTk):
         self.ui_queue = queue.Queue()
         self._last_result = None
 
-        self.console.write_separator("YENI PIPELINE")
-        self.console.write("Domain: %s" % cfg.domain_prompt, "step")
-        self.console.write("Sağlayıcı: %s / %s | %s satır | seed %d"
-                           % (cfg.provider, cfg.resolved_model(),
-                              format(cfg.row_count, ","), cfg.random_seed), "muted")
+        self.console.write_separator(t("app.run.separator"))
+        self.console.write(t("app.run.domain", domain=cfg.domain_prompt), "step")
+        self.console.write(
+            t("app.run.parameters", provider=cfg.provider, model=cfg.resolved_model(),
+              rows=format(cfg.row_count, ","), seed=cfg.random_seed), "muted")
         self.pipeline_view.progress_panel.reset()
         self.pipeline_view.progress_panel.set_running(True)
         self.pipeline_view.chart_panel.clear()
         self.pipeline_view.tabs.set("Konsol")
-        self._set_header("Çalışıyor...", COLOR_INFO)
+        self._set_header(t("app.status.running"), COLOR_INFO)
 
         task_fn = partial(self._pipeline_task, cfg)
         self.worker = PipelineWorker(task_fn, self.ui_queue, self.cancel_event)
@@ -268,8 +272,9 @@ class AppWindow(ctk.CTk):
         if self.worker is None or not self.worker.is_alive():
             return
         self.cancel_event.set()
-        self.console.write("İptal isteği gönderildi, mevcut adım sonlandırılıyor...", "warning")
-        self.pipeline_view.progress_panel.status_label.configure(text="İptal ediliyor...")
+        self.console.write(t("app.cancel.requested"), "warning")
+        self.pipeline_view.progress_panel.status_label.configure(
+            text=t("app.cancel.in_progress"))
 
     # ------------------------------------------------------------------ #
     # Queue polling - TUM widget guncellemeleri burada, ana thread'de
@@ -309,7 +314,7 @@ class AppWindow(ctk.CTk):
             self.console.write(str(data), "muted")
         elif event == "checkpoint_saved":
             # GUI kendi DB sorgusunu atmaz, checkpoint'i event'ten ogrenir (Bolum 10.2)
-            self.console.write("Checkpoint kaydedildi: adım %s" % data.get("step"), "muted")
+            self.console.write(t("app.console.checkpoint", step=data.get("step")), "muted")
 
     def _handle_progress(self, data: Dict[str, Any]) -> None:
         message = data["message"]
@@ -338,20 +343,21 @@ class AppWindow(ctk.CTk):
     def _handle_done(self, result: Optional[PipelineResult]) -> None:
         self._last_result = result
         if result is None:
-            self._handle_error("Pipeline sonuç döndürmedi")
+            self._handle_error(t("app.error.no_result"))
             return
         self.pipeline_view.progress_panel.set_finished(
-            "Tamamlandı - %s temiz satır" % format(len(result.dataframe), ","))
-        self.console.write_separator("TAMAMLANDI")
+            t("app.done.summary", rows=format(len(result.dataframe), ",")))
+        self.console.write_separator(t("app.done.separator"))
         self.console.write(
-            "Job #%d: %s ham -> %s temiz satır (%%%.1f korundu)"
-            % (result.job_id, format(result.report["rows_in"], ","),
-               format(result.report["rows_out"], ","), result.report["retention_pct"]),
+            t("app.done.rows", job_id=result.job_id,
+              rows_in=format(result.report["rows_in"], ","),
+              rows_out=format(result.report["rows_out"], ","),
+              retention="%.1f" % result.report["retention_pct"]),
             "success")
         tot_tokens = result.cost.get("prompt_tokens", 0) + result.cost.get("completion_tokens", 0)
         self.console.write(
-            "Maliyet: $%.4f (%s çağrı, %s token)"
-            % (result.cost.get("cost_usd", 0.0), result.cost.get("calls", 0), format(tot_tokens, ",")),
+            t("app.done.cost", cost="%.4f" % result.cost.get("cost_usd", 0.0),
+              calls=result.cost.get("calls", 0), tokens=format(tot_tokens, ",")),
             "detail")
         for kind, path in sorted(result.output_paths.items()):
             try:
@@ -362,23 +368,24 @@ class AppWindow(ctk.CTk):
                 self.console.write("  %-8s %s" % (kind, path), "muted")
         if result.hub_url:
             self.console.write("HuggingFace: %s" % result.hub_url, "substep")
-        self._set_header("Tamamlandı", COLOR_OK)
+        self._set_header(t("progress.status.finished"), COLOR_OK)
 
         self.pipeline_view.show_result(result)
         self.history_view.refresh()
         self.settings_view.update_cost(self.state_manager.get_cost_summary())
 
     def _handle_error(self, message: str) -> None:
-        self.pipeline_view.progress_panel.set_error("Hata: %s" % str(message)[:80])
-        self.console.write_separator("HATA")
+        self.pipeline_view.progress_panel.set_error(
+            t("app.error.prefix", message=str(message)[:80]))
+        self.console.write_separator(t("app.error.separator"))
         self.console.write(str(message), "error")
-        self._set_header("Hata", COLOR_ERROR)
+        self._set_header(t("app.error.header"), COLOR_ERROR)
         self.history_view.refresh()
 
     def _handle_cancelled(self) -> None:
-        self.pipeline_view.progress_panel.set_error("İptal edildi")
-        self.console.write("Pipeline iptal edildi.", "warning")
-        self._set_header("İptal edildi", COLOR_WARN)
+        self.pipeline_view.progress_panel.set_error(t("app.cancelled.status"))
+        self.console.write(t("app.cancelled.console"), "warning")
+        self._set_header(t("app.cancelled.status"), COLOR_WARN)
         self.history_view.refresh()
 
     # ------------------------------------------------------------------ #
