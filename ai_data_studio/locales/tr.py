@@ -423,6 +423,15 @@ MESSAGES = {
     "pipeline.error.unknown_audit_table": (
         "--audit-table '{table}' sözleşmede yok. Geçerli tablolar: {tables} (ya da 'all')"
     ),
+    "pipeline.error.unknown_ts_table": (
+        "--ts-table '{table}' sözleşmede yok. Geçerli tablolar: {tables}"
+    ),
+    "pipeline.error.unknown_expand_table": (
+        "--expand-table '{table}' sözleşmede yok. Geçerli tablolar: {tables}"
+    ),
+    "pipeline.error.unknown_dirty_table": (
+        "--dirty-table '{table}' sözleşmede yok. Geçerli tablolar: {tables}"
+    ),
     "pipeline.cancelled_by_user": "Pipeline kullanıcı tarafından iptal edildi",
 
     # --- Koşu ilerlemesi ------------------------------------------------------ #
@@ -590,6 +599,9 @@ MESSAGES = {
         "Gizlilik denetimi hangi tabloya uygulansın: boş = kök tablo (varsayılan), "
         "'all' = bütün tablolar, ya da bir tablo adı"
     ),
+    "cli.help.ts_table": "Zaman serisi zenginleştirmesi hangi tabloya uygulansın (varsayılan: kök tablo)",
+    "cli.help.expand_table": "Özellik genişletme hangi tabloya uygulansın (varsayılan: kök tablo)",
+    "cli.help.dirty_table": "Kirli veri enjeksiyonu hangi tabloya uygulansın (varsayılan: kök tablo)",
     "cli.help.gemini_backend": (
         "Gemini arka ucunu bu koşu için seç: 'aistudio' (API anahtarı, hızlı) veya "
         "'cli' (Antigravity oturumu, yavaş). Kalıcı ayar değişmez"

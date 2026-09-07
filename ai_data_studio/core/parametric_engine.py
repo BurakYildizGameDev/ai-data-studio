@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
+from .dataset_contract import DatasetContract
 from .schema_contract import ColumnSpec, SchemaContract
 
 log = logging.getLogger(__name__)
@@ -26,6 +27,8 @@ log = logging.getLogger(__name__)
 __all__ = [
     "ParametricEngine",
     "compile_schema_to_dataframe",
+    "compile_relational",
+    "compile_dataset_to_dataframes",
 ]
 
 
@@ -44,7 +47,9 @@ def _is_binary(series: pd.Series) -> bool:
 
 
 class ParametricEngine:
-    """SchemaContract nesnesini doğrudan yüksek hızlı DataFrame'e derleyen motor."""
+    """SchemaContract ve DatasetContract nesnelerini doğrudan yüksek hızlı
+    DataFrame'lere derleyen deterministik motor.
+    """
 
     def __init__(self, seed: Optional[int] = None):
         self.default_seed = seed or 42
@@ -63,6 +68,15 @@ class ParametricEngine:
 
         df = pd.DataFrame(data)
 
+        # Birincil anahtar tekilliğini garanti et
+        if schema.primary_key and schema.primary_key in df.columns:
+            pk_col = schema.column(schema.primary_key)
+            if pk_col and pk_col.type.lower() in ("str", "string", "text", "varchar"):
+                prefix = (schema.table_name or schema.domain or pk_col.name or "ID")[:3].upper()
+                df[schema.primary_key] = [f"{prefix}_{i:06d}" for i in range(1, rows + 1)]
+            else:
+                df[schema.primary_key] = np.arange(1, rows + 1, dtype=int)
+
         # Korelasyonları uygula (Basit Gauss Copula yaklaşımı)
         if schema.correlations:
             df = self._apply_correlations(df, schema.correlations, rng)
@@ -72,6 +86,71 @@ class ParametricEngine:
             df = self._enforce_business_rules(df, schema.business_rules)
 
         return df
+
+    def compile_relational(self, contract: DatasetContract,
+                           root_rows: Optional[int] = None,
+                           seed: Optional[int] = None) -> Dict[str, pd.DataFrame]:
+        """DatasetContract nesnesindeki tüm tabloları yabancı anahtar ve kardinalite
+        tutarlılığıyla doğrudan vektörize sentetik veri setine derler.
+        """
+        rng_seed = seed or contract.random_seed or self.default_seed
+        rng = np.random.default_rng(rng_seed)
+
+        tables: Dict[str, pd.DataFrame] = {}
+        order = contract.generation_order()
+
+        for table_name in order:
+            schema = contract.table(table_name)
+            parents = contract.parents_of(table_name)
+
+            if not parents:
+                # Kök tablo veya ebeveyni olmayan bağımsız tablo
+                if table_name == contract.root_table:
+                    n_rows = root_rows or schema.row_count_target or 1000
+                else:
+                    n_rows = schema.row_count_target or root_rows or 1000
+                table_seed = int(rng.integers(0, 2**31 - 1))
+                df = self.compile(schema, n_rows=n_rows, seed=table_seed)
+                tables[table_name] = df
+            else:
+                # Çocuk tablo: satır sayısı birincil ebeveynin kardinalitesinden türer
+                primary_rel = parents[0]
+                parent_df = tables[primary_rel.parent_table]
+                n_parents = len(parent_df)
+
+                mean_c = primary_rel.mean_per_parent
+                min_c = primary_rel.min_per_parent
+                max_c = primary_rel.max_per_parent
+
+                # Poisson tabanlı kardinalite dağılımı
+                counts = rng.poisson(lam=mean_c, size=n_parents)
+                if min_c > 0 or max_c is not None:
+                    counts = np.clip(counts, min_c, max_c if max_c is not None else 1000000)
+
+                # Eğer toplam 0 satır çıkarsa en az bir satır garanti et
+                if int(np.sum(counts)) == 0:
+                    counts[0] = max(1, min_c)
+
+                parent_pks = parent_df[primary_rel.parent_key].to_numpy()
+                primary_fks = np.repeat(parent_pks, counts)
+                n_rows = len(primary_fks)
+
+                table_seed = int(rng.integers(0, 2**31 - 1))
+                df = self.compile(schema, n_rows=n_rows, seed=table_seed)
+                df[primary_rel.child_key] = primary_fks
+
+                # Varsa diğer ebeveyn ilişkilerini de bağla (örn. order_items -> products)
+                for other_rel in parents[1:]:
+                    other_parent_df = tables.get(other_rel.parent_table)
+                    if other_parent_df is not None and other_rel.parent_key in other_parent_df.columns:
+                        other_pks = other_parent_df[other_rel.parent_key].to_numpy()
+                        if len(other_pks) > 0:
+                            sampled_fks = rng.choice(other_pks, size=n_rows, replace=True)
+                            df[other_rel.child_key] = sampled_fks
+
+                tables[table_name] = df
+
+        return tables
 
     def _generate_column(self, col: ColumnSpec, n_rows: int, rng: np.random.Generator,
                          locale: str) -> np.ndarray:
@@ -318,3 +397,19 @@ def compile_schema_to_dataframe(schema: SchemaContract, n_rows: Optional[int] = 
     """Tek fonksiyonla şemadan deterministik DataFrame üretir."""
     engine = ParametricEngine(seed=seed)
     return engine.compile(schema, n_rows=n_rows, seed=seed)
+
+
+def compile_dataset_to_dataframes(contract: DatasetContract,
+                                  root_rows: Optional[int] = None,
+                                  seed: Optional[int] = None) -> Dict[str, pd.DataFrame]:
+    """Tek fonksiyonla DatasetContract'tan deterministik ilişkisel DataFrame sözlüğü üretir."""
+    engine = ParametricEngine(seed=seed)
+    return engine.compile_relational(contract, root_rows=root_rows, seed=seed)
+
+
+def compile_relational(contract: DatasetContract,
+                       root_rows: Optional[int] = None,
+                       seed: Optional[int] = None) -> Dict[str, pd.DataFrame]:
+    """compile_dataset_to_dataframes için pratik takma ad (alias)."""
+    return compile_dataset_to_dataframes(contract, root_rows=root_rows, seed=seed)
+

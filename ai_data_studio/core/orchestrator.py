@@ -135,11 +135,14 @@ class PipelineConfig:
     ts_entity_column: str = "customer_id"
     ts_start_date: str = ""        # bos -> TimeSeriesConfig varsayilani
     ts_end_date: str = ""
+    ts_table: str = ""             # bos -> kok tablo
     expand_features: bool = False
+    expand_table: str = ""         # bos -> kok tablo
     # --- [6.5] DOGRULAMA SONRASI kirli veri enjeksiyonu ---------------- #
     # 0 ise kapali. Sira bilincli: kirli veri doğrulamadan once enjekte edilirse
     # sema sinirlari / kategori denetimi tam da enjekte edilen satirlari eler.
     dirty_rate: float = 0.0
+    dirty_table: str = ""          # bos -> kok tablo
 
     def resolved_model(self) -> str:
         return self.model or config.DEFAULT_MODELS.get(self.provider, "")
@@ -199,8 +202,6 @@ def run_pipeline(cfg: PipelineConfig,
     if engine_choice not in ENGINES:
         raise ValueError(t("pipeline.error.unknown_engine",
                            engine=cfg.engine, valid=", ".join(ENGINES)))
-    if engine_choice == ENGINE_PARAMETRIC and cfg.relational:
-        raise ValueError(t("pipeline.error.parametric_relational_cli"))
     if not 0.0 <= cfg.dirty_rate <= 1.0:
         raise ValueError(t("pipeline.error.dirty_rate_range", value=cfg.dirty_rate))
 
@@ -379,6 +380,18 @@ def run_pipeline(cfg: PipelineConfig,
                 raise ValueError(t("pipeline.error.unknown_audit_table",
                                    table=cfg.audit_table,
                                    tables=", ".join(contract.table_names)))
+        if cfg.ts_table and cfg.ts_table not in contract.table_names:
+            raise ValueError(t("pipeline.error.unknown_ts_table",
+                               table=cfg.ts_table,
+                               tables=", ".join(contract.table_names)))
+        if cfg.expand_table and cfg.expand_table not in contract.table_names:
+            raise ValueError(t("pipeline.error.unknown_expand_table",
+                               table=cfg.expand_table,
+                               tables=", ".join(contract.table_names)))
+        if cfg.dirty_table and cfg.dirty_table not in contract.table_names:
+            raise ValueError(t("pipeline.error.unknown_dirty_table",
+                               table=cfg.dirty_table,
+                               tables=", ".join(contract.table_names)))
         if cfg.audit_privacy:
             audited = [n for n in contract.generation_order()
                        if _should_audit(n, cfg, contract)]
@@ -445,8 +458,7 @@ def run_pipeline(cfg: PipelineConfig,
             if (gen_error is not None
                     and engine_choice == ENGINE_AUTO
                     and isinstance(gen_error, GenerationFailedError)
-                    and not cancel_event.is_set()
-                    and not contract.is_relational):
+                    and not cancel_event.is_set()):
                 yield progress(4, t("run.codegen.failed_warning", error=gen_error), 0.9,
                                level=config.PROGRESS_WARNING)
                 yield progress(4, "  -> " + t("run.engine.falling_back"), 0.9)
@@ -532,6 +544,7 @@ def run_pipeline(cfg: PipelineConfig,
         # normalize eder), dolayisiyla eklenen kolonlar temizlikten sag cikar.
         # Iliskisel kosuda yalnizca KOK tabloya uygulanir - fraud enjeksiyonuyla
         # ayni kural, README'de yazili.
+        target_ts_table = cfg.ts_table or contract.root_table
         if cfg.time_series:
             check_cancel()
             from .time_series_engine import TimeSeriesConfig, TimeSeriesEngine
@@ -545,8 +558,12 @@ def run_pipeline(cfg: PipelineConfig,
                 ts_cfg.start_date = cfg.ts_start_date
             if cfg.ts_end_date:
                 ts_cfg.end_date = cfg.ts_end_date
-            raw_df, ts_meta = TimeSeriesEngine(ts_cfg).apply(raw_df)
-            raw_tables[contract.root_table] = raw_df
+            ts_target_df = raw_tables[target_ts_table]
+            ts_target_df, ts_meta = TimeSeriesEngine(ts_cfg).apply(ts_target_df)
+            ts_meta["target_table"] = target_ts_table
+            raw_tables[target_ts_table] = ts_target_df
+            if target_ts_table == contract.root_table:
+                raw_df = ts_target_df
             engines_report["time_series"] = ts_meta
             yield progress(5, t("run.time_series.applied",
                                 entities=format(ts_meta.get("unique_entities", 0), ","),
@@ -555,29 +572,30 @@ def run_pipeline(cfg: PipelineConfig,
                            1.0, time_series=ts_meta)
             yield progress(5, "  -> " + t("result.engines.time_range") + ": %s"
                            % ts_meta.get("time_range", "-"), 1.0)
-            # Hiz metrikleri ancak varlik kolonu TEKRAR ediyorsa anlamli. Neredeyse
-            # tekil bir kolonda (orn. surrogate id) her satir kendi varligi olur ve
-            # seconds_since_last_tx satirlarin nerdeyse tamaminda dolgu degerine
-            # duser - kullanici bunu bilmeden hiz ozelligi uzerine model kurar.
             entities = ts_meta.get("unique_entities", 0)
-            if entities > 0.5 * max(1, len(raw_df)):
+            if entities > 0.5 * max(1, len(ts_target_df)):
                 yield progress(5, t("run.time_series.entity_warning",
                                     column=cfg.ts_entity_column or "entity_id",
-                                    rows=format(len(raw_df), ","),
+                                    rows=format(len(ts_target_df), ","),
                                     distinct=format(entities, ",")), 1.0,
                                level=config.PROGRESS_WARNING)
 
+        target_expand_table = cfg.expand_table or contract.root_table
         if cfg.expand_features:
             check_cancel()
             from .feature_expander import expand_features
 
-            raw_df, fe_meta = expand_features(raw_df)
-            raw_tables[contract.root_table] = raw_df
+            expand_target_df = raw_tables[target_expand_table]
+            expand_target_df, fe_meta = expand_features(expand_target_df)
+            fe_meta["target_table"] = target_expand_table
+            raw_tables[target_expand_table] = expand_target_df
+            if target_expand_table == contract.root_table:
+                raw_df = expand_target_df
             engines_report["feature_expander"] = fe_meta
             added = fe_meta.get("added_columns", [])
             yield progress(5, t("run.features.expanded",
                                 added=fe_meta.get("added_columns_count", 0),
-                                total=fe_meta.get("total_columns", len(raw_df.columns))),
+                                total=fe_meta.get("total_columns", len(expand_target_df.columns))),
                            1.0, feature_expander=fe_meta)
             if added:
                 yield progress(5, "  -> " + t("result.engines.added_columns")
@@ -693,6 +711,7 @@ def run_pipeline(cfg: PipelineConfig,
         # degerleri eleyecekti - yani tam olarak enjekte edilen satirlar. Kirlilik
         # bilincli bir cikti ozelligi; benchmark verisinin gurultusu olarak
         # DISARI cikmasi gerekiyor.
+        dirty_target_table = cfg.dirty_table or contract.root_table
         if cfg.dirty_rate > 0:
             check_cancel()
             from .dirty_data_engine import DirtyDataConfig, DirtyDataEngine
@@ -707,8 +726,12 @@ def run_pipeline(cfg: PipelineConfig,
                 random_seed=cfg.random_seed,
             )
             dirty_cfg.exclude_columns = set(dirty_cfg.exclude_columns) | _key_columns(contract)
-            clean_df, dirty_meta = DirtyDataEngine(dirty_cfg).corrupt(clean_df)
-            clean_tables[contract.root_table] = clean_df
+            dirty_target_df = clean_tables[dirty_target_table]
+            dirty_target_df, dirty_meta = DirtyDataEngine(dirty_cfg).corrupt(dirty_target_df)
+            dirty_meta["target_table"] = dirty_target_table
+            clean_tables[dirty_target_table] = dirty_target_df
+            if dirty_target_table == contract.root_table:
+                clean_df = dirty_target_df
             # Rapordaki kolon istatistikleri bu adimdan ONCE hesaplandi; okuyan
             # kisi yanilmasin diye bunu rapora acikca yaziyoruz.
             dirty_meta["applied_after_validation"] = True
@@ -1000,6 +1023,39 @@ if __name__ == "__main__":
     print(generate_data().head())
 '''
 
+_PARAMETRIC_RELATIONAL_CODE_TEMPLATE = '''"""Bu ilişkisel veri seti ParametricEngine ile üretildi - LLM kod üretimi kullanılmadı.
+
+Sözleşme aşağıya gömülüdür; üretim deterministiktir, bu dosya aynı seed
+ile aynı veri setini birebir yeniden üretir.
+
+GEREKSİNİM: LLM'in yazdığı üretici dosyalarının aksine bu dosya ai_data_studio
+paketini içeri alır - motorun kendisi paketin içindedir. Çalıştırmadan önce paket
+import edilebilir olmalı:
+
+    pip install ai-data-studio      # ya da depo kökünden: pip install -e .
+"""
+import json
+
+from ai_data_studio.core.dataset_contract import DatasetContract
+from ai_data_studio.core.parametric_engine import compile_dataset_to_dataframes
+
+CONTRACT = json.loads(r"""
+%(contract_json)s
+""")
+
+
+def generate_dataset(n_rows=%(rows)d, seed=%(seed)d):
+    return compile_dataset_to_dataframes(DatasetContract.from_dict(CONTRACT),
+                                         root_rows=n_rows, seed=seed)
+
+
+if __name__ == "__main__":
+    tables = generate_dataset()
+    for name, df in tables.items():
+        print(f"--- {name} ({len(df)} satır) ---")
+        print(df.head())
+'''
+
 
 def _privacy_report_from_dict(pa_data: Dict[str, Any]):
     """Rapordaki sözlüğü tekrar :class:`PrivacyAuditReport` nesnesine çevirir."""
@@ -1098,40 +1154,47 @@ def _generate_parametric(contract: DatasetContract, cfg: PipelineConfig
 
     Dönüş imzası ``generate_dataset_and_execute`` ile birebir aynıdır; böylece
     çağıran taraf hangi motorun koştuğunu bilmek zorunda kalmaz.
-
-    Iliskisel sozlesme kabul edilmez: parametrik motor kolonlari bagimsiz
-    dagilimlardan cekiyor, yabanci anahtar tutarliligini kuramiyor. Sessizce
-    yetim satir uretmektense acik hata veriyoruz.
+    Tek tablolu ve çok tablolu (ilişkisel) sözleşmelerin ikisini de destekler.
     """
-    from .parametric_engine import compile_schema_to_dataframe
+    from .parametric_engine import ParametricEngine
+
+    engine = ParametricEngine(seed=cfg.random_seed)
+    started = time.perf_counter()
 
     if contract.is_relational:
-        raise ValueError(
-            "Parametrik motor şu an tek tablolu üretimi destekliyor (sözleşmede "
-            "%d tablo var). İlişkisel üretim için --engine llm kullanın; yabancı "
-            "anahtar tutarlılığını yalnızca kod üretimi yolu kuruyor."
-            % len(contract.tables)
-        )
+        raw_tables = engine.compile_relational(contract, root_rows=cfg.row_count, seed=cfg.random_seed)
+        duration = time.perf_counter() - started
+        code = _PARAMETRIC_RELATIONAL_CODE_TEMPLATE % {
+            "contract_json": json.dumps(contract.to_dict(), ensure_ascii=False, indent=2),
+            "rows": cfg.row_count,
+            "seed": cfg.random_seed,
+        }
+    else:
+        schema = contract.table(contract.root_table)
+        df = engine.compile(schema, n_rows=cfg.row_count, seed=cfg.random_seed)
+        duration = time.perf_counter() - started
+        code = _PARAMETRIC_CODE_TEMPLATE % {
+            "schema_json": json.dumps(schema.to_dict(), ensure_ascii=False, indent=2),
+            "rows": cfg.row_count,
+            "seed": cfg.random_seed,
+        }
+        raw_tables = {contract.root_table: df}
 
-    schema = contract.table(contract.root_table)
-    started = time.perf_counter()
-    df = compile_schema_to_dataframe(schema, n_rows=cfg.row_count, seed=cfg.random_seed)
-    duration = time.perf_counter() - started
-    code = _PARAMETRIC_CODE_TEMPLATE % {
-        "schema_json": json.dumps(schema.to_dict(), ensure_ascii=False, indent=2),
-        "rows": cfg.row_count,
-        "seed": cfg.random_seed,
-    }
+    total_rows = sum(len(df) for df in raw_tables.values())
+    total_cols = sum(len(df.columns) for df in raw_tables.values())
     meta: Dict[str, Any] = {
         "attempts": 1,
         "duration_s": round(duration, 4),
         "engine": ENGINE_PARAMETRIC,
-        "rows": len(df),
-        "columns": len(df.columns),
+        "rows": total_rows,
+        "columns": total_cols,
+        "is_relational": contract.is_relational,
+        "row_counts": {name: len(df) for name, df in raw_tables.items()},
     }
-    log.info("Parametrik motor: %d satır, %d kolon, %.3f sn",
-             len(df), len(df.columns), duration)
-    return {contract.root_table: df}, code, meta
+    log.info("Parametrik motor: %s, %.3f sn",
+             ", ".join(f"{name}={len(df)}" for name, df in raw_tables.items()),
+             duration)
+    return raw_tables, code, meta
 
 
 def _fetch_seed_data(cfg: PipelineConfig):
@@ -1445,10 +1508,13 @@ def _build_arg_parser() -> argparse.ArgumentParser:
                    help=_help("cli.help.ts_entity_col"))
     p.add_argument("--ts-start", default="", help=_help("cli.help.ts_start"))
     p.add_argument("--ts-end", default="", help=_help("cli.help.ts_end"))
+    p.add_argument("--ts-table", default="", help=_help("cli.help.ts_table"))
     p.add_argument("--expand-features", action="store_true",
                    help=_help("cli.help.expand_features"))
+    p.add_argument("--expand-table", default="", help=_help("cli.help.expand_table"))
     p.add_argument("--dirty-rate", type=float, default=0.0,
                    help=_help("cli.help.dirty_rate"))
+    p.add_argument("--dirty-table", default="", help=_help("cli.help.dirty_table"))
     p.add_argument("--hardware", action="store_true",
                    help=_help("cli.help.hardware"))
     p.add_argument("--verbose", "-v", action="store_true")
@@ -1575,8 +1641,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         ts_entity_column=args.ts_entity_col,
         ts_start_date=args.ts_start,
         ts_end_date=args.ts_end,
+        ts_table=args.ts_table,
         expand_features=args.expand_features,
+        expand_table=args.expand_table,
         dirty_rate=args.dirty_rate,
+        dirty_table=args.dirty_table,
     )
 
     state = get_state_manager()

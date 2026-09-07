@@ -588,8 +588,6 @@ class PipelineView(ctk.CTkFrame):
                 raise ValueError(t("pipeline.error.max_tables_not_int")) from None
             if not 2 <= max_tables <= 12:
                 raise ValueError(t("pipeline.error.max_tables_range"))
-            if self.engine == ENGINE_PARAMETRIC:
-                raise ValueError(t("pipeline.error.parametric_relational"))
 
         return {
             "relational": relational,

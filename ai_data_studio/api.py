@@ -83,8 +83,11 @@ def build_config(
     ts_entity_column: str = "customer_id",
     ts_start_date: str = "",
     ts_end_date: str = "",
+    ts_table: str = "",
     expand_features: bool = False,
+    expand_table: str = "",
     dirty_rate: float = 0.0,
+    dirty_table: str = "",
 ) -> PipelineConfig:
     """Okunabilir anahtar kelimelerden bir :class:`PipelineConfig` kurar.
 
@@ -116,21 +119,20 @@ def build_config(
       kosturur - self-healing dongusu buradadir.
     * ``"parametric"`` sozlesmeyi dogrudan numpy/pandas vektorlerine derler:
       kod uretimi ve sandbox tamamen atlanir, uretim deterministiktir ve
-      milisaniyeler surer. SU AN TEK TABLOLUDUR; ``relational=True`` ile
-      birlikte kullanilamaz.
+      milisaniyeler surer. Cok tablolu iliskisel sozlesmeleri de destekler.
     * ``"auto"`` once LLM'i dener, kod uretimi denemeleri tukenirse parametrik
-      motora duser (iliskisel kosuda fallback yoktur).
+      motora duser.
 
-    Zenginlestirme motorlari (hepsi kok tabloya uygulanir):
+    Zenginlestirme motorlari:
 
     * ``time_series=True`` kronolojik siralama, sirkadiyen ritim, varlik bazli
-      ``seconds_since_last_tx`` ve hiz patlamalari ekler.
+      ``seconds_since_last_tx`` ve hiz patlamalari ekler (hedef: ``ts_table``).
     * ``expand_features=True`` finansal oranlar, yas/kredi siniflandirmasi ve
-      zaman turevleri gibi deterministik kolonlar turetir.
-    * ``dirty_rate`` (0-1) kontrollu gurultu enjekte eder. **Dogrulamadan SONRA**
-      calisir: aksi halde sema sinirlari ve kategori denetimi tam da enjekte
-      edilen satirlari elerdi. ``is_corrupted`` ve ``corruption_details``
-      denetim kolonlari eklenir.
+      zaman turevleri gibi deterministik kolonlar turetir (hedef: ``expand_table``).
+    * ``dirty_rate`` (0-1) kontrollu gurultu enjekte eder (hedef: ``dirty_table``).
+      **Dogrulamadan SONRA** calisir: aksi halde sema sinirlari ve kategori denetimi
+      tam da enjekte edilen satirlari elerdi. ``is_corrupted`` ve
+      ``corruption_details`` denetim kolonlari eklenir.
 
     Hangi motorun kostugu sonucun ``report["engines"]`` alanindadir.
     """
@@ -176,8 +178,11 @@ def build_config(
         ts_entity_column=ts_entity_column,
         ts_start_date=ts_start_date,
         ts_end_date=ts_end_date,
+        ts_table=ts_table,
         expand_features=expand_features,
+        expand_table=expand_table,
         dirty_rate=dirty_rate,
+        dirty_table=dirty_table,
     )
 
 

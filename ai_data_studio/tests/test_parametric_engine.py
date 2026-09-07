@@ -130,3 +130,118 @@ def test_numeric_correlation_still_applies():
     )
     df = compile_schema_to_dataframe(schema, n_rows=2000, seed=3)
     assert df["monthly_income"].corr(df["credit_limit"]) >= 0.40
+
+
+def test_compile_relational_generates_tables_with_zero_orphans():
+    """compile_relational multi-tablolu semalarda sifir yetim yabanci anahtar garantisi vermelidir."""
+    from ai_data_studio.core.dataset_contract import DatasetContract
+    from ai_data_studio.core.parametric_engine import compile_relational, compile_dataset_to_dataframes
+
+    dataset_dict = {
+        "domain": "ecommerce",
+        "root_table": "customers",
+        "random_seed": 42,
+        "tables": [
+            {
+                "name": "customers",
+                "domain": "customers",
+                "row_count_target": 50,
+                "primary_key": "customer_id",
+                "columns": [
+                    {"name": "customer_id", "type": "int", "min": 1, "max": 100000},
+                    {"name": "age", "type": "int", "min": 18, "max": 80},
+                ],
+            },
+            {
+                "name": "orders",
+                "domain": "orders",
+                "row_count_target": 150,
+                "primary_key": "order_id",
+                "foreign_keys": ["customer_id"],
+                "columns": [
+                    {"name": "order_id", "type": "int", "min": 1, "max": 100000},
+                    {"name": "customer_id", "type": "int"},
+                    {"name": "amount", "type": "float", "min": 10.0, "max": 1000.0},
+                ],
+            },
+            {
+                "name": "order_items",
+                "domain": "order_items",
+                "row_count_target": 300,
+                "primary_key": "item_id",
+                "foreign_keys": ["order_id"],
+                "columns": [
+                    {"name": "item_id", "type": "int", "min": 1, "max": 100000},
+                    {"name": "order_id", "type": "int"},
+                    {"name": "quantity", "type": "int", "min": 1, "max": 10},
+                ],
+            },
+        ],
+        "relationships": [
+            {
+                "parent_table": "customers",
+                "parent_key": "customer_id",
+                "child_table": "orders",
+                "child_key": "customer_id",
+                "min_per_parent": 1,
+                "max_per_parent": 5,
+                "mean_per_parent": 2.5,
+            },
+            {
+                "parent_table": "orders",
+                "parent_key": "order_id",
+                "child_table": "order_items",
+                "child_key": "order_id",
+                "min_per_parent": 1,
+                "max_per_parent": 4,
+                "mean_per_parent": 2.0,
+            },
+        ],
+    }
+    contract = DatasetContract.from_dict(dataset_dict)
+    tables = compile_relational(contract, root_rows=50, seed=42)
+
+    assert set(tables.keys()) == {"customers", "orders", "order_items"}
+    cust_df = tables["customers"]
+    ord_df = tables["orders"]
+    item_df = tables["order_items"]
+
+    assert len(cust_df) == 50
+    # Primary key tekilligi
+    assert len(cust_df["customer_id"].unique()) == len(cust_df)
+    assert len(ord_df["order_id"].unique()) == len(ord_df)
+    assert len(item_df["item_id"].unique()) == len(item_df)
+
+    # Sifir yetim foreign key
+    assert ord_df["customer_id"].isin(cust_df["customer_id"]).all()
+    assert item_df["order_id"].isin(ord_df["order_id"]).all()
+
+    # Kardinalite sinirlari
+    order_counts = ord_df.groupby("customer_id").size()
+    assert order_counts.min() >= 1
+    assert order_counts.max() <= 5
+
+    # compile_dataset_to_dataframes sarmalayicisinin uyumlulugu
+    wrapped = compile_dataset_to_dataframes(contract, root_rows=50, seed=42)
+    assert set(wrapped.keys()) == set(tables.keys())
+    assert len(wrapped["customers"]) == 50
+
+
+def test_primary_key_uniqueness_string_prefix():
+    """String tipi birincil anahtarlar tekil onekli formatta uretilmeli."""
+    from ai_data_studio.core.parametric_engine import compile_schema_to_dataframe
+    schema = SchemaContract(
+        domain="products",
+        description="test",
+        row_count_target=100,
+        random_seed=12,
+        primary_key="sku",
+        columns=[
+            ColumnSpec(name="sku", type="string"),
+            ColumnSpec(name="price", type="float", min=10.0, max=100.0),
+        ]
+    )
+    df = compile_schema_to_dataframe(schema, n_rows=100)
+    assert len(df) == 100
+    assert len(df["sku"].unique()) == 100
+    assert df["sku"].iloc[0].startswith("PRO_") and df["sku"].iloc[0].endswith("_000001")

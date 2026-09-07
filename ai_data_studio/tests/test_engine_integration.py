@@ -95,17 +95,64 @@ class TestParametricGeneration(_PipelineCase):
         self.assertEqual(list(first.dataframe["customer_age"].head(50)),
                          list(second.dataframe["customer_age"].head(50)))
 
-    def test_relational_is_rejected_before_any_llm_call(self):
-        """Parametrik motor yabancı anahtar kuramıyor; sessizce yetim üretmemeli."""
+    def test_parametric_engine_supports_relational(self):
+        """Parametrik motor çok tablolu ilişkisel şemayı yerel üretir, 0 yetim üretir."""
         client = fake_llm.FakeRelationalLLMClient()
-        cfg = self._cfg(engine=orchestrator.ENGINE_PARAMETRIC, relational=True)
+        cfg = self._cfg(engine=orchestrator.ENGINE_PARAMETRIC, relational=True, row_count=50)
+        events, result = self._run(cfg, client)
+
+        self.assertEqual(result.report["engines"]["generation"], orchestrator.ENGINE_PARAMETRIC)
+        self.assertIsNotNone(result.tables)
+        self.assertIn("customers", result.tables)
+        self.assertIn("orders", result.tables)
+        self.assertEqual(len(result.tables["customers"]), 50)
+
+        # Bütün yabancı anahtarlar geçerli olmalı, 0 yetim
+        relational_report = result.report.get("relational", {})
+        self.assertTrue(relational_report.get("pass", False))
+        for fk_info in relational_report.get("foreign_keys", []):
+            self.assertEqual(fk_info.get("orphan_rows", 0), 0)
+            self.assertTrue(fk_info.get("pass", False))
+
+        # Üretilen kod bağımsız olarak çalıştırılabilir olmalı
+        self.assertIsNotNone(result.code)
+        loc = {}
+        exec(result.code, loc, loc)
+        gen_fn = loc.get("generate_dataset")
+        self.assertIsNotNone(gen_fn)
+        standalone_tables = gen_fn()
+        self.assertEqual(set(standalone_tables.keys()), set(result.tables.keys()))
+        for t_name, df in standalone_tables.items():
+            self.assertGreater(len(df), 0)
+
+    def test_enrichment_target_table_dirty_data(self):
+        """Zenginleştirme adımları hedef tabloya uygulanır."""
+        client = fake_llm.FakeRelationalLLMClient()
+        cfg = self._cfg(
+            engine=orchestrator.ENGINE_PARAMETRIC,
+            relational=True,
+            row_count=50,
+            dirty_rate=0.1,
+            dirty_table="orders",
+        )
+        events, result = self._run(cfg, client)
+        self.assertIn("orders", result.tables)
+        dirty_meta = result.report.get("engines", {}).get("dirty_data", {})
+        self.assertEqual(dirty_meta.get("target_table"), "orders")
+
+    def test_enrichment_unknown_target_table_is_rejected(self):
+        """Var olmayan hedef tablo belirtildiğinde hata verilir."""
+        client = fake_llm.FakeRelationalLLMClient()
+        cfg = self._cfg(
+            engine=orchestrator.ENGINE_PARAMETRIC,
+            relational=True,
+            row_count=50,
+            dirty_rate=0.1,
+            dirty_table="non_existent_table",
+        )
         with self.assertRaises(ValueError) as ctx:
             self._run(cfg, client)
-        from ai_data_studio.i18n import t
-
-        self.assertEqual(str(ctx.exception), t("pipeline.error.parametric_relational_cli"))
-        # Hata LLM'e gitmeden, sema uretilmeden verilmeli.
-        self.assertEqual(client.calls, [])
+        self.assertIn("non_existent_table", str(ctx.exception))
 
     def test_unknown_engine_is_rejected(self):
         with self.assertRaises(ValueError) as ctx:

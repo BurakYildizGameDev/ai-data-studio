@@ -620,19 +620,17 @@ class TestRelationalControls(unittest.TestCase):
         self.assertEqual(str(self.view.relational_check.cget("state")), "disabled")
         self.assertFalse(self._inputs()["relational"])
 
-    def test_parametric_engine_with_relational_is_rejected_in_the_form(self):
-        """Geç kalan bir hata yerine formda söylenmeli."""
+    def test_parametric_engine_with_relational_is_accepted_in_the_form(self):
+        """Parametrik motor ilişkisel kipte de desteklenir."""
         from ai_data_studio.core.orchestrator import ENGINE_PARAMETRIC
         from ai_data_studio.gui.views.pipeline_view import _engine_label
 
         self.view.relational_var.set(True)
         self.view._toggle_relational()
         self.view.engine_menu.set(_engine_label(ENGINE_PARAMETRIC))
-        with self.assertRaises(ValueError) as ctx:
-            self._inputs()
-        from ai_data_studio.i18n import t as _t
-
-        self.assertEqual(str(ctx.exception), _t("pipeline.error.parametric_relational"))
+        inputs = self._inputs()
+        self.assertTrue(inputs["relational"])
+        self.assertEqual(inputs["engine"], ENGINE_PARAMETRIC)
 
     def test_table_count_bounds_are_enforced(self):
         self.view.relational_var.set(True)

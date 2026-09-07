@@ -426,6 +426,15 @@ MESSAGES = {
     "pipeline.error.unknown_audit_table": (
         "--audit-table '{table}' is not in the contract. Valid tables: {tables} (or 'all')"
     ),
+    "pipeline.error.unknown_ts_table": (
+        "--ts-table '{table}' is not in the contract. Valid tables: {tables}"
+    ),
+    "pipeline.error.unknown_expand_table": (
+        "--expand-table '{table}' is not in the contract. Valid tables: {tables}"
+    ),
+    "pipeline.error.unknown_dirty_table": (
+        "--dirty-table '{table}' is not in the contract. Valid tables: {tables}"
+    ),
     "pipeline.cancelled_by_user": "The pipeline was cancelled by the user",
 
     # --- Run progress ------------------------------------------------------ #
@@ -592,6 +601,9 @@ MESSAGES = {
         "Which table the privacy audit applies to: empty = the root table (default), "
         "'all' = every table, or a table name"
     ),
+    "cli.help.ts_table": "Which table the time-series enrichment applies to (default: the root table)",
+    "cli.help.expand_table": "Which table the feature expander applies to (default: the root table)",
+    "cli.help.dirty_table": "Which table the dirty data injection applies to (default: the root table)",
     "cli.help.gemini_backend": (
         "Pick the Gemini backend for this run: 'aistudio' (API key, fast) or 'cli' "
         "(Antigravity session, slow). The stored setting is not changed"
