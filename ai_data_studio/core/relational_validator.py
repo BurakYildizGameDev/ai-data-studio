@@ -50,7 +50,7 @@ def check_primary_keys(tables: Dict[str, pd.DataFrame],
         df = tables.get(name)
         if df is None or pk not in df.columns:
             results.append({"table": name, "primary_key": pk, "pass": False,
-                            "reason": "tablo veya kolon yok"})
+                            "reason": t("relational.reason.no_table_or_column")})
             continue
         col = df[pk]
         duplicates = int(col.duplicated().sum())
@@ -74,11 +74,11 @@ def check_foreign_keys(tables: Dict[str, pd.DataFrame],
         child = tables.get(rel.child_table)
         if parent is None or child is None:
             results.append({"relationship": rel.label(), "pass": False,
-                            "reason": "tablo yok", "orphan_rows": 0})
+                            "reason": t("relational.reason.no_table"), "orphan_rows": 0})
             continue
         if rel.parent_key not in parent.columns or rel.child_key not in child.columns:
             results.append({"relationship": rel.label(), "pass": False,
-                            "reason": "anahtar kolonu yok", "orphan_rows": 0})
+                            "reason": t("relational.reason.no_key_column"), "orphan_rows": 0})
             continue
 
         fk = child[rel.child_key]

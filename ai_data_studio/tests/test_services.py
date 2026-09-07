@@ -486,8 +486,9 @@ class TestAgyEmptyResponse(unittest.TestCase):
 
         self.assertEqual(runner.call_count, agy_service.EMPTY_RESPONSE_ATTEMPTS)
         # Hata metni ne oldugunu ve cikis yolunu soyluyor
-        self.assertIn("boş yanıt", str(ctx.exception))
-        self.assertIn("AI Studio", str(ctx.exception))
+        err_msg = str(ctx.exception)
+        self.assertTrue("boş yanıt" in err_msg or "empty response" in err_msg)
+        self.assertIn("AI Studio", err_msg)
         # Teshis izi: ham govde her denemede log'a yazildi
         self.assertEqual(len(logs.output), agy_service.EMPTY_RESPONSE_ATTEMPTS)
         self.assertIn("write_to_file", logs.output[0])
@@ -505,7 +506,8 @@ class TestAgyEmptyResponse(unittest.TestCase):
             with self.assertRaises(LLMError) as ctx:
                 client._complete("sistem", "kullanici")
 
-        self.assertIn("sonuç olayı", str(ctx.exception))
+        err_msg = str(ctx.exception)
+        self.assertTrue("sonuç olayı" in err_msg or "no result event" in err_msg)
 
     def test_error_text_reads_stream_single_json_and_plain_text(self):
         """Hata mesaji uc bicimde de gelebiliyor; ucunde de asil mesaj kaybolmamali."""
@@ -548,7 +550,7 @@ class TestAgyEmptyResponse(unittest.TestCase):
             client._complete("sistem", "kullanici")
 
         self.assertTrue(seen)
-        self.assertIn("~200 sn", seen[0])
+        self.assertTrue("~200 sn" in seen[0] or "~200 s" in seen[0])
 
     def test_step_updates_are_reported_live(self):
         """Cagri suruyorken adim olaylari progress_cb'ye dusmeli - konsolun tek bilgisi."""
@@ -568,7 +570,7 @@ class TestAgyEmptyResponse(unittest.TestCase):
              mock.patch.object(agy_service, "_work_dir", return_value="."):
             client._complete("sistem", "kullanici")
 
-        steps = [m for m in seen if m.startswith("agy adımı")]
+        steps = [m for m in seen if m.startswith("agy adımı") or m.startswith("agy step:")]
         self.assertTrue(steps, seen)
         self.assertTrue(any("agent_response" in m for m in steps), steps)
 

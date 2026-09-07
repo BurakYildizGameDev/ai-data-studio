@@ -204,16 +204,12 @@ class GeminiClient(BaseLLMClient):
         text = str(exc)
         code = getattr(exc, "code", None)
         if "API_KEY_INVALID" in text or code in (401, 403):
-            return ("Gemini API anahtarı geçersiz veya yetkisiz. "
-                    "https://aistudio.google.com/apikey üzerinden kontrol edin - "
-                    "ya da anahtarsız çalışmak için Antigravity CLI girişini seçin.")
+            return t("service.error.gemini_bad_key")
         if code == 429 or "RESOURCE_EXHAUSTED" in text:
-            return ("Gemini kota sınırına takıldı. Biraz bekleyip tekrar deneyin "
-                    "ya da daha küçük bir model seçin.")
+            return t("service.error.gemini_quota")
         if code == 404:
-            return ("Model '%s' bulunamadı. Model listesinden başka birini seçin."
-                    % self.model)
-        return "İstek reddedildi: %s" % exc
+            return t("service.error.gemini_model_missing", model=self.model)
+        return t("service.error.gemini_rejected", error=exc)
 
     def _complete(self, system: str, user: str, max_tokens: int = 16000,
                   temperature: Optional[float] = None) -> str:
@@ -272,4 +268,4 @@ def create_client(provider: str, model: Optional[str] = None, **kwargs) -> BaseL
     if provider == config.PROVIDER_OLLAMA:
         from .ollama_service import OllamaClient
         return OllamaClient(model, **kwargs)
-    raise ValueError("Bilinmeyen sağlayıcı: %s" % provider)
+    raise ValueError(t("service.error.unknown_provider", provider=provider))

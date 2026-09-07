@@ -34,6 +34,7 @@ import time
 from typing import Callable, Dict, List, Optional, Tuple
 
 from .. import config
+from ..i18n import t
 from .llm_base import BaseLLMClient, LLMError, LLMNotConfiguredError
 
 log = logging.getLogger(__name__)
@@ -102,9 +103,7 @@ def _run(args: List[str], timeout: int, cwd: Optional[str] = None):
     """agy'yi alt surec olarak calistirir. shell=False - istem argumanini kabuk yorumlamasin."""
     exe = executable_path()
     if exe is None:
-        raise LLMNotConfiguredError(
-            "`agy` komutu bulunamadı. Antigravity CLI kurulu değil: %s" % INSTALL_URL
-        )
+        raise LLMNotConfiguredError(t("service.agy.not_found", url=INSTALL_URL))
     return subprocess.run(
         [exe] + args,
         capture_output=True,
@@ -138,9 +137,7 @@ def _stream(args: List[str], timeout: int, cwd: Optional[str] = None,
     """
     exe = executable_path()
     if exe is None:
-        raise LLMNotConfiguredError(
-            "`agy` komutu bulunamadı. Antigravity CLI kurulu değil: %s" % INSTALL_URL
-        )
+        raise LLMNotConfiguredError(t("service.agy.not_found", url=INSTALL_URL))
 
     proc = subprocess.Popen(
         [exe] + args,
@@ -262,12 +259,11 @@ def check_login(timeout: int = MODELS_TIMEOUT_S) -> Tuple[bool, str]:
     kimlik dosyası okumayız.
     """
     if not is_available():
-        return False, "`agy` komutu bulunamadı - Antigravity CLI kurulu değil"
+        return False, t("service.agy.not_installed")
     models = list_models(timeout=timeout)
     if not models:
-        return False, ("Antigravity CLI kurulu ama oturum doğrulanamadı. "
-                       "Bir terminalde `agy` çalıştırıp giriş yapın.")
-    return True, "Antigravity CLI oturumu açık - %d model kullanılabilir" % len(models)
+        return False, t("service.agy.session_unverified")
+    return True, t("service.agy.session_ok", count=len(models))
 
 
 def _error_text(stdout: str, stderr: str, model: str) -> str:
@@ -311,10 +307,9 @@ def _error_text(stdout: str, stderr: str, model: str) -> str:
     message = " ".join(message.split())          # cok satirli listeyi tek satira indir
     if "not recognized as a known model" in message or "invalid model selection" in message:
         names = [model_id for model_id, _label in list_models()]
-        return ("Model '%s' Antigravity CLI'da tanımlı değil. Pipeline sekmesinde "
-                "Model listesini açıp geçerli bir tane seçin%s"
-                % (model, (" (örn. %s)" % names[0]) if names else ""))
-    return message[:400] or "ayrıntı yok"
+        hint = t("service.agy.model_hint", model=names[0]) if names else ""
+        return t("service.agy.model_invalid", model=model, hint=hint)
+    return message[:400] or t("service.agy.no_details")
 
 
 class AgyClient(BaseLLMClient):
@@ -326,12 +321,11 @@ class AgyClient(BaseLLMClient):
         super().__init__(model or config.DEFAULT_AGY_MODEL, **kwargs)
         if not is_available():
             raise LLMNotConfiguredError(
-                "Antigravity CLI (`agy`) bulunamadı. Kurulum: %s - ya da Gemini "
-                "için AI Studio API anahtarı girin." % INSTALL_URL
+                t("service.agy.not_found_hint", url=INSTALL_URL)
             )
         self.backend = config.GEMINI_BACKEND_CLI
         self.credential = config.Credential(
-            config.KIND_SDK_DEFAULT, None, "Antigravity CLI (agy) oturumu"
+            config.KIND_SDK_DEFAULT, None, t("service.agy.credential_label")
         )
         log.info("Gemini kimliği: agy CLI / model %s", self.model)
 
@@ -345,22 +339,18 @@ class AgyClient(BaseLLMClient):
         """
         self.last_health_error = ""
         if not is_available():
-            self.last_health_error = (
-                "`agy` komutu bulunamadı - Antigravity CLI kurulu değil: %s" % INSTALL_URL)
+            self.last_health_error = t("service.agy.not_found", url=INSTALL_URL)
             return False
 
         models = list_models()
         if not models:
-            self.last_health_error = (
-                "Antigravity CLI oturumu doğrulanamadı. Bir terminalde `agy` "
-                "çalıştırıp giriş yapın.")
+            self.last_health_error = t("service.agy.session_unverified")
             return False
 
         names = [model_id for model_id, _label in models]
         if self.model not in names:
-            self.last_health_error = (
-                "Model '%s' Antigravity CLI'da yok. Kullanılabilir modeller: %s"
-                % (self.model, ", ".join(names[:6]) + ("..." if len(names) > 6 else "")))
+            models_str = ", ".join(names[:6]) + ("..." if len(names) > 6 else "")
+            self.last_health_error = t("service.agy.model_missing", model=self.model, models=models_str)
             return False
         return True
 
@@ -372,9 +362,7 @@ class AgyClient(BaseLLMClient):
         prompt += "\n\nCRITICAL INSTRUCTION: Do NOT invoke any tools or execute terminal commands. Output the response directly as raw text or code."
         if len(prompt) > MAX_PROMPT_CHARS:
             raise LLMError(
-                "İstem Antigravity CLI için çok uzun (%d karakter, sınır %d). "
-                "Satır sayısını düşürün ya da AI Studio API anahtarına geçin."
-                % (len(prompt), MAX_PROMPT_CHARS)
+                t("service.agy.prompt_too_long", length=len(prompt), limit=MAX_PROMPT_CHARS)
             )
 
         args = [
@@ -403,10 +391,8 @@ class AgyClient(BaseLLMClient):
                 attempt, EMPTY_RESPONSE_ATTEMPTS, _excerpt(last_stdout))
 
         raise LLMError(
-            "Antigravity CLI %d denemede de boş yanıt döndürdü. Ajan CLI'ı yanıt "
-            "yerine bir araç çağırmış olabilir; AI Studio API anahtarına geçmek bu "
-            "davranışı tamamen ortadan kaldırır. Ham çıktı: %s"
-            % (EMPTY_RESPONSE_ATTEMPTS, _excerpt(last_stdout))
+            t("service.agy.empty_attempts", attempts=EMPTY_RESPONSE_ATTEMPTS,
+              output=_excerpt(last_stdout))
         )
 
     def _call_cli(self, args: List[str]) -> Tuple[Dict, str]:
@@ -414,31 +400,27 @@ class AgyClient(BaseLLMClient):
 
         Ham stdout da döner: boş yanıtta teşhis izi olarak log'a yazılıyor.
         """
-        self._report_progress(
-            "agy çağrısı başladı - CLI açılışı tek başına ~200 sn sürüyor, "
-            "ilk adım olayı ondan sonra gelir.")
+        self._report_progress(t("service.agy.call_started"))
         try:
             code, stdout, stderr = _stream(args, timeout=CALL_TIMEOUT_S + 60,
                                            cwd=_work_dir(), on_line=self._on_stream_line,
                                            on_heartbeat=self._on_stream_idle)
         except subprocess.TimeoutExpired as exc:
             raise LLMError(
-                "Antigravity CLI %d saniyede yanıt vermedi. Ajan CLI'ı yavaştır; "
-                "daha küçük bir model (örn. gemini-3.8-flash-low) deneyin ya da "
-                "AI Studio API anahtarına geçin." % CALL_TIMEOUT_S
+                t("service.agy.timeout", seconds=CALL_TIMEOUT_S)
             ) from exc
         except OSError as exc:
-            raise LLMError("Antigravity CLI çalıştırılamadı: %s" % exc) from exc
+            raise LLMError(t("service.agy.exec_failed", error=exc)) from exc
 
         if code != 0:
-            raise LLMError("Antigravity CLI hata verdi: %s"
-                           % _error_text(stdout, stderr, self.model))
+            raise LLMError(t("service.agy.cli_error",
+                             error=_error_text(stdout, stderr, self.model)))
 
         payload = self._parse(stdout)
         status = str(payload.get("status", "")).upper()
         if status and status != "SUCCESS":
-            raise LLMError("Antigravity CLI '%s' durumu döndürdü: %s"
-                           % (status, str(payload.get("error", ""))[:300]))
+            raise LLMError(t("service.agy.status_error", status=status,
+                             error=str(payload.get("error", ""))[:300]))
 
         log.debug("Antigravity CLI adımları: %s", " -> ".join(payload.get("steps") or []))
         if payload.get("recovered_from_deltas"):
@@ -451,7 +433,7 @@ class AgyClient(BaseLLMClient):
 
     def _on_stream_idle(self, elapsed_s: float) -> None:
         """Çıktı gelmeyen sürede konsolun donmadığını gösterir."""
-        self._report_progress("agy hâlâ çalışıyor (%d sn)" % int(elapsed_s))
+        self._report_progress(t("service.agy.still_running", seconds=int(elapsed_s)))
 
     def _on_stream_line(self, line: str) -> None:
         """Akıştan gelen tek satırı canlı ilerleme mesajına çevirir.
@@ -472,11 +454,12 @@ class AgyClient(BaseLLMClient):
         update = event.get("step_update")
         if not isinstance(update, dict):
             return
-        message = "agy adımı: %s (%s)" % (update.get("step_type", "?"),
-                                          update.get("state", "?"))
         duration = update.get("duration_seconds")
-        if isinstance(duration, (int, float)):
-            message += " - %.1f sn" % duration
+        duration_str = t("service.agy.step_duration", seconds="%.1f" % duration) if isinstance(duration, (int, float)) else ""
+        message = t("service.agy.step_progress",
+                    type=update.get("step_type", "?"),
+                    state=update.get("state", "?"),
+                    duration=duration_str)
         self._report_progress(message)
 
     @staticmethod
@@ -522,7 +505,7 @@ class AgyClient(BaseLLMClient):
                     result = payload
 
         if result is None:
-            raise LLMError("Antigravity CLI sonuç olayı döndürmedi: %s" % _excerpt(stdout))
+            raise LLMError(t("service.agy.no_result_event", output=_excerpt(stdout)))
 
         payload = dict(result)
         payload["steps"] = steps

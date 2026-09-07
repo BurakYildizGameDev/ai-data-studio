@@ -75,7 +75,7 @@ class Relationship:
         except (TypeError, ValueError):
             raise SchemaValidationError(t("contract.error.min_per_parent_int", where=where)) from None
         if min_per_parent < 0:
-            raise SchemaValidationError("%s: 'min_per_parent' negatif olamaz" % where)
+            raise SchemaValidationError(t("contract.error.min_per_parent_negative", where=where))
 
         raw_max = data.get("max_per_parent")
         max_per_parent: Optional[int] = None

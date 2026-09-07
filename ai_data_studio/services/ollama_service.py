@@ -170,7 +170,7 @@ def delete_model(name: str, host: Optional[str] = None) -> bool:
         response.raise_for_status()
         return True
     except requests.RequestException as exc:
-        raise OllamaUnavailableError("Model silinemedi: %s" % exc) from exc
+        raise OllamaUnavailableError(t("service.error.ollama_delete", error=exc)) from exc
 
 
 def catalog(host: Optional[str] = None) -> List[Dict[str, Any]]:

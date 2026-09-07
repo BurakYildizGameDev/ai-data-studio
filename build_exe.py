@@ -42,6 +42,7 @@ HIDDEN_IMPORTS = [
     # PyInstaller'in statik analizi bu cagriyi goremez, elle bildirmek sart.
     "ai_data_studio.locales.en",
     "ai_data_studio.locales.tr",
+    "runpy",
 ]
 
 # Paketlemeye gerek olmayan agir/gereksiz bagimliliklar - boyutu ciddi dusurur.

@@ -960,4 +960,85 @@ MESSAGES = {
     ),
     "run.error.health_check": "{provider} servisi doğrulanamadı (model: {model}). {detail}",
     "run.error.health_hint": "API anahtarını / daemon'u kontrol edin.",
+
+    # --- Antigravity CLI (agy) ----------------------------------------------- #
+    "service.agy.not_found": "`agy` komutu bulunamadı. Antigravity CLI kurulu değil: {url}",
+    "service.agy.not_installed": "`agy` komutu bulunamadı - Antigravity CLI kurulu değil",
+    "service.agy.session_unverified": (
+        "Antigravity CLI kurulu ama oturum doğrulanamadı. "
+        "Bir terminalde `agy` çalıştırıp giriş yapın."
+    ),
+    "service.agy.session_ok": "Antigravity CLI oturumu açık - {count} model kullanılabilir",
+    "service.agy.model_invalid": (
+        "Model '{model}' Antigravity CLI'da tanımlı değil. Pipeline sekmesinde "
+        "Model listesini açıp geçerli bir tane seçin{hint}"
+    ),
+    "service.agy.model_hint": " (örn. {model})",
+    "service.agy.no_details": "ayrıntı yok",
+    "service.agy.not_found_hint": (
+        "Antigravity CLI (`agy`) bulunamadı. Kurulum: {url} - ya da Gemini "
+        "için AI Studio API anahtarı girin."
+    ),
+    "service.agy.credential_label": "Antigravity CLI (agy) oturumu",
+    "service.agy.model_missing": "Model '{model}' Antigravity CLI'da yok. Kullanılabilir modeller: {models}",
+    "service.agy.prompt_too_long": (
+        "İstem Antigravity CLI için çok uzun ({length} karakter, sınır {limit}). "
+        "Satır sayısını düşürün ya da AI Studio API anahtarına geçin."
+    ),
+    "service.agy.empty_attempts": (
+        "Antigravity CLI {attempts} denemede de boş yanıt döndürdü. Ajan CLI'ı yanıt "
+        "yerine bir araç çağırmış olabilir; AI Studio API anahtarına geçmek bu "
+        "davranışı tamamen ortadan kaldırır. Ham çıktı: {output}"
+    ),
+    "service.agy.call_started": (
+        "agy çağrısı başladı - CLI açılışı tek başına ~200 sn sürüyor, "
+        "ilk adım olayı ondan sonra gelir."
+    ),
+    "service.agy.timeout": (
+        "Antigravity CLI {seconds} saniyede yanıt vermedi. Ajan CLI'ı yavaştır; "
+        "daha küçük bir model (örn. gemini-3.8-flash-low) deneyin ya da "
+        "AI Studio API anahtarına geçin."
+    ),
+    "service.agy.exec_failed": "Antigravity CLI çalıştırılamadı: {error}",
+    "service.agy.cli_error": "Antigravity CLI hata verdi: {error}",
+    "service.agy.status_error": "Antigravity CLI '{status}' durumu döndürdü: {error}",
+    "service.agy.still_running": "agy hâlâ çalışıyor ({seconds} sn)",
+    "service.agy.step_progress": "agy adımı: {type} ({state}){duration}",
+    "service.agy.step_duration": " - {seconds} sn",
+    "service.agy.no_result_event": "Antigravity CLI sonuç olayı döndürmedi: {output}",
+
+    # --- Validator kısa gerekçeleri ----------------------------------------- #
+    "validation.z_skip.heavy_tail": "dağılım '{dist}' ağır kuyruklu/sayım tipi",
+    "validation.z_skip.zero_inflated": "sıfır oranı %{pct} (sıfır-şişirilmiş)",
+    "validation.z_skip.iqr_zero": "değerlerin yarısı tek noktada yığılı (IQR=0)",
+    "validation.z_skip.bowley_skew": "Bowley çarpıklığı {skew} (simetrik değil)",
+    "validation.iso_skip.few_rows": "yetersiz tam satır",
+    "validation.corr_skip.not_numeric": "kolon sayısal değil veya yok",
+    "validation.corr_skip.constant": "korelasyon hesaplanamadı (sabit kolon?)",
+    "validation.dist_skip.no_seed": "seed_data_yok",
+    "validation.dist_skip.no_scipy": "scipy kurulu değil",
+    "validation.dist_skip.no_common_numeric": "ortak sayısal kolon bulunamadı",
+    "validation.stage.correlation_guard": "Korelasyon koruma (geri alma)",
+
+    # --- İlişkisel doğrulayıcı gerekçeleri ---------------------------------- #
+    "relational.reason.no_table_or_column": "tablo veya kolon yok",
+    "relational.reason.no_table": "tablo yok",
+    "relational.reason.no_key_column": "anahtar kolonu yok",
+
+    # --- Sözleşme hataları -------------------------------------------------- #
+    "contract.error.min_per_parent_negative": "{where}: 'min_per_parent' negatif olamaz",
+    "schema.error.foreign_keys_missing": "'{table}' tablosunda foreign_keys kolonlar arasında yok: {keys}",
+
+    # --- Bulut ve Ollama dağınık hataları ----------------------------------- #
+    "service.error.gemini_bad_key": (
+        "Gemini API anahtarı geçersiz veya yetkisiz. https://aistudio.google.com/apikey "
+        "üzerinden kontrol edin - ya da anahtarsız çalışmak için Antigravity CLI girişini seçin."
+    ),
+    "service.error.gemini_quota": (
+        "Gemini kota sınırına takıldı. Biraz bekleyip tekrar deneyin ya da daha küçük bir model seçin."
+    ),
+    "service.error.gemini_model_missing": "Model '{model}' bulunamadı. Model listesinden başka birini seçin.",
+    "service.error.gemini_rejected": "İstek reddedildi: {error}",
+    "service.error.unknown_provider": "Bilinmeyen sağlayıcı: {provider}",
+    "service.error.ollama_delete": "Model silinemedi: {error}",
 }

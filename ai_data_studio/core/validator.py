@@ -183,7 +183,7 @@ def zscore_eligible_columns(
                 dist = None
 
         if dist in HEAVY_TAIL_DISTRIBUTIONS:
-            skipped[col] = "dağılım '%s' ağır kuyruklu/sayım tipi" % dist
+            skipped[col] = t("validation.z_skip.heavy_tail", dist=dist)
             continue
 
         series = df[col].astype("float64")
@@ -198,7 +198,7 @@ def zscore_eligible_columns(
 
         zero_fraction = float((finite == 0).mean())
         if zero_fraction > ZERO_FRACTION_SKIP_THRESHOLD:
-            skipped[col] = "sıfır oranı %%%.0f (sıfır-şişirilmiş)" % (zero_fraction * 100)
+            skipped[col] = t("validation.z_skip.zero_inflated", pct="%.0f" % (zero_fraction * 100))
             continue
 
         q1, q2, q3 = (float(finite.quantile(q)) for q in (0.25, 0.5, 0.75))
@@ -206,12 +206,12 @@ def zscore_eligible_columns(
         if spread <= 0:
             # Orta %50 tek bir degere yigilmis: ortalama/std tabanli Z-Score
             # bu kolonda anlamsiz, her farkli deger "aykiri" cikar.
-            skipped[col] = "değerlerin yarısı tek noktada yığılı (IQR=0)"
+            skipped[col] = t("validation.z_skip.iqr_zero")
             continue
 
         bowley = ((q3 - q2) - (q2 - q1)) / spread
         if abs(bowley) > SKEW_SKIP_THRESHOLD:
-            skipped[col] = "Bowley çarpıklığı %.2f (simetrik değil)" % bowley
+            skipped[col] = t("validation.z_skip.bowley_skew", skew="%.2f" % bowley)
             continue
 
         eligible.append(col)
@@ -310,7 +310,7 @@ def remove_isolation_forest_outliers(df: pd.DataFrame, columns: List[str],
     features = df[usable].astype("float64")
     finite = features.replace([np.inf, -np.inf], np.nan).dropna()
     if len(finite) < 50:
-        return df, {"skipped": True, "reason": "yetersiz tam satır", "removed": 0, "preserved_anomalies": 0}
+        return df, {"skipped": True, "reason": t("validation.iso_skip.few_rows"), "removed": 0, "preserved_anomalies": 0}
 
     model = IsolationForest(
         contamination=contamination,
@@ -372,14 +372,16 @@ def validate_correlations(df: pd.DataFrame, schema: SchemaContract) -> List[Dict
         if c1 not in corr_matrix.columns or c2 not in corr_matrix.columns:
             results.append({
                 "pair": [c1, c2], "expected_sign": rule.expected_sign, "min_r": rule.min_r,
-                "method": method, "actual_r": None, "pass": False, "reason": "kolon sayısal değil veya yok",
+                "method": method, "actual_r": None, "pass": False,
+                "reason": t("validation.corr_skip.not_numeric"),
             })
             continue
         r = corr_matrix.loc[c1, c2]
         if pd.isna(r):
             results.append({
                 "pair": [c1, c2], "expected_sign": rule.expected_sign, "min_r": rule.min_r,
-                "method": method, "actual_r": None, "pass": False, "reason": "korelasyon hesaplanamadi (sabit kolon?)",
+                "method": method, "actual_r": None, "pass": False,
+                "reason": t("validation.corr_skip.constant"),
             })
             continue
         r = float(r)
@@ -618,7 +620,7 @@ def run_validation(
             # sayisini yazdirdigi icin burada dogrudan ekliyoruz: bu asama
             # satir silmiyor, geri getiriyor.
             report["stages"].append({
-                "stage": "Korelasyon koruma (geri alma)",
+                "stage": t("validation.stage.correlation_guard"),
                 "rows_before": before_revert,
                 "rows_after": len(df),
                 "removed": 0,

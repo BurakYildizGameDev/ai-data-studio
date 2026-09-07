@@ -962,4 +962,83 @@ MESSAGES = {
     ),
     "run.error.health_check": "The {provider} service could not be verified (model: {model}). {detail}",
     "run.error.health_hint": "Check the API key / the daemon.",
+
+    # --- Antigravity CLI (agy) ----------------------------------------------- #
+    "service.agy.not_found": "`agy` command not found. Antigravity CLI is not installed: {url}",
+    "service.agy.not_installed": "`agy` command not found - Antigravity CLI is not installed",
+    "service.agy.session_unverified": (
+        "Antigravity CLI is installed but session could not be verified. "
+        "Run `agy` in a terminal and sign in."
+    ),
+    "service.agy.session_ok": "Antigravity CLI session active - {count} models available",
+    "service.agy.model_invalid": (
+        "Model '{model}' is not recognized in Antigravity CLI. Open the Model list in the "
+        "Pipeline tab and select a valid one{hint}"
+    ),
+    "service.agy.model_hint": " (e.g. {model})",
+    "service.agy.no_details": "no details",
+    "service.agy.not_found_hint": (
+        "Antigravity CLI (`agy`) not found. Installation: {url} - or provide an "
+        "AI Studio API key for Gemini."
+    ),
+    "service.agy.credential_label": "Antigravity CLI (agy) session",
+    "service.agy.model_missing": "Model '{model}' is not available in Antigravity CLI. Available models: {models}",
+    "service.agy.prompt_too_long": (
+        "Prompt is too long for Antigravity CLI ({length} chars, limit {limit}). "
+        "Reduce the row count or switch to an AI Studio API key."
+    ),
+    "service.agy.empty_attempts": (
+        "Antigravity CLI returned an empty response after {attempts} attempts. The agent CLI "
+        "may have called a tool instead of returning text; switching to an AI Studio API key "
+        "eliminates this behavior. Raw output: {output}"
+    ),
+    "service.agy.call_started": (
+        "agy call started - CLI startup alone takes ~200 s, the first step event comes after that."
+    ),
+    "service.agy.timeout": (
+        "Antigravity CLI did not respond within {seconds} seconds. The agent CLI is slow; "
+        "try a smaller model (e.g. gemini-3.8-flash-low) or switch to an AI Studio API key."
+    ),
+    "service.agy.exec_failed": "Antigravity CLI could not be executed: {error}",
+    "service.agy.cli_error": "Antigravity CLI returned an error: {error}",
+    "service.agy.status_error": "Antigravity CLI returned '{status}' status: {error}",
+    "service.agy.still_running": "agy still running ({seconds} s)",
+    "service.agy.step_progress": "agy step: {type} ({state}){duration}",
+    "service.agy.step_duration": " - {seconds} s",
+    "service.agy.no_result_event": "Antigravity CLI returned no result event: {output}",
+
+    # --- Validator short rationales ------------------------------------------ #
+    "validation.z_skip.heavy_tail": "distribution '{dist}' is heavy-tailed / count type",
+    "validation.z_skip.zero_inflated": "zero ratio %{pct} (zero-inflated)",
+    "validation.z_skip.iqr_zero": "half of the values are concentrated at a single point (IQR=0)",
+    "validation.z_skip.bowley_skew": "Bowley skewness {skew} (non-symmetric)",
+    "validation.iso_skip.few_rows": "insufficient complete rows",
+    "validation.corr_skip.not_numeric": "column is not numeric or missing",
+    "validation.corr_skip.constant": "correlation cannot be computed (constant column?)",
+    "validation.dist_skip.no_seed": "no reference seed data",
+    "validation.dist_skip.no_scipy": "scipy is not installed",
+    "validation.dist_skip.no_common_numeric": "no common numeric columns found",
+    "validation.stage.correlation_guard": "Correlation guard (revert)",
+
+    # --- Relational validator reasons --------------------------------------- #
+    "relational.reason.no_table_or_column": "missing table or column",
+    "relational.reason.no_table": "missing table",
+    "relational.reason.no_key_column": "missing key column",
+
+    # --- Dataset & schema contract errors ------------------------------------ #
+    "contract.error.min_per_parent_negative": "{where}: 'min_per_parent' cannot be negative",
+    "schema.error.foreign_keys_missing": "foreign_keys in table '{table}' not found in columns: {keys}",
+
+    # --- Cloud & Ollama scattered errors ------------------------------------ #
+    "service.error.gemini_bad_key": (
+        "Gemini API key is invalid or unauthorized. Verify at https://aistudio.google.com/apikey "
+        "- or choose Antigravity CLI login for keyless access."
+    ),
+    "service.error.gemini_quota": (
+        "Gemini rate limit exceeded. Please wait a moment and retry, or select a smaller model."
+    ),
+    "service.error.gemini_model_missing": "Model '{model}' not found. Select another model from the model list.",
+    "service.error.gemini_rejected": "Request rejected: {error}",
+    "service.error.unknown_provider": "Unknown provider: {provider}",
+    "service.error.ollama_delete": "Could not delete model: {error}",
 }

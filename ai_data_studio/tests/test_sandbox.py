@@ -6,6 +6,7 @@ from ai_data_studio.core.generator import (
     ExecutionResult,
     SecurityError,
     execute_in_sandbox,
+    run_sandbox_child,
     sanity_check,
     static_import_check,
 )
@@ -205,6 +206,51 @@ class TestSanityCheck(unittest.TestCase):
         df["clicked"] = True
         issues = sanity_check(df, self.schema)
         self.assertTrue(any("True orani" in i for i in issues))
+
+
+class TestSandboxChildRunner(unittest.TestCase):
+    """PyInstaller --sandbox-runner alt süreç harness testleri."""
+
+    def test_missing_arguments_returns_error(self):
+        self.assertEqual(run_sandbox_child([]), 2)
+        self.assertEqual(run_sandbox_child(["only_one"]), 2)
+
+    def test_nonexistent_runner_returns_error(self):
+        self.assertEqual(run_sandbox_child(["nonexistent_file.py", "10", "42", "out.parquet"]), 2)
+
+    def test_valid_runner_executes_successfully(self):
+        import tempfile
+        from pathlib import Path
+        import pandas as pd
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmppath = Path(tmpdir)
+            user_code = tmppath / "user_code.py"
+            runner_file = tmppath / "_runner.py"
+            out_file = tmppath / "output.parquet"
+
+            user_code.write_text(
+                "import pandas as pd\n"
+                "def generate_data(n_rows, seed):\n"
+                "    return pd.DataFrame({'val': [seed] * n_rows})\n",
+                encoding="utf-8",
+            )
+            runner_file.write_text(
+                "import sys\n"
+                "import user_code\n"
+                "n = int(sys.argv[1])\n"
+                "s = int(sys.argv[2])\n"
+                "df = user_code.generate_data(n, s)\n"
+                "df.to_parquet(sys.argv[3], index=False)\n",
+                encoding="utf-8",
+            )
+
+            code = run_sandbox_child([str(runner_file), "5", "123", str(out_file)])
+            self.assertEqual(code, 0)
+            self.assertTrue(out_file.exists())
+            df = pd.read_parquet(out_file)
+            self.assertEqual(len(df), 5)
+            self.assertEqual(df["val"].iloc[0], 123)
 
 
 if __name__ == "__main__":

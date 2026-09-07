@@ -42,6 +42,7 @@ __all__ = [
     "ExecutionResult",
     "static_import_check",
     "execute_in_sandbox",
+    "run_sandbox_child",
     "sanity_check",
     "generate_and_execute",
     "diagnostic_hint",
@@ -422,8 +423,12 @@ def execute_in_sandbox(
     watchdog: Optional[_MemoryWatchdog] = None
     proc: Optional[subprocess.Popen] = None
     try:
+        if getattr(sys, "frozen", False):
+            child_cmd = [sys.executable, "--sandbox-runner", str(runner_path), str(n_rows), str(seed), str(out_path)]
+        else:
+            child_cmd = [sys.executable, str(runner_path), str(n_rows), str(seed), str(out_path)]
         proc = subprocess.Popen(
-            [sys.executable, str(runner_path), str(n_rows), str(seed), str(out_path)],
+            child_cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             cwd=str(workdir),
@@ -511,6 +516,50 @@ def execute_in_sandbox(
             kill_process_tree(proc)
         if not keep_workdir:
             shutil.rmtree(workdir, ignore_errors=True)
+
+
+def run_sandbox_child(argv: List[str]) -> int:
+    """PyInstaller / frozen ortamda izole sandbox alt sürecini çalıştırır.
+
+    PyInstaller ile paketlenen uygulamada ``sys.executable`` Python yorumlayıcısı
+    değil ``AIDataStudio.exe``'dir. Sandbox adımı alt süreç olarak kendini
+    ``--sandbox-runner <runner_path> <n_rows> <seed> <out_path>`` argümanlarıyla
+    başlatır. Bu fonksiyon ana GUI başlamadan araya girip izole runner dosyasını
+    çalıştırır, böylece süreç izolasyonu ve bellek denetimi aynen korunur.
+    """
+    if len(argv) < 4:
+        sys.stderr.write("Eksik sandbox-runner argümanları: %r\n" % argv)
+        return 2
+
+    runner_path = Path(argv[0]).resolve()
+    if not runner_path.exists():
+        sys.stderr.write("Sandbox runner dosyası bulunamadı: %s\n" % runner_path)
+        return 2
+
+    # _runner.py sys.argv'yi şöyle bekler:
+    # sys.argv[0]: runner_path
+    # sys.argv[1]: n_rows
+    # sys.argv[2]: seed
+    # sys.argv[3]: out_path
+    sys.argv = [str(runner_path)] + list(argv[1:])
+    runner_dir = str(runner_path.parent)
+    if runner_dir not in sys.path:
+        sys.path.insert(0, runner_dir)
+
+    import runpy
+    import traceback
+
+    try:
+        runpy.run_path(str(runner_path), run_name="__main__")
+        return 0
+    except SystemExit as exc:
+        code = exc.code
+        if code is None:
+            return 0
+        return int(code) if isinstance(code, int) else 1
+    except Exception:
+        traceback.print_exc()
+        return 1
 
 
 def _load_tables(out_path: Path, stdout: str) -> Tuple[Dict[str, pd.DataFrame], str]:

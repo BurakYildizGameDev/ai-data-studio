@@ -11,6 +11,10 @@ import traceback
 
 
 def main() -> int:
+    if len(sys.argv) > 1 and sys.argv[1] == "--sandbox-runner":
+        from ai_data_studio.core.generator import run_sandbox_child
+        return run_sandbox_child(sys.argv[2:])
+
     try:
         from ai_data_studio import config as _config
         _config.force_utf8_stdio()

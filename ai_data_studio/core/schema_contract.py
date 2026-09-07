@@ -497,8 +497,7 @@ class SchemaContract:
         missing = [k for k in self.foreign_keys if k not in known]
         if missing:
             raise SchemaValidationError(
-                "'%s' tablosunda foreign_keys kolonlar arasinda yok: %s"
-                % (self.table_name, missing)
+                t("schema.error.foreign_keys_missing", table=self.table_name, keys=missing)
             )
 
     def _cross_validate(self) -> None:
