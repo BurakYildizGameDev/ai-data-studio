@@ -587,6 +587,11 @@ ai_data_studio/
 │   ├── dataset_contract.py     # Dataset Contract: tables + foreign keys + topological order
 │   ├── project_planner.py      # Project description -> target, class balance, leakage, split
 │   ├── generator.py            # AST sandbox execution & self-healing engine
+│   ├── parametric_engine.py    # --engine parametric: contract -> vectors, no LLM code
+│   ├── time_series_engine.py   # --time-series: chronology, circadian curve, velocity
+│   ├── dirty_data_engine.py    # --dirty-rate: controlled noise + audit trail columns
+│   ├── feature_expander.py     # --expand-features: deterministic derived columns
+│   ├── hardware_profiler.py    # --hardware: CPU/RAM/GPU tier -> local model advice
 │   ├── validator.py            # Multi-stage statistical & ML discriminator
 │   ├── relational_validator.py # Primary/foreign key, cardinality & orphan repair
 │   ├── privacy_auditor.py      # DCR / NNDR / HIPAA Safe Harbor audit
@@ -608,8 +613,17 @@ ai_data_studio/
 │   ├── app_window.py           # Main window, event queue loop & thread bridge
 │   ├── components/             # Console, charts, progress badges, auth dialogs
 │   └── views/                  # Pipeline, settings, and job history views
-└── tests/                      # Full test suite (360+ unit & integration tests)
+└── tests/                      # Full test suite (512 unit & integration tests)
 ```
+
+---
+
+## Further Reading
+
+- [`docs/ENGINEERING_REPORT_TR.md`](docs/ENGINEERING_REPORT_TR.md) — a long-form
+  engineering report (in Turkish) covering the architecture of the three data engines,
+  the forensic bug write-ups behind several fixes, and a head-to-head benchmark of
+  Gemini, local Ollama and Claude on the same fraud-detection dataset.
 
 ---
 
