@@ -182,6 +182,48 @@ class TestDatasetCard(unittest.TestCase):
         self.assertIn("71,234", card)
         self.assertIn("r = 0.62", card)
 
+    def test_llm_path_card_claims_code_generation(self):
+        """Varsayılan koşuda kart kod üretimi + sandbox anlatmalı."""
+        card = hf_service.build_dataset_card(self.schema, self.report)
+        self.assertIn("Code generation", card)
+        self.assertIn("Sandboxed execution", card)
+        self.assertNotIn("Post-Generation Engines", card)
+
+    def test_parametric_card_does_not_claim_generated_code(self):
+        """Parametrik koşuda LLM kod yazmadı; kart bunu iddia ederse yanlış beyan olur."""
+        report = dict(self.report, engines={"generation": "parametric"})
+        card = hf_service.build_dataset_card(self.schema, report)
+        self.assertIn("Parametric compilation", card)
+        self.assertNotIn("Sandboxed execution", card)
+        self.assertNotIn("wrote a Python generator", card)
+
+    def test_card_documents_injected_corruption(self):
+        """Kirlilik enjekte edildiyse kart bunu söylemeli - okuyan hata sanmasın."""
+        report = dict(self.report, engines={
+            "generation": "parametric",
+            "dirty_data": {"corrupted_rows": 3561, "corrupted_rate": 0.05,
+                           "corruption_breakdown": {"missing": 1200, "typo": 900,
+                                                    "outlier_spike": 700, "casing": 800}},
+        })
+        card = hf_service.build_dataset_card(self.schema, report)
+        self.assertIn("Post-Generation Engines", card)
+        self.assertIn("3,561", card)
+        self.assertIn("is_corrupted", card)
+        self.assertIn("after* validation", card)
+
+    def test_card_lists_enrichment_engines(self):
+        report = dict(self.report, engines={
+            "generation": "llm",
+            "time_series": {"unique_entities": 250, "burst_anomalies_count": 40,
+                            "time_range": "2026-08-01 to 2026-09-01"},
+            "feature_expander": {"added_columns_count": 2, "total_columns": 9,
+                                 "added_columns": ["age_group", "hour_of_day"]},
+        })
+        card = hf_service.build_dataset_card(self.schema, report)
+        self.assertIn("Time series & velocity", card)
+        self.assertIn("Feature expansion", card)
+        self.assertIn("`age_group`", card)
+
     def test_llm_card_is_used_when_valid(self):
         card = hf_service.build_dataset_card(self.schema, self.report,
                                              llm_client=FakeLLMClient())

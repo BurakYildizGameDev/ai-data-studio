@@ -352,6 +352,133 @@ class TestAppWindow(unittest.TestCase):
         self.assertGreater(len(self.app.pipeline_view.chart_panel._images), 0)
 
 
+class TestEngineLines(unittest.TestCase):
+    """Motor özeti saf metin üretimi - grafik ortamı gerektirmez."""
+
+    def _report(self):
+        return {
+            "engines": {
+                "generation": "parametric",
+                "time_series": {"unique_entities": 250, "burst_anomalies_count": 40,
+                                "time_range": "2026-08-01 to 2026-09-01"},
+                "feature_expander": {"added_columns_count": 2, "total_columns": 9,
+                                     "added_columns": ["age_group", "hour_of_day"]},
+                "dirty_data": {"corrupted_rows": 100, "corrupted_rate": 0.05,
+                               "corruption_breakdown": {"missing": 40, "typo": 30,
+                                                        "outlier_spike": 20, "casing": 25}},
+            }
+        }
+
+    def test_empty_when_no_engines_ran(self):
+        from ai_data_studio.gui.views.pipeline_view import engine_lines
+        self.assertEqual(engine_lines({}), [])
+        self.assertEqual(engine_lines({"engines": {}}), [])
+
+    def test_renders_every_engine_block(self):
+        from ai_data_studio.gui.views.pipeline_view import engine_lines
+
+        text = "\n".join(engine_lines(self._report()))
+        self.assertIn("parametric", text)
+        self.assertIn("250", text)                 # tekil varlik
+        self.assertIn("age_group", text)           # turetilen kolon
+        self.assertIn("doğrulamadan SONRA", text)  # kirlilik sirasi yazili olmali
+
+    def test_engine_label_round_trip(self):
+        from ai_data_studio.gui.views import pipeline_view as pv
+
+        for label, value in pv.ENGINE_LABELS.items():
+            self.assertEqual(pv._engine_label(value), label)
+        self.assertEqual(pv._engine_label("bilinmeyen"), next(iter(pv.ENGINE_LABELS)))
+
+
+@unittest.skipUnless(GUI_AVAILABLE, "Grafik ortami yok")
+class TestEngineControls(unittest.TestCase):
+    """Pipeline ekranındaki motor anahtarları CLI bayraklarıyla eşleşmeli."""
+
+    def setUp(self):
+        from unittest import mock
+        from ai_data_studio import config
+        self._settings_patch = mock.patch.object(
+            config, "load_settings", return_value=dict(config.DEFAULT_SETTINGS)
+        )
+        self._settings_patch.start()
+        self.addCleanup(self._settings_patch.stop)
+
+        from ai_data_studio.gui.app_window import AppWindow
+        self.app = make_tk(AppWindow)
+        self.app.withdraw()
+        self.app.update_idletasks()
+        self.view = self.app.pipeline_view
+
+    def tearDown(self):
+        try:
+            self.app.destroy()
+        except Exception:
+            pass
+
+    def _inputs(self):
+        from unittest import mock
+        selector = self.view.model_selector
+        with mock.patch.object(type(selector), "is_ready", return_value=True):
+            return self.view.collect_inputs()
+
+    def test_defaults_match_cli_defaults(self):
+        from ai_data_studio.core.orchestrator import ENGINE_LLM
+
+        inputs = self._inputs()
+        self.assertEqual(inputs["engine"], ENGINE_LLM)
+        self.assertFalse(inputs["time_series"])
+        self.assertFalse(inputs["expand_features"])
+        self.assertEqual(inputs["dirty_rate"], 0.0)
+
+    def test_selecting_parametric_reaches_pipeline_config(self):
+        from ai_data_studio.core.orchestrator import ENGINE_PARAMETRIC, PipelineConfig
+        from ai_data_studio.gui.views.pipeline_view import _engine_label
+
+        self.view.engine_menu.set(_engine_label(ENGINE_PARAMETRIC))
+        self.view._on_engine_change(self.view.engine_menu.get())
+        self.view.time_series_var.set(True)
+        self.view.expand_features_var.set(True)
+
+        cfg = PipelineConfig(**self._inputs())     # alan adlari eslesmezse TypeError
+        self.assertEqual(cfg.engine, ENGINE_PARAMETRIC)
+        self.assertTrue(cfg.time_series)
+        self.assertTrue(cfg.expand_features)
+
+    def test_engine_hint_follows_selection(self):
+        from ai_data_studio.core.orchestrator import ENGINE_PARAMETRIC
+        from ai_data_studio.gui.views.pipeline_view import ENGINE_HINTS, _engine_label
+
+        self.view.engine_menu.set(_engine_label(ENGINE_PARAMETRIC))
+        self.view._on_engine_change(self.view.engine_menu.get())
+        self.assertEqual(self.view.engine_hint.cget("text"), ENGINE_HINTS[ENGINE_PARAMETRIC])
+
+    def test_dirty_rate_is_percentage(self):
+        self.view.dirty_var.set(True)
+        self.view._toggle_dirty()
+        self.view.dirty_entry.delete(0, "end")
+        self.view.dirty_entry.insert(0, "5")
+        self.assertAlmostEqual(self._inputs()["dirty_rate"], 0.05)
+
+    def test_dirty_entry_disabled_while_unchecked(self):
+        self.view.dirty_var.set(False)
+        self.view._toggle_dirty()
+        self.assertEqual(str(self.view.dirty_entry.cget("state")), "disabled")
+
+    def test_invalid_dirty_rate_is_rejected(self):
+        self.view.dirty_var.set(True)
+        self.view._toggle_dirty()
+        self.view.dirty_entry.delete(0, "end")
+        self.view.dirty_entry.insert(0, "abc")
+        with self.assertRaises(ValueError):
+            self._inputs()
+
+        self.view.dirty_entry.delete(0, "end")
+        self.view.dirty_entry.insert(0, "150")
+        with self.assertRaises(ValueError):
+            self._inputs()
+
+
 @unittest.skipUnless(GUI_AVAILABLE, "Grafik ortami yok")
 class TestChartRendering(unittest.TestCase):
     """Matplotlib Agg backend ve CTkImage render deseni."""

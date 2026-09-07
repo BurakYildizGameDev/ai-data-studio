@@ -153,6 +153,12 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "export_formats": ["csv", "parquet"],
     "appearance": "dark",
     "gemini_backend": GEMINI_BACKEND_AISTUDIO,
+    # Uretim / zenginlestirme motorlari (bkz. core/orchestrator ENGINES).
+    # Deger olarak motor ADI saklanir, arayuz etiketi degil.
+    "engine": "llm",
+    "time_series": False,
+    "expand_features": False,
+    "dirty_rate": 0.0,
 }
 
 

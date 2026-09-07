@@ -211,7 +211,87 @@ def _card_stats(schema, report: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         "distributions": report.get("distributions", {}),
         "column_stats": report.get("column_stats", {}),
         "random_seed": getattr(schema, "random_seed", None),
+        # Hangi motorlarin kostugu: kart "LLM kod yazdi" diye anlatmadan once
+        # gercekten oyle olup olmadigini bilmek zorunda (bkz. _fallback_card).
+        "engines": report.get("engines", {}),
     }
+
+
+def _is_parametric(stats: Dict[str, Any]) -> bool:
+    """Veri LLM kodu yerine parametrik motorla mi uretildi?"""
+    return "parametric" in str((stats.get("engines") or {}).get("generation", ""))
+
+
+def _generation_steps(stats: Dict[str, Any]) -> List[str]:
+    """Kartın 'Generation Method' adımları - koşan motora göre değişir.
+
+    Parametrik kosuda LLM kod yazmadi ve sandbox calismadi; karta yine de oyle
+    yazmak yayinlanan bir veri seti hakkinda yanlis beyan olur.
+    """
+    steps = [
+        "1. **Schema contract** - an LLM analysed the domain and emitted a strict JSON schema "
+        "(columns, ranges, distributions, business rules, expected correlations).",
+    ]
+    if _is_parametric(stats):
+        steps += [
+            "2. **Parametric compilation** - the contract was compiled directly into NumPy / "
+            "Pandas vectors by the deterministic ParametricEngine. No model-written code was "
+            "executed: every column comes from the distribution declared in the contract.",
+            "3. **Validation** - duplicates, schema-bound violations, business-rule violations, "
+            "Z-score outliers (|Z| > 3) and IsolationForest anomalies were removed.",
+        ]
+    else:
+        steps += [
+            "2. **Code generation** - the LLM wrote a vectorised `generate_data(n_rows, seed)` "
+            "function; a self-healing loop fed execution errors and schema mismatches back to "
+            "the model until the output conformed.",
+            "3. **Sandboxed execution** - the generator ran in an isolated subprocess with an "
+            "import allowlist, a wall-clock timeout and a memory watchdog.",
+            "4. **Validation** - duplicates, schema-bound violations, business-rule violations, "
+            "Z-score outliers (|Z| > 3) and IsolationForest anomalies were removed.",
+        ]
+    return steps
+
+
+def _engine_section(stats: Dict[str, Any]) -> List[str]:
+    """Üretimden sonra uygulanan motorları anlatır (hiçbiri koşmadıysa boş)."""
+    engines = stats.get("engines") or {}
+    ts, fe = engines.get("time_series"), engines.get("feature_expander")
+    dirty = engines.get("dirty_data")
+    if not any((ts, fe, dirty)):
+        return []
+
+    lines = ["## Post-Generation Engines", ""]
+    if ts:
+        lines.append(
+            "- **Time series & velocity** - rows were ordered chronologically per entity over "
+            "%s, with a circadian activity curve; `seconds_since_last_tx` and burst-velocity "
+            "flags were derived (%s entities, %s burst anomalies)."
+            % (ts.get("time_range", "the configured window"),
+               format(ts.get("unique_entities", 0), ","),
+               format(ts.get("burst_anomalies_count", 0), ",")))
+    if fe:
+        added = ", ".join("`%s`" % c for c in (fe.get("added_columns") or [])) or "none"
+        lines.append(
+            "- **Feature expansion** - %d deterministic columns were derived from the "
+            "generated ones: %s." % (fe.get("added_columns_count", 0), added))
+    if dirty:
+        breakdown = dirty.get("corruption_breakdown", {})
+        lines.append(
+            "- **Controlled corruption** - %s rows (%.1f%%) were deliberately corrupted "
+            "*after* validation: %d missing values, %d typos, %d outlier spikes, %d "
+            "casing/whitespace defects. The `is_corrupted` and `corruption_details` columns "
+            "mark exactly which rows and why."
+            % (format(dirty.get("corrupted_rows", 0), ","),
+               dirty.get("corrupted_rate", 0.0) * 100,
+               breakdown.get("missing", 0), breakdown.get("typo", 0),
+               breakdown.get("outlier_spike", 0), breakdown.get("casing", 0)))
+        lines.append(
+            "  Corruption was applied after the validation stage on purpose - injected before "
+            "it, the schema-bounds and category checks would have deleted exactly those rows. "
+            "The column statistics below therefore describe the data *before* corruption.")
+    lines.append("")
+    return lines
 
 
 def _fallback_card(schema, stats: Dict[str, Any], repo_id: str = "") -> str:
@@ -236,9 +316,11 @@ def _fallback_card(schema, stats: Dict[str, Any], repo_id: str = "") -> str:
         "",
         "**This dataset is fully synthetic and machine-generated.** It contains no real "
         "observations and no personal data. It was produced by AI Synthetic Data Studio: an "
-        "LLM designed a schema contract for the domain, wrote a Python generator for it, the "
-        "generator ran in a sandbox, and a statistical validation pipeline stripped noise, "
-        "outliers and business-rule violations from the result.",
+        "LLM designed a schema contract for the domain, %s, and a statistical validation "
+        "pipeline stripped noise, outliers and business-rule violations from the result."
+        % ("the contract was compiled directly into vectorised columns"
+           if _is_parametric(stats)
+           else "wrote a Python generator for it, the generator ran in a sandbox"),
         "",
     ]
     if schema.description:
@@ -249,22 +331,16 @@ def _fallback_card(schema, stats: Dict[str, Any], repo_id: str = "") -> str:
         lines.append("| `%s` | %s | %s |" % (col.name, col.type, col.description or "-"))
     lines.append("")
 
+    lines += ["## Generation Method", ""]
+    lines += _generation_steps(stats)
     lines += [
-        "## Generation Method",
-        "",
-        "1. **Schema contract** - an LLM analysed the domain and emitted a strict JSON schema "
-        "(columns, ranges, distributions, business rules, expected correlations).",
-        "2. **Code generation** - the LLM wrote a vectorised `generate_data(n_rows, seed)` "
-        "function; a self-healing loop fed execution errors and schema mismatches back to the "
-        "model until the output conformed.",
-        "3. **Sandboxed execution** - the generator ran in an isolated subprocess with an import "
-        "allowlist, a wall-clock timeout and a memory watchdog.",
-        "4. **Validation** - duplicates, schema-bound violations, business-rule violations, "
-        "Z-score outliers (|Z| > 3) and IsolationForest anomalies were removed.",
         "",
         "Random seed: `%s` - regenerating with the same seed and generator reproduces the data."
         % stats.get("random_seed"),
         "",
+    ]
+    lines += _engine_section(stats)
+    lines += [
         "## Validation",
         "",
     ]
@@ -297,7 +373,10 @@ def _fallback_card(schema, stats: Dict[str, Any], repo_id: str = "") -> str:
         "- Distributions reflect an LLM's prior about the domain plus explicit statistical "
         "constraints; they may encode the model's biases and can diverge from reality.",
         "- The validation pipeline removes statistical outliers, which makes the data cleaner "
-        "than reality. Real-world tails are under-represented by construction.",
+        "than reality. Real-world tails are under-represented by construction."
+        + (" Controlled noise was then injected back on top (see Post-Generation Engines); "
+           "the defects you see are deliberate and labelled, not measurement error."
+           if (stats.get("engines") or {}).get("dirty_data") else ""),
         "",
     ]
     if repo_id:

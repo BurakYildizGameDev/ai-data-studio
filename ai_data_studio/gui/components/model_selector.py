@@ -53,6 +53,8 @@ class ModelSelector(ctk.CTkFrame):
         self._provider = provider
         self._ready = False
         self._ready_reason = ""
+        # Ollama listesi yuklenirken arka planda doldurulur; None = henuz bilinmiyor.
+        self._hardware = None
         self.grid_columnconfigure(1, weight=1)
 
         # --- saglayici ---------------------------------------------------- #
@@ -233,7 +235,20 @@ class ModelSelector(ctk.CTkFrame):
         except Exception as exc:  # pragma: no cover
             available, models, version = False, [], None
             _ = exc
+        # Donanim profili de burada, ARKA PLANDA cikarilir: nvidia-smi bir alt
+        # surec caliştiriyor, ana thread'de yapilirsa arayuz donar.
+        self._hardware = self._profile_hardware()
         post_to_ui(self, lambda: self._on_ollama_loaded(available, models, version, preferred))
+
+    @staticmethod
+    def _profile_hardware():
+        """Donanım profili; çıkarılamazsa None (arayüz bu yüzden hiç düşmemeli)."""
+        try:
+            from ...core.hardware_profiler import profile_hardware
+            return profile_hardware()
+        except Exception as exc:  # pragma: no cover - psutil/sürücü sorunları
+            _ = exc
+            return None
 
     def _on_ollama_loaded(self, available: bool, models: List[Dict],
                           version, preferred: Optional[str]) -> None:
@@ -252,14 +267,27 @@ class ModelSelector(ctk.CTkFrame):
             return
 
         names = [m["name"] for m in models]
-        default = preferred if preferred in names else names[0]
+        # Kullanicinin secimi her zaman once gelir; yoksa donanima uygun model
+        # kuruluysa o secilir. Yanlis boyutta bir model secmek bu projede en sik
+        # gorulen basarisizlik nedeni (bkz. hardware_profiler).
+        recommended = getattr(self._hardware, "recommended_model", "") if self._hardware else ""
+        if preferred in names:
+            default = preferred
+        elif recommended in names:
+            default = recommended
+        else:
+            default = names[0]
         self._apply_models(names, default)
         sizes = {m["name"]: m["size_gb"] for m in models}
-        self._set_status(
-            "Ollama %s - %d model kurulu (%s). Başkasını indirmek için 'Modeller'."
-            % (version or "?", len(names),
-               ", ".join("%s %.1fGB" % (n.split(":")[0], sizes[n]) for n in names[:3])),
-            OK_COLOR)
+        status = ("Ollama %s - %d model kurulu (%s). Başkasını indirmek için 'Modeller'."
+                  % (version or "?", len(names),
+                     ", ".join("%s %.1fGB" % (n.split(":")[0], sizes[n]) for n in names[:3])))
+        if self._hardware is not None:
+            status += ("\nDonanım: %s - önerilen model %s%s"
+                       % (self._hardware.hardware_tier,
+                          self._hardware.recommended_model,
+                          "" if recommended in names else " (kurulu değil)"))
+        self._set_status(status, OK_COLOR)
 
     def _apply_models(self, values: List[str], selected: str) -> None:
         self.model_menu.configure(values=values or [""])

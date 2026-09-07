@@ -36,6 +36,9 @@ _EXPORTS = {
     "DatasetContract": ("ai_data_studio.core.dataset_contract", "DatasetContract"),
     "Relationship": ("ai_data_studio.core.dataset_contract", "Relationship"),
     "ProjectPlan": ("ai_data_studio.core.project_planner", "ProjectPlan"),
+    "ENGINE_LLM": ("ai_data_studio.core.orchestrator", "ENGINE_LLM"),
+    "ENGINE_PARAMETRIC": ("ai_data_studio.core.orchestrator", "ENGINE_PARAMETRIC"),
+    "ENGINE_AUTO": ("ai_data_studio.core.orchestrator", "ENGINE_AUTO"),
 }
 
 __all__ = ["__version__", *sorted(_EXPORTS)]

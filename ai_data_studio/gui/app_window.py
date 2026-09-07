@@ -220,6 +220,10 @@ class AppWindow(ctk.CTk):
             "use_web_seed": inputs.get("use_web_seed", False),
             "web_seed_query": inputs.get("web_seed_query", ""),
             "export_formats": inputs["export_formats"],
+            "engine": inputs.get("engine", "llm"),
+            "time_series": inputs.get("time_series", False),
+            "expand_features": inputs.get("expand_features", False),
+            "dirty_rate": inputs.get("dirty_rate", 0.0),
         })
 
         cfg = PipelineConfig(**inputs)

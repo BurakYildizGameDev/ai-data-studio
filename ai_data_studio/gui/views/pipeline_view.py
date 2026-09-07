@@ -13,6 +13,7 @@ from typing import Any, Callable, Dict, List
 import customtkinter as ctk
 
 from ... import config
+from ...core.orchestrator import ENGINE_AUTO, ENGINE_LLM, ENGINE_PARAMETRIC
 from ..components.chart_panel import ChartPanel
 from ..components.console_log import ConsoleLog
 from ..components.model_selector import ModelSelector
@@ -52,6 +53,73 @@ _HINT = {
                    "değişkene, sınıf dengesine, ayıklanacak sızıntı kolonlarına ve "
                    "train/test ayrımına kendisi karar verir."),
 }
+
+
+# Uretim motorlari. Etiket kullaniciya gorunur, deger PipelineConfig.engine'e gider;
+# karsilastirmalar her zaman DEGER uzerinden yapilir, etiket metniyle degil.
+ENGINE_LABELS = {
+    "LLM kod üretimi": ENGINE_LLM,
+    "Parametrik (hızlı, LLM'siz)": ENGINE_PARAMETRIC,
+    "Otomatik (LLM, olmazsa parametrik)": ENGINE_AUTO,
+}
+
+ENGINE_HINTS = {
+    ENGINE_LLM: ("LLM üretici Python kodu yazar, sandbox'ta koşar; hata olursa "
+                 "kendini onarır. En esnek yol."),
+    ENGINE_PARAMETRIC: ("Şema doğrudan vektörlere derlenir: LLM kodu yok, sandbox "
+                        "yok, milisaniyeler sürer. Şu an tek tablo destekleniyor."),
+    ENGINE_AUTO: ("Önce kod üretimi denenir; denemeler tükenirse koşu düşmez, "
+                  "parametrik motora geçilir."),
+}
+
+
+def _engine_label(value: str) -> str:
+    """Motor değerinden kullanıcıya görünen etikete döner (bilinmeyen -> LLM)."""
+    for label, engine in ENGINE_LABELS.items():
+        if engine == value:
+            return label
+    return next(iter(ENGINE_LABELS))
+
+
+def engine_lines(report: Dict[str, Any]) -> List[str]:
+    """Hangi motorların koştuğunu Sonuç sekmesi için metin bloğuna çevirir.
+
+    CLI bunu konsola basıyor; arayüzün sessiz kalması "bu veriyi ne üretti"
+    sorusunu cevapsız bırakır - özellikle kirlilik enjekte edilmişse.
+    """
+    engines = (report or {}).get("engines") or {}
+    if not engines:
+        return []
+
+    lines = ["", "MOTORLAR", "-" * 62,
+             "  Üretim                 : %s" % engines.get("generation", "-")]
+
+    ts = engines.get("time_series")
+    if ts:
+        lines.append("  Zaman serisi           : %s tekil varlık, %d hız patlaması"
+                     % (format(ts.get("unique_entities", 0), ","),
+                        ts.get("burst_anomalies_count", 0)))
+        lines.append("    Aralık               : %s" % ts.get("time_range", "-"))
+
+    fe = engines.get("feature_expander")
+    if fe:
+        lines.append("  Özellik genişletme     : +%d kolon (toplam %d)"
+                     % (fe.get("added_columns_count", 0), fe.get("total_columns", 0)))
+        added = fe.get("added_columns") or []
+        if added:
+            lines.append("    Eklenen              : %s" % ", ".join(added))
+
+    dirty = engines.get("dirty_data")
+    if dirty:
+        breakdown = dirty.get("corruption_breakdown", {})
+        lines.append("  Kontrollü kirlilik     : %s satır (%%%.1f), doğrulamadan SONRA"
+                     % (format(dirty.get("corrupted_rows", 0), ","),
+                        dirty.get("corrupted_rate", 0.0) * 100))
+        lines.append("    Dağılım              : eksik %d, yazım %d, uç değer %d, harf/boşluk %d"
+                     % (breakdown.get("missing", 0), breakdown.get("typo", 0),
+                        breakdown.get("outlier_spike", 0), breakdown.get("casing", 0)))
+        lines.append("    Not                  : kolon istatistikleri kirlilikten ÖNCE hesaplandı")
+    return lines
 
 
 def plan_lines(plan) -> List[str]:
@@ -212,6 +280,49 @@ class PipelineView(ctk.CTkFrame):
         self.web_query_entry.grid(row=3, column=0, sticky="ew", padx=10, pady=(0, 10))
         self._toggle_seeds()
 
+        # --- Motorlar ----------------------------------------------------- #
+        # CLI'daki --engine / --time-series / --expand-features / --dirty-rate
+        # bayraklarinin arayuz karsiligi. Etiketler ne yaptigini soyler; motor
+        # adlari parantez icinde kalir ki CLI ile eslestirmek kolay olsun.
+        engines_frame = ctk.CTkFrame(left)
+        engines_frame.grid(row=row, column=0, sticky="ew", padx=6, pady=(0, 8))
+        engines_frame.grid_columnconfigure(1, weight=1)
+        row += 1
+
+        ctk.CTkLabel(engines_frame, text="Üretim motoru").grid(
+            row=0, column=0, sticky="w", padx=(10, 8), pady=(10, 6))
+        self.engine_menu = ctk.CTkOptionMenu(
+            engines_frame, values=list(ENGINE_LABELS), command=self._on_engine_change)
+        self.engine_menu.set(_engine_label(settings.get("engine", ENGINE_LLM)))
+        self.engine_menu.grid(row=0, column=1, sticky="ew", padx=(0, 10), pady=(10, 6))
+
+        self.engine_hint = ctk.CTkLabel(
+            engines_frame, text=ENGINE_HINTS[self.engine], font=ctk.CTkFont(size=11),
+            text_color=COLOR_MUTED, wraplength=430, justify="left")
+        self.engine_hint.grid(row=1, column=0, columnspan=2, sticky="w",
+                              padx=10, pady=(0, 6))
+
+        self.time_series_var = ctk.BooleanVar(value=settings.get("time_series", False))
+        ctk.CTkCheckBox(engines_frame,
+                        text="Zaman serisi ve hız analizi ekle",
+                        variable=self.time_series_var).grid(
+            row=2, column=0, columnspan=2, sticky="w", padx=10, pady=(0, 4))
+
+        self.expand_features_var = ctk.BooleanVar(value=settings.get("expand_features", False))
+        ctk.CTkCheckBox(engines_frame,
+                        text="Özellikleri genişlet (oranlar, gruplar, zaman türevleri)",
+                        variable=self.expand_features_var).grid(
+            row=3, column=0, columnspan=2, sticky="w", padx=10, pady=(0, 4))
+
+        self.dirty_var = ctk.BooleanVar(value=float(settings.get("dirty_rate", 0.0)) > 0)
+        ctk.CTkCheckBox(engines_frame, text="Kontrollü kirli veri enjekte et (oran %)",
+                        variable=self.dirty_var, command=self._toggle_dirty).grid(
+            row=4, column=0, sticky="w", padx=10, pady=(0, 10))
+        self.dirty_entry = ctk.CTkEntry(engines_frame, width=70)
+        self.dirty_entry.insert(0, "%g" % (float(settings.get("dirty_rate", 0.0) or 0.05) * 100))
+        self.dirty_entry.grid(row=4, column=1, sticky="w", padx=(0, 10), pady=(0, 10))
+        self._toggle_dirty()
+
         # --- ilerleme (kaydirma alaninin DISINDA, hep gorunur) ------------- #
         self.progress_panel = ProgressPanel(left_col, on_start=on_start,
                                             on_cancel=on_cancel)
@@ -258,6 +369,17 @@ class PipelineView(ctk.CTkFrame):
 
     def _toggle_hf(self) -> None:
         self._toggle_seeds()
+
+    def _toggle_dirty(self) -> None:
+        self.dirty_entry.configure(state="normal" if self.dirty_var.get() else "disabled")
+
+    def _on_engine_change(self, _label: str) -> None:
+        self.engine_hint.configure(text=ENGINE_HINTS.get(self.engine, ""))
+
+    @property
+    def engine(self) -> str:
+        """Seçili üretim motorunun PipelineConfig değeri."""
+        return ENGINE_LABELS.get(self.engine_menu.get(), ENGINE_LLM)
 
     def _open_output_folder(self) -> None:
         path = self._result_paths.get("csv") or next(iter(self._result_paths.values()), None)
@@ -314,11 +436,24 @@ class PipelineView(ctk.CTkFrame):
         if not formats:
             raise ValueError("En az bir çıktı formatı seçin.")
 
+        dirty_rate = 0.0
+        if self.dirty_var.get():
+            try:
+                dirty_rate = float(str(self.dirty_entry.get()).replace(",", ".").strip()) / 100.0
+            except ValueError:
+                raise ValueError("Kirlilik oranı sayı olmalı (örn. 5).") from None
+            if not 0 < dirty_rate <= 1:
+                raise ValueError("Kirlilik oranı %0 ile %100 arasında olmalı.")
+
         if not self.model_selector.is_ready():
             raise ValueError(self.model_selector.readiness_message())
         model = self.model_selector.model
 
         return {
+            "engine": self.engine,
+            "time_series": bool(self.time_series_var.get()),
+            "expand_features": bool(self.expand_features_var.get()),
+            "dirty_rate": dirty_rate,
             "domain_prompt": prompt,
             # Proje kipinde ayni metin plana da gecer; orchestrator project_prompt
             # doluysa sema uretimi yerine planlayiciyi calistirir.
@@ -355,6 +490,9 @@ class PipelineView(ctk.CTkFrame):
         # sizinti ayiklamasini kabul ettigini gormeden kullanici veriye guvenemez.
         if getattr(result, "plan", None) is not None:
             lines += plan_lines(result.plan)
+
+        # Motor bloğu: veriyi neyin ürettiği ve üzerine ne enjekte edildiği.
+        lines += engine_lines(report)
 
         lines += [
             "",

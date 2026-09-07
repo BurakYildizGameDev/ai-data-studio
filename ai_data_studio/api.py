@@ -20,14 +20,28 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Sequence, Tuple
 
 from . import config
 from .core import validator
-from .core.orchestrator import PipelineConfig, PipelineResult, run_pipeline
+from .core.orchestrator import (
+    ENGINE_AUTO,
+    ENGINE_LLM,
+    ENGINE_PARAMETRIC,
+    PipelineConfig,
+    PipelineResult,
+    run_pipeline,
+)
 from .core.schema_contract import SchemaContract
 
 if TYPE_CHECKING:  # pragma: no cover
     import pandas as pd
     from .services.llm_base import BaseLLMClient
 
-__all__ = ["generate", "validate", "build_config"]
+__all__ = [
+    "generate",
+    "validate",
+    "build_config",
+    "ENGINE_LLM",
+    "ENGINE_PARAMETRIC",
+    "ENGINE_AUTO",
+]
 
 
 def build_config(
@@ -61,6 +75,14 @@ def build_config(
     relational: bool = False,
     max_tables: int = 6,
     repair_orphans: bool = True,
+    engine: str = ENGINE_LLM,
+    time_series: bool = False,
+    ts_timestamp_column: str = "transaction_timestamp",
+    ts_entity_column: str = "customer_id",
+    ts_start_date: str = "",
+    ts_end_date: str = "",
+    expand_features: bool = False,
+    dirty_rate: float = 0.0,
 ) -> PipelineConfig:
     """Okunabilir anahtar kelimelerden bir :class:`PipelineConfig` kurar.
 
@@ -85,6 +107,30 @@ def build_config(
       alani tablo adindan DataFrame'e eslesir, ``dataframe`` kok tabloyu gosterir.
     * ``repair_orphans=False`` yetim yabanci anahtarlari silmez, yalnizca
       raporlar - CI kapisi olarak kullanilir.
+
+    Uretim motoru (``engine``):
+
+    * ``"llm"`` (varsayilan) LLM'e uretici Python kodu yazdirir ve sandbox'ta
+      kosturur - self-healing dongusu buradadir.
+    * ``"parametric"`` sozlesmeyi dogrudan numpy/pandas vektorlerine derler:
+      kod uretimi ve sandbox tamamen atlanir, uretim deterministiktir ve
+      milisaniyeler surer. SU AN TEK TABLOLUDUR; ``relational=True`` ile
+      birlikte kullanilamaz.
+    * ``"auto"`` once LLM'i dener, kod uretimi denemeleri tukenirse parametrik
+      motora duser (iliskisel kosuda fallback yoktur).
+
+    Zenginlestirme motorlari (hepsi kok tabloya uygulanir):
+
+    * ``time_series=True`` kronolojik siralama, sirkadiyen ritim, varlik bazli
+      ``seconds_since_last_tx`` ve hiz patlamalari ekler.
+    * ``expand_features=True`` finansal oranlar, yas/kredi siniflandirmasi ve
+      zaman turevleri gibi deterministik kolonlar turetir.
+    * ``dirty_rate`` (0-1) kontrollu gurultu enjekte eder. **Dogrulamadan SONRA**
+      calisir: aksi halde sema sinirlari ve kategori denetimi tam da enjekte
+      edilen satirlari elerdi. ``is_corrupted`` ve ``corruption_details``
+      denetim kolonlari eklenir.
+
+    Hangi motorun kostugu sonucun ``report["engines"]`` alanindadir.
     """
     exporting = output_dir is not None or formats is not None
     export_formats = [f.strip().lower() for f in (formats or ["csv"]) if str(f).strip()]
@@ -120,6 +166,14 @@ def build_config(
         max_tables=max_tables,
         repair_orphans=repair_orphans,
         project_prompt=project,
+        engine=engine,
+        time_series=time_series,
+        ts_timestamp_column=ts_timestamp_column,
+        ts_entity_column=ts_entity_column,
+        ts_start_date=ts_start_date,
+        ts_end_date=ts_end_date,
+        expand_features=expand_features,
+        dirty_rate=dirty_rate,
     )
 
 

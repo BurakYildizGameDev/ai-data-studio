@@ -102,5 +102,18 @@ def main():
     print(f"    Columns preview: {list(df_dirty.columns[:10])} ...")
     print("=" * 70)
 
+    # The same engines are switches on the full pipeline, where an LLM writes the
+    # schema for you first instead of it being hard-coded as above.
+    print()
+    print("Same engines, driven by the full pipeline:")
+    print()
+    print("  python -m ai_data_studio.core.orchestrator \\")
+    print('      --domain "credit card transactions with fraud labels" --rows 50000 \\')
+    print("      --engine parametric --time-series --expand-features --dirty-rate 0.05")
+    print()
+    print("  from ai_data_studio import generate")
+    print('  generate("...", engine="parametric", time_series=True, dirty_rate=0.05)')
+
+
 if __name__ == "__main__":
     main()

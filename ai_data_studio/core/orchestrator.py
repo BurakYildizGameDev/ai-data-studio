@@ -18,14 +18,16 @@ Terminalden çalıştırma (GUI'siz):
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import queue
 import sys
 import threading
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterator, List, Optional
+from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
 
 import pandas as pd
 
@@ -58,6 +60,15 @@ STEP_NAMES = {
     6: "Validasyon & ayıklama",
     7: "Çıktı & durum kaydı",
 }
+
+# Uretim motoru secenekleri.
+#   llm        -> [4] kod uretimi + [5] sandbox (varsayilan; eski davranis birebir)
+#   parametric -> ikisi de atlanir, sozlesme dogrudan vektorel derlenir (LLM kodu yok)
+#   auto       -> once LLM denenir, kod uretimi tukendiginde parametrige duser
+ENGINE_LLM = "llm"
+ENGINE_PARAMETRIC = "parametric"
+ENGINE_AUTO = "auto"
+ENGINES = (ENGINE_LLM, ENGINE_PARAMETRIC, ENGINE_AUTO)
 
 
 class PipelineCancelled(RuntimeError):
@@ -107,6 +118,22 @@ class PipelineConfig:
     # Yetim yabanci anahtarlar bulundugunda True ise satirlar elenir, False ise
     # yalnizca raporlanir - CI kapisi olarak kullanilabilsin diye.
     repair_orphans: bool = True
+    # --- Uretim motoru (bkz. ENGINES) --------------------------------- #
+    # "parametric" ve "auto"nun parametrik yolu SU AN TEK TABLOLUDUR: sozlesmeyi
+    # dogrudan derler, yabanci anahtar tutarliligini kuramaz. Iliskisel kosuda
+    # bu yuzden acik hata verilir, sessizce LLM'e donulmez.
+    engine: str = ENGINE_LLM
+    # --- [5.5] Uretim sonrasi, DOGRULAMA ONCESI zenginlestiriciler ----- #
+    time_series: bool = False
+    ts_timestamp_column: str = "transaction_timestamp"
+    ts_entity_column: str = "customer_id"
+    ts_start_date: str = ""        # bos -> TimeSeriesConfig varsayilani
+    ts_end_date: str = ""
+    expand_features: bool = False
+    # --- [6.5] DOGRULAMA SONRASI kirli veri enjeksiyonu ---------------- #
+    # 0 ise kapali. Sira bilincli: kirli veri doğrulamadan once enjekte edilirse
+    # sema sinirlari / kategori denetimi tam da enjekte edilen satirlari eler.
+    dirty_rate: float = 0.0
 
     def resolved_model(self) -> str:
         return self.model or config.DEFAULT_MODELS.get(self.provider, "")
@@ -159,6 +186,21 @@ def run_pipeline(cfg: PipelineConfig,
     """
     state = state or get_state_manager()
     cancel_event = cancel_event or threading.Event()
+
+    # Motor secimi is'e baslamadan once dogrulanir: yanlis yazilmis bir bayrak
+    # yuzunden dakikalarca suren bir LLM cagrisindan SONRA patlamak kotu.
+    engine_choice = (cfg.engine or ENGINE_LLM).strip().lower()
+    if engine_choice not in ENGINES:
+        raise ValueError("Bilinmeyen üretim motoru: %r (geçerli: %s)"
+                         % (cfg.engine, ", ".join(ENGINES)))
+    if engine_choice == ENGINE_PARAMETRIC and cfg.relational:
+        raise ValueError(
+            "Parametrik motor ilişkisel (çok tablolu) üretimi desteklemiyor. "
+            "--relational ile --engine llm kullanın ya da --engine parametric için "
+            "--relational'ı kaldırın."
+        )
+    if not 0.0 <= cfg.dirty_rate <= 1.0:
+        raise ValueError("dirty_rate 0 ile 1 arasında olmalı, %r verildi" % cfg.dirty_rate)
 
     def check_cancel() -> None:
         if cancel_event.is_set():
@@ -320,47 +362,81 @@ def run_pipeline(cfg: PipelineConfig,
         # ---------------------------------------------------------------- #
         check_cancel()
         state.save_checkpoint(job_id, current_step=4, step_name=STEP_NAMES[4])
-        yield progress(4, "Veri üreten kod yazılıyor...")
 
-        messages: "queue.Queue[str]" = queue.Queue()
-        gen_result: Dict[str, Any] = {}
+        # Hangi motorun kostugu rapora yazilir; kullanicinin "bu veriyi ne uretti"
+        # sorusunun cevabi ciktida durmali.
+        engines_report: Dict[str, Any] = {"generation": engine_choice}
+        raw_tables: Dict[str, pd.DataFrame]
+        code: str
+        gen_meta: Dict[str, Any]
 
-        def worker() -> None:
-            try:
-                # Tek tablolu sozlesmede bu cagri kendiliginden tek tablo yoluna
-                # duser; ayri dallanma gerekmiyor.
-                produced, code, meta = generate_dataset_and_execute(
-                    contract, llm_client,
-                    max_retries=cfg.max_retries,
-                    timeout=cfg.sandbox_timeout,
-                    cancel_event=cancel_event,
-                    on_progress=messages.put,
-                )
-                gen_result["tables"] = produced
-                gen_result["code"] = code
-                gen_result["meta"] = meta
-            except BaseException as exc:  # noqa: BLE001 - ana thread'e tasinacak
-                gen_result["error"] = exc
+        if engine_choice == ENGINE_PARAMETRIC:
+            yield progress(4, "Parametrik motor seçildi - kod üretimi ve sandbox atlanıyor")
+            raw_tables, code, gen_meta = _generate_parametric(contract, cfg)
+            yield progress(5, "Şema doğrudan vektörel derlendi (%.3f sn, LLM kodu yok)"
+                           % gen_meta["duration_s"], 1.0)
+        else:
+            yield progress(4, "Veri üreten kod yazılıyor...")
 
-        thread = threading.Thread(target=worker, name="codegen", daemon=True)
-        thread.start()
-        # Uretim surerken alt adim mesajlarini UI'a akitmaya devam et.
-        while thread.is_alive() or not messages.empty():
-            try:
-                message = messages.get(timeout=0.2)
-            except queue.Empty:
-                continue
-            step = 5 if "sandbox" in message.lower() else 4
-            yield progress(step, message, 0.5)
-        thread.join()
+            messages: "queue.Queue[str]" = queue.Queue()
+            gen_result: Dict[str, Any] = {}
 
-        if "error" in gen_result:
-            raise gen_result["error"]
+            def worker() -> None:
+                try:
+                    # Tek tablolu sozlesmede bu cagri kendiliginden tek tablo yoluna
+                    # duser; ayri dallanma gerekmiyor.
+                    produced, produced_code, meta = generate_dataset_and_execute(
+                        contract, llm_client,
+                        max_retries=cfg.max_retries,
+                        timeout=cfg.sandbox_timeout,
+                        cancel_event=cancel_event,
+                        on_progress=messages.put,
+                    )
+                    gen_result["tables"] = produced
+                    gen_result["code"] = produced_code
+                    gen_result["meta"] = meta
+                except BaseException as exc:  # noqa: BLE001 - ana thread'e tasinacak
+                    gen_result["error"] = exc
 
-        raw_tables: Dict[str, pd.DataFrame] = gen_result["tables"]
+            thread = threading.Thread(target=worker, name="codegen", daemon=True)
+            thread.start()
+            # Uretim surerken alt adim mesajlarini UI'a akitmaya devam et.
+            while thread.is_alive() or not messages.empty():
+                try:
+                    message = messages.get(timeout=0.2)
+                except queue.Empty:
+                    continue
+                step = 5 if "sandbox" in message.lower() else 4
+                yield progress(step, message, 0.5)
+            thread.join()
+
+            gen_error = gen_result.get("error")
+            # "auto": kod uretimi denemeleri tukendiyse pipeline'i dusurmek yerine
+            # parametrik motora gec. Yalnizca GenerationFailedError icin - iptal,
+            # kimlik/servis hatasi ve iliskisel sozlesme fallback'e girmez.
+            if (gen_error is not None
+                    and engine_choice == ENGINE_AUTO
+                    and isinstance(gen_error, GenerationFailedError)
+                    and not cancel_event.is_set()
+                    and not contract.is_relational):
+                yield progress(4, "UYARI: Kod üretimi başarısız (%s)" % gen_error, 0.9)
+                yield progress(4, "  -> Parametrik motora düşülüyor (--engine auto)", 0.9)
+                raw_tables, code, gen_meta = _generate_parametric(contract, cfg)
+                gen_meta["fallback_from"] = ENGINE_LLM
+                gen_meta["fallback_reason"] = str(gen_error)
+                engines_report["generation"] = "llm->parametric"
+                yield progress(5, "Şema doğrudan vektörel derlendi (%.3f sn)"
+                               % gen_meta["duration_s"], 1.0)
+            elif gen_error is not None:
+                raise gen_error
+            else:
+                raw_tables = gen_result["tables"]
+                code = gen_result["code"]
+                gen_meta = gen_result["meta"]
+                gen_meta.setdefault("engine", ENGINE_LLM)
+                engines_report["generation"] = ENGINE_LLM
+
         raw_df: pd.DataFrame = raw_tables[contract.root_table]
-        code: str = gen_result["code"]
-        gen_meta: Dict[str, Any] = gen_result["meta"]
 
         raw_paths = _write_raw_tables(raw_tables, contract, job_id)
         raw_total = sum(len(df) for df in raw_tables.values())
@@ -411,6 +487,64 @@ def run_pipeline(cfg: PipelineConfig,
                 1.0,
                 fraud=fraud_info,
             )
+
+        # ---------------------------------------------------------------- #
+        # [5.5] Zenginlestirme - uretimden SONRA, dogrulamadan ONCE
+        # ---------------------------------------------------------------- #
+        # Bu iki motor kolon EKLER, satir silmez; doğrulama semada olmayan
+        # kolonlara dokunmaz (validator kolon sirasini "sema + ekstralar" olarak
+        # normalize eder), dolayisiyla eklenen kolonlar temizlikten sag cikar.
+        # Iliskisel kosuda yalnizca KOK tabloya uygulanir - fraud enjeksiyonuyla
+        # ayni kural, README'de yazili.
+        if cfg.time_series:
+            check_cancel()
+            from .time_series_engine import TimeSeriesConfig, TimeSeriesEngine
+
+            ts_cfg = TimeSeriesConfig(
+                timestamp_column=cfg.ts_timestamp_column,
+                entity_id_column=cfg.ts_entity_column or None,
+                random_seed=cfg.random_seed,
+            )
+            if cfg.ts_start_date:
+                ts_cfg.start_date = cfg.ts_start_date
+            if cfg.ts_end_date:
+                ts_cfg.end_date = cfg.ts_end_date
+            raw_df, ts_meta = TimeSeriesEngine(ts_cfg).apply(raw_df)
+            raw_tables[contract.root_table] = raw_df
+            engines_report["time_series"] = ts_meta
+            yield progress(5, "Zaman serisi dinamiği uygulandı: %s tekil varlık, "
+                              "%d hız patlaması, medyan aralık %.0f sn"
+                           % (format(ts_meta.get("unique_entities", 0), ","),
+                              ts_meta.get("burst_anomalies_count", 0),
+                              ts_meta.get("median_delta_seconds", 0.0)),
+                           1.0, time_series=ts_meta)
+            yield progress(5, "  -> Zaman aralığı: %s" % ts_meta.get("time_range", "-"), 1.0)
+            # Hiz metrikleri ancak varlik kolonu TEKRAR ediyorsa anlamli. Neredeyse
+            # tekil bir kolonda (orn. surrogate id) her satir kendi varligi olur ve
+            # seconds_since_last_tx satirlarin nerdeyse tamaminda dolgu degerine
+            # duser - kullanici bunu bilmeden hiz ozelligi uzerine model kurar.
+            entities = ts_meta.get("unique_entities", 0)
+            if entities > 0.5 * max(1, len(raw_df)):
+                yield progress(5, "UYARI: '%s' kolonu %s satırda %s farklı değer taşıyor; "
+                                  "hız metrikleri anlamsız kalır. Tekrar eden bir kolon "
+                                  "verin: --ts-entity-col <kolon>"
+                               % (cfg.ts_entity_column or "entity_id",
+                                  format(len(raw_df), ","), format(entities, ",")), 1.0)
+
+        if cfg.expand_features:
+            check_cancel()
+            from .feature_expander import expand_features
+
+            raw_df, fe_meta = expand_features(raw_df)
+            raw_tables[contract.root_table] = raw_df
+            engines_report["feature_expander"] = fe_meta
+            added = fe_meta.get("added_columns", [])
+            yield progress(5, "Özellik genişletme: %d yeni kolon (toplam %d)"
+                           % (fe_meta.get("added_columns_count", 0),
+                              fe_meta.get("total_columns", len(raw_df.columns))),
+                           1.0, feature_expander=fe_meta)
+            if added:
+                yield progress(5, "  -> Eklenen kolonlar: %s" % ", ".join(added), 1.0)
 
         # ---------------------------------------------------------------- #
         # [6] Validasyon & ayiklama
@@ -496,6 +630,49 @@ def run_pipeline(cfg: PipelineConfig,
                 yield progress(6, "UYARI: İlişkisel bütünlük denetimi başarısız - %s" % reason, 0.95)
 
         clean_df: pd.DataFrame = clean_tables[contract.root_table]
+
+        # ---------------------------------------------------------------- #
+        # [6.5] Kontrollu kirli veri - DOGRULAMADAN SONRA
+        # ---------------------------------------------------------------- #
+        # SIRA KRITIK, tersi sessizce ise yaramaz: kirli veri dogrulamadan once
+        # enjekte edilseydi sema sinirlari (validator.apply_schema_bounds) uc
+        # degerleri, kategori denetimi yazim hatalarini ve null denetimi eksik
+        # degerleri eleyecekti - yani tam olarak enjekte edilen satirlar. Kirlilik
+        # bilincli bir cikti ozelligi; benchmark verisinin gurultusu olarak
+        # DISARI cikmasi gerekiyor.
+        if cfg.dirty_rate > 0:
+            check_cancel()
+            from .dirty_data_engine import DirtyDataConfig, DirtyDataEngine
+
+            # ANAHTAR KOLONLAR BOZULMAZ. Kirlilik ilişkisel bütünlük denetiminden
+            # SONRA calisiyor; birincil ya da yabanci anahtara null/yazim hatasi
+            # enjekte edilseydi denetimden "0 yetim FK" damgasi almis bir veri seti
+            # kirli anahtarlarla disari cikardi. Tek tabloda da PK'nin tekilligi
+            # iddia edilmis oluyor, onu da bozmamak gerekiyor.
+            dirty_cfg = DirtyDataConfig(
+                dirty_rate=cfg.dirty_rate,
+                random_seed=cfg.random_seed,
+            )
+            dirty_cfg.exclude_columns = set(dirty_cfg.exclude_columns) | _key_columns(contract)
+            clean_df, dirty_meta = DirtyDataEngine(dirty_cfg).corrupt(clean_df)
+            clean_tables[contract.root_table] = clean_df
+            # Rapordaki kolon istatistikleri bu adimdan ONCE hesaplandi; okuyan
+            # kisi yanilmasin diye bunu rapora acikca yaziyoruz.
+            dirty_meta["applied_after_validation"] = True
+            dirty_meta["column_stats_precede_corruption"] = True
+            engines_report["dirty_data"] = dirty_meta
+            breakdown = dirty_meta.get("corruption_breakdown", {})
+            yield progress(6, "Kontrollü kirlilik enjekte edildi: %s satır (%%%.1f) - "
+                              "eksik %d, yazım hatası %d, uç değer %d, harf/boşluk %d"
+                           % (format(dirty_meta.get("corrupted_rows", 0), ","),
+                              dirty_meta.get("corrupted_rate", 0.0) * 100,
+                              breakdown.get("missing", 0), breakdown.get("typo", 0),
+                              breakdown.get("outlier_spike", 0), breakdown.get("casing", 0)),
+                           1.0, dirty_data=dirty_meta)
+            yield progress(6, "  -> Denetim izi kolonları eklendi: is_corrupted, "
+                              "corruption_details", 1.0)
+
+        report["engines"] = engines_report
         report["generation"] = gen_meta
         report["seed_source"] = seed_source
         if plan is not None:
@@ -714,6 +891,99 @@ def _build_llm_client(cfg: PipelineConfig, state: StateManager,
     return client
 
 
+# Parametrik kosuda LLM kodu olmadigi icin cikti klasorune bu sablon yazilir.
+# Amac dekoratif degil: uretim %100 deterministik oldugundan bu dosya veri setini
+# birebir yeniden uretir, yani "kod ciktisi" sozu bos kalmaz.
+_PARAMETRIC_CODE_TEMPLATE = '''"""Bu veri seti ParametricEngine ile üretildi - LLM kod üretimi kullanılmadı.
+
+Şema sözleşmesi aşağıya gömülüdür; üretim deterministiktir, bu dosya aynı seed
+ile aynı veri setini birebir yeniden üretir.
+
+GEREKSİNİM: LLM'in yazdığı üretici dosyalarının aksine bu dosya ai_data_studio
+paketini içeri alır - motorun kendisi paketin içindedir. Çalıştırmadan önce paket
+import edilebilir olmalı:
+
+    pip install ai-data-studio      # ya da depo kökünden: pip install -e .
+"""
+import json
+
+from ai_data_studio.core.parametric_engine import compile_schema_to_dataframe
+from ai_data_studio.core.schema_contract import SchemaContract
+
+SCHEMA = json.loads(r"""
+%(schema_json)s
+""")
+
+
+def generate_data(n_rows=%(rows)d, seed=%(seed)d):
+    return compile_schema_to_dataframe(SchemaContract.from_dict(SCHEMA),
+                                       n_rows=n_rows, seed=seed)
+
+
+if __name__ == "__main__":
+    print(generate_data().head())
+'''
+
+
+def _key_columns(contract: DatasetContract) -> set:
+    """Sözleşmedeki bütün anahtar kolon adları (küçük harfe indirgenmiş).
+
+    Birincil anahtarlar ve ilişkilerin iki ucu. Kirlilik enjeksiyonu bunlara
+    dokunmamalı: veri, ilişkisel bütünlük denetiminden geçtikten sonra kirletiliyor.
+    """
+    keys = set()
+    for name in contract.table_names:
+        primary = getattr(contract.table(name), "primary_key", None)
+        if primary:
+            keys.add(str(primary).lower())
+    for rel in contract.relationships:
+        keys.add(str(rel.parent_key).lower())
+        keys.add(str(rel.child_key).lower())
+    return keys
+
+
+def _generate_parametric(contract: DatasetContract, cfg: PipelineConfig
+                         ) -> Tuple[Dict[str, pd.DataFrame], str, Dict[str, Any]]:
+    """[4]+[5] yerine geçen parametrik derleme - LLM kodu yok, sandbox yok.
+
+    Dönüş imzası ``generate_dataset_and_execute`` ile birebir aynıdır; böylece
+    çağıran taraf hangi motorun koştuğunu bilmek zorunda kalmaz.
+
+    Iliskisel sozlesme kabul edilmez: parametrik motor kolonlari bagimsiz
+    dagilimlardan cekiyor, yabanci anahtar tutarliligini kuramiyor. Sessizce
+    yetim satir uretmektense acik hata veriyoruz.
+    """
+    from .parametric_engine import compile_schema_to_dataframe
+
+    if contract.is_relational:
+        raise ValueError(
+            "Parametrik motor şu an tek tablolu üretimi destekliyor (sözleşmede "
+            "%d tablo var). İlişkisel üretim için --engine llm kullanın; yabancı "
+            "anahtar tutarlılığını yalnızca kod üretimi yolu kuruyor."
+            % len(contract.tables)
+        )
+
+    schema = contract.table(contract.root_table)
+    started = time.perf_counter()
+    df = compile_schema_to_dataframe(schema, n_rows=cfg.row_count, seed=cfg.random_seed)
+    duration = time.perf_counter() - started
+    code = _PARAMETRIC_CODE_TEMPLATE % {
+        "schema_json": json.dumps(schema.to_dict(), ensure_ascii=False, indent=2),
+        "rows": cfg.row_count,
+        "seed": cfg.random_seed,
+    }
+    meta: Dict[str, Any] = {
+        "attempts": 1,
+        "duration_s": round(duration, 4),
+        "engine": ENGINE_PARAMETRIC,
+        "rows": len(df),
+        "columns": len(df.columns),
+    }
+    log.info("Parametrik motor: %d satır, %d kolon, %.3f sn",
+             len(df), len(df.columns), duration)
+    return {contract.root_table: df}, code, meta
+
+
 def _fetch_seed_data(cfg: PipelineConfig):
     """[3] HuggingFace seed veri. Başarısız olursa pipeline'i kırmaz, None döner."""
     from ..services import hf_service
@@ -914,6 +1184,8 @@ def _report_summary(report: Dict[str, Any]) -> Dict[str, Any]:
         "distributions": {k: v for k, v in (report.get("distributions") or {}).items()
                           if k != "columns"},
     }
+    if report.get("engines"):
+        summary["engines"] = report["engines"]
     relational = report.get("relational")
     if relational:
         summary["relational"] = {
@@ -1024,6 +1296,30 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-repair-orphans", action="store_true",
                    help="Yetim yabancı anahtarları silme, hata olarak raporla "
                         "(CI kapısı: bütünlük sağlanamazsa çıkış kodu 3)")
+    # --- Uretim ve zenginlestirme motorlari ---------------------------- #
+    p.add_argument("--engine", default=ENGINE_LLM, choices=list(ENGINES),
+                   help="Üretim motoru: 'llm' kod üretir ve sandbox'ta koşar "
+                        "(varsayılan), 'parametric' şemayı doğrudan derler "
+                        "(LLM kodu yok, tek tablo), 'auto' kod üretimi tükenirse "
+                        "parametriğe düşer")
+    p.add_argument("--time-series", action="store_true",
+                   help="Zaman serisi ve hız dinamiği ekle: kronolojik sıralama, "
+                        "sirkadiyen ritim, seconds_since_last_tx, hız patlamaları")
+    p.add_argument("--ts-timestamp-col", default="transaction_timestamp",
+                   help="Zaman serisi zaman damgası kolonu (varsayılan: transaction_timestamp)")
+    p.add_argument("--ts-entity-col", default="customer_id",
+                   help="Zaman serisi varlık kimliği kolonu; yoksa üretilir "
+                        "(varsayılan: customer_id)")
+    p.add_argument("--ts-start", default="", help="Zaman serisi başlangıcı (YYYY-MM-DD HH:MM:SS)")
+    p.add_argument("--ts-end", default="", help="Zaman serisi bitişi (YYYY-MM-DD HH:MM:SS)")
+    p.add_argument("--expand-features", action="store_true",
+                   help="Deterministik özellik genişletme: finansal oranlar, kredi "
+                        "notu, zaman türevleri ve davranışsal bayraklar ekle")
+    p.add_argument("--dirty-rate", type=float, default=0.0,
+                   help="Kontrollü kirlilik oranı (0-1, 0 = kapalı). Doğrulamadan "
+                        "SONRA uygulanır; is_corrupted / corruption_details kolonları eklenir")
+    p.add_argument("--hardware", action="store_true",
+                   help="Donanım profilini (CPU/RAM/GPU) ve önerilen yerel modeli yazdır, çık")
     p.add_argument("--verbose", "-v", action="store_true")
     return p
 
@@ -1092,6 +1388,10 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     if args.check_auth:
         return check_auth()
+    if args.hardware:
+        from .hardware_profiler import format_hardware_report
+        print(format_hardware_report())
+        return 0
     if args.domain and args.project:
         print("--domain ve --project birlikte kullanılamaz: ya veriyi tarif edin "
               "ya da projeyi anlatın", file=sys.stderr)
@@ -1131,6 +1431,14 @@ def main(argv: Optional[List[str]] = None) -> int:
         relational=args.relational,
         max_tables=args.max_tables,
         repair_orphans=not args.no_repair_orphans,
+        engine=args.engine,
+        time_series=args.time_series,
+        ts_timestamp_column=args.ts_timestamp_col,
+        ts_entity_column=args.ts_entity_col,
+        ts_start_date=args.ts_start,
+        ts_end_date=args.ts_end,
+        expand_features=args.expand_features,
+        dirty_rate=args.dirty_rate,
     )
 
     state = get_state_manager()
@@ -1150,6 +1458,16 @@ def main(argv: Optional[List[str]] = None) -> int:
     elif cfg.relational:
         print("Mod       : ilişkisel (en fazla %d tablo, yetim onarımı: %s)"
               % (cfg.max_tables, "açık" if cfg.repair_orphans else "KAPALI"))
+    engine_extras = []
+    if cfg.time_series:
+        engine_extras.append("zaman serisi")
+    if cfg.expand_features:
+        engine_extras.append("özellik genişletme")
+    if cfg.dirty_rate > 0:
+        engine_extras.append("kirlilik %%%.1f" % (cfg.dirty_rate * 100))
+    if cfg.engine != ENGINE_LLM or engine_extras:
+        print("Motor     : %s%s"
+              % (cfg.engine, (" + " + ", ".join(engine_extras)) if engine_extras else ""))
     print("-" * 72)
 
     def print_llm_progress(message: str) -> None:
