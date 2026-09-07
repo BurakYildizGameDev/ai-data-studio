@@ -29,6 +29,20 @@ __all__ = [
 ]
 
 
+def _is_binary(series: pd.Series) -> bool:
+    """Kolon ikili (bool ya da yalnızca 0/1) mi?
+
+    Dolandırıcılık / churn etiketleri bazen bool, bazen 0-1 int gelir; korelasyon
+    kurma yolu ikisinde de aynı olmalı.
+    """
+    if pd.api.types.is_bool_dtype(series):
+        return True
+    if not pd.api.types.is_numeric_dtype(series):
+        return False
+    values = pd.unique(pd.to_numeric(series, errors="coerce").dropna())
+    return len(values) <= 2 and set(np.asarray(values).astype(float)).issubset({0.0, 1.0})
+
+
 class ParametricEngine:
     """SchemaContract nesnesini doğrudan yüksek hızlı DataFrame'e derleyen motor."""
 
@@ -127,30 +141,157 @@ class ParametricEngine:
         pool = [f"{col.name.upper()}_{i:04d}" for i in range(min(500, max(10, n_rows // 2)))]
         return rng.choice(pool, size=n_rows)
 
+    @staticmethod
+    def _target_corr(rule: Any) -> float:
+        """Kuraldan hedef korelasyon katsayısını (işaretiyle) çıkarır."""
+        target = rule.min_r if getattr(rule, "min_r", None) is not None else 0.7
+        if getattr(rule, "expected_sign", "") == "negative":
+            return -abs(target)
+        return abs(target)
+
+    @staticmethod
+    def _standardize(series: pd.Series) -> np.ndarray:
+        values = pd.to_numeric(series, errors="coerce").astype(float).to_numpy()
+        std = np.nanstd(values)
+        return (values - np.nanmean(values)) / (std if std else 1.0)
+
     def _apply_correlations(self, df: pd.DataFrame, correlations: List[Any],
                             rng: np.random.Generator) -> pd.DataFrame:
-        """Belirtilen kolon çiftleri arasında doğrusal/sıralı korelasyon oluşturur."""
+        """Belirtilen kolon çiftleri arasında doğrusal/sıralı korelasyon oluşturur.
+
+        İki ayrı yol var:
+
+        * **Sayısal - sayısal:** hedef kolon, sürücünün standartlaştırılmış hâli ile
+          gürültünün ``r * X + sqrt(1 - r^2) * Z`` harmanı olarak yeniden üretilir.
+        * **Sayısal - boolean:** boolean kolon doğrudan harmanlanamaz (0/1'e blend
+          uygulamak oranı da dağılımı da bozar). Bunun yerine gizli (latent) bir
+          normal değişken kurulur ve hedef orana karşılık gelen kuantilden eşiklenir;
+          böylece hem ``target_ratio`` korunur hem de nokta-çift serili korelasyon
+          gerçekleşir. Eşikleme korelasyonu zayıflattığı için latent katsayı
+          ``phi(z) / sqrt(p(1-p))`` çarpanıyla önceden büyütülür.
+
+        Boolean yolu olmadan dolandırıcılık/churn gibi ikili hedefli sözleşmelerde
+        beklenen korelasyonlar sıfıra yakın çıkıyordu (ölçüm: Job #17, r=0.0035).
+        """
+        bool_rules: Dict[str, List[Any]] = {}
+
         for rule in correlations:
             c1, c2 = rule.columns[0], rule.columns[1]
             if c1 not in df.columns or c2 not in df.columns:
                 continue
-            if not pd.api.types.is_numeric_dtype(df[c1]) or not pd.api.types.is_numeric_dtype(df[c2]):
+
+            b1, b2 = _is_binary(df[c1]), _is_binary(df[c2])
+            n1 = pd.api.types.is_numeric_dtype(df[c1]) and not b1
+            n2 = pd.api.types.is_numeric_dtype(df[c2]) and not b2
+
+            # Boolean hedefli kurallar toplanip TEK seferde uygulanir: ayni bool
+            # kolona bakan birden fazla kural sirayla uygulansaydi her biri
+            # oncekini ezerdi (canli kosuda uc kural da is_fraud'a bakiyordu).
+            if b1 and n2:
+                bool_rules.setdefault(c1, []).append((c2, self._target_corr(rule)))
+                continue
+            if b2 and n1:
+                bool_rules.setdefault(c2, []).append((c1, self._target_corr(rule)))
+                continue
+            if not (n1 and n2):
                 continue
 
-            # c1 referans alınarak c2'ye gürültü eklenip harmanlanır
-            target_corr = rule.min_r if hasattr(rule, "min_r") else 0.7
-            if rule.expected_sign == "negative":
-                target_corr = -abs(target_corr)
-
-            norm_c1 = (df[c1] - df[c1].mean()) / (df[c1].std() or 1.0)
+            target_corr = self._target_corr(rule)
+            norm_c1 = self._standardize(df[c1])
             noise = rng.normal(0, 1, size=len(df))
-            
+
             # Blend: r * X + sqrt(1 - r^2) * Z
-            blended = target_corr * norm_c1 + np.sqrt(max(0.01, 1 - target_corr**2)) * noise
-            
+            blended = target_corr * norm_c1 + np.sqrt(max(0.01, 1 - target_corr ** 2)) * noise
+
             # Hedef c2'nin orijinal ölçeğine geri dönüştür
             df[c2] = (blended * (df[c2].std() or 1.0) + df[c2].mean()).round(2)
+
+        for column, drivers in bool_rules.items():
+            df[column] = self._correlated_binary(df, column, drivers, rng)
         return df
+
+    @staticmethod
+    def _normal_scores(series: pd.Series) -> np.ndarray:
+        """Kolonu sıra (rank) üzerinden normal skorlara çevirir - van der Waerden.
+
+        Standartlaştırma tek başına yetmiyor: eşikleme formülü iki değişkenli
+        normallik varsayar, sürücüler ise lognormal / Poisson / uniform olabiliyor.
+        Sıra dönüşümü dağılımdan bağımsız bir latent kurmayı sağlıyor.
+        """
+        from scipy import stats
+
+        values = pd.to_numeric(series, errors="coerce")
+        n = len(values)
+        if n == 0:
+            return np.zeros(0)
+        ranks = values.rank(method="average", na_option="keep").to_numpy(dtype=float)
+        return np.nan_to_num(stats.norm.ppf((ranks - 0.5) / n), nan=0.0)
+
+    def _correlated_binary(self, df: pd.DataFrame, column: str,
+                           drivers: List[Tuple[str, float]],
+                           rng: np.random.Generator) -> np.ndarray:
+        """Boolean kolonu, sürücüleriyle korelasyonlu ve oranı korunmuş üretir."""
+        from scipy import stats
+
+        original = df[column]
+        ratio = float(pd.to_numeric(original, errors="coerce").mean())
+        if not 0.0 < ratio < 1.0:
+            return original.to_numpy()
+
+        # Eşikleme zayıflatmasi: dikotomize edilmis iki degiskenli normalde
+        # r_gozlenen = r_latent * phi(z) / sqrt(p(1-p)). Latent katsayiyi bu
+        # carpanla bolerek istenen GOZLENEN korelasyonu hedefliyoruz.
+        z = stats.norm.ppf(1.0 - ratio)
+        attenuation = stats.norm.pdf(z) / np.sqrt(ratio * (1.0 - ratio))
+        if attenuation <= 0:
+            return original.to_numpy()
+
+        scores = [self._normal_scores(df[driver]) for driver, _ in drivers]
+        targets = np.array([target for _, target in drivers], dtype=float)
+        weights = np.clip(targets / attenuation, -0.95, 0.95)
+        noise = rng.normal(0, 1, size=len(df))
+
+        def build(ws: np.ndarray) -> np.ndarray:
+            combined = np.zeros(len(df), dtype=float)
+            for weight, score in zip(ws, scores):
+                combined += weight * score
+            # Toplam varyans 1'i asarsa gurultuye yer kalmaz; katsayilari birlikte
+            # olcekle - butun korelasyonlar orantili zayiflar ama tutarli kalir.
+            explained = float(np.var(combined))
+            if explained > 0.98:
+                combined *= np.sqrt(0.98 / explained)
+                explained = 0.98
+            combined += np.sqrt(max(0.02, 1.0 - explained)) * noise
+            return combined >= np.quantile(combined, 1.0 - ratio)
+
+        flags = build(weights)
+
+        # Tek adim kalibrasyon: formul normallik varsayiyor, gercek surucular
+        # (lognormal kuyruk, Poisson basamaklari) hedefin altinda kaliyor. Olculen
+        # sapmayi agirliklara geri besleyip bir kez daha kuruyoruz.
+        observed = np.array([
+            self._point_biserial(df[driver], flags) for driver, _ in drivers
+        ])
+        safe = np.where(np.abs(observed) < 1e-3, np.sign(targets) * 1e-3, observed)
+        corrected = np.clip(weights * (targets / safe), -0.95, 0.95)
+        if np.all(np.isfinite(corrected)):
+            retry = build(corrected)
+            retry_obs = np.array([
+                self._point_biserial(df[driver], retry) for driver, _ in drivers
+            ])
+            # Yalnizca gercekten yaklastiysa kabul et - kalibrasyon geri tepmesin.
+            if np.sum(np.abs(retry_obs - targets)) < np.sum(np.abs(observed - targets)):
+                flags = retry
+
+        if pd.api.types.is_bool_dtype(original):
+            return flags
+        return flags.astype(original.dtype if original.dtype != object else int)
+
+    @staticmethod
+    def _point_biserial(driver: pd.Series, flags: np.ndarray) -> float:
+        values = pd.to_numeric(driver, errors="coerce").astype(float)
+        r = values.corr(pd.Series(flags.astype(float), index=values.index))
+        return 0.0 if pd.isna(r) else float(r)
 
     def _enforce_business_rules(self, df: pd.DataFrame, rules: List[str]) -> pd.DataFrame:
         """df.eval ile kuralları filtreler veya sınırları düzeltir."""
