@@ -272,6 +272,14 @@ class ParametricEngine:
             if b2 and n1:
                 bool_rules.setdefault(c2, []).append((c1, self._target_corr(rule)))
                 continue
+            if b1 and b2:
+                # İkisi de boolean ise: önceden hedef olan kolona sürücü ekle,
+                # aksi halde c1'i c2'ye sürücü yap (örn. card_present -> is_fraud).
+                if c1 in bool_rules and c2 not in bool_rules:
+                    bool_rules[c1].append((c2, self._target_corr(rule)))
+                else:
+                    bool_rules.setdefault(c2, []).append((c1, self._target_corr(rule)))
+                continue
             if not (n1 and n2):
                 continue
 
@@ -327,7 +335,18 @@ class ParametricEngine:
 
         scores = [self._normal_scores(df[driver]) for driver, _ in drivers]
         targets = np.array([target for _, target in drivers], dtype=float)
-        weights = np.clip(targets / attenuation, -0.95, 0.95)
+        raw_weights = []
+        for driver, target in drivers:
+            atten = attenuation
+            if _is_binary(df[driver]):
+                d_p = float(pd.to_numeric(df[driver], errors="coerce").mean())
+                if 0.0 < d_p < 1.0:
+                    dz = stats.norm.ppf(1.0 - d_p)
+                    d_atten = stats.norm.pdf(dz) / np.sqrt(d_p * (1.0 - d_p))
+                    if d_atten > 0:
+                        atten *= d_atten
+            raw_weights.append(np.clip(target / atten, -0.95, 0.95))
+        weights = np.array(raw_weights, dtype=float)
         noise = rng.normal(0, 1, size=len(df))
 
         def build(ws: np.ndarray) -> np.ndarray:

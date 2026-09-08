@@ -245,3 +245,62 @@ def test_primary_key_uniqueness_string_prefix():
     assert len(df) == 100
     assert len(df["sku"].unique()) == 100
     assert df["sku"].iloc[0].startswith("PRO_") and df["sku"].iloc[0].endswith("_000001")
+
+
+def test_pure_binary_binary_correlation():
+    """Iki boolean kolon arasinda dogrudan korelasyon kurulabilmeli."""
+    schema = SchemaContract(
+        domain="membership_conversion",
+        description="test",
+        row_count_target=5000,
+        random_seed=42,
+        columns=[
+            ColumnSpec(name="is_member", type="bool", target_ratio=0.30),
+            ColumnSpec(name="purchased", type="bool", target_ratio=0.10),
+        ],
+        correlations=[
+            CorrelationRule(columns=["is_member", "purchased"], expected_sign="positive", min_r=0.25),
+        ],
+    )
+    df = compile_schema_to_dataframe(schema, n_rows=5000, seed=42)
+    assert abs(df["is_member"].mean() - 0.30) < 0.02
+    assert abs(df["purchased"].mean() - 0.10) < 0.02
+
+    r = df["is_member"].astype(float).corr(df["purchased"].astype(float))
+    assert r >= 0.20, f"Beklenen r>=0.20 (hedef 0.25), gerceklesen r={r:.4f}"
+
+
+def test_mixed_numeric_and_binary_drivers_for_binary_target():
+    """Boolean hedef hem sayisal hem de boolean suruculeri ayni anda alabilmeli (Job #18 senaryosu)."""
+    schema = SchemaContract(
+        domain="card_fraud_complete",
+        description="test",
+        row_count_target=5000,
+        random_seed=7,
+        columns=[
+            ColumnSpec(name="device_risk_score", type="float", min=0, max=100, distribution="uniform"),
+            ColumnSpec(name="failed_attempts", type="int", min=0, max=10, distribution="poisson", mean=1),
+            ColumnSpec(name="amount", type="float", min=1, max=5000, distribution="lognormal", mean=200),
+            ColumnSpec(name="card_present", type="bool", target_ratio=0.20),
+            ColumnSpec(name="is_fraud", type="bool", target_ratio=0.05),
+        ],
+        correlations=[
+            CorrelationRule(columns=["device_risk_score", "is_fraud"], expected_sign="positive", min_r=0.30),
+            CorrelationRule(columns=["failed_attempts", "is_fraud"], expected_sign="positive", min_r=0.25),
+            CorrelationRule(columns=["amount", "is_fraud"], expected_sign="positive", min_r=0.15),
+            CorrelationRule(columns=["card_present", "is_fraud"], expected_sign="negative", min_r=0.15),
+        ],
+    )
+    df = compile_schema_to_dataframe(schema, n_rows=5000, seed=7)
+    labels = df["is_fraud"].astype(float)
+
+    assert abs(labels.mean() - 0.05) < 0.01
+    assert abs(df["card_present"].astype(float).mean() - 0.20) < 0.02
+
+    # Sayisal suruculer
+    assert df["device_risk_score"].corr(labels) >= 0.24
+    assert df["failed_attempts"].astype(float).corr(labels) >= 0.20
+    assert df["amount"].corr(labels) >= 0.10
+    # Boolean surucu (negatif isaret ve anlamli korelasyon)
+    r_card = df["card_present"].astype(float).corr(labels)
+    assert r_card <= -0.08, f"card_present korelasyonu zayif veya isaretsiz: r={r_card:.4f}"
