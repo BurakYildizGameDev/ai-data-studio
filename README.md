@@ -10,7 +10,8 @@
 
 <p align="center">
   <a href="https://github.com/BurakYildizGameDev/ai-data-studio/actions/workflows/ci.yml"><img src="https://github.com/BurakYildizGameDev/ai-data-studio/actions/workflows/ci.yml/badge.svg" alt="CI Status"></a>
-  <img src="https://img.shields.io/badge/tests-512%20passed-brightgreen.svg" alt="Tests: 512 Passed">
+  <img src="https://img.shields.io/badge/tests-575%2B%20passed-brightgreen.svg" alt="Tests: 575+ Passed">
+  <a href="https://pypi.org/project/ai-data-studio/"><img src="https://img.shields.io/badge/pypi-v2.0.0-blue.svg" alt="PyPI Version"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue.svg" alt="Python 3.10 | 3.11 | 3.12"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License: MIT"></a>
   <a href="https://github.com/astral-sh/ruff"><img src="https://img.shields.io/badge/code%20style-ruff-000000.svg" alt="Code Style: Ruff"></a>
@@ -104,6 +105,12 @@ The result is mathematically consistent, highly authentic synthetic data ready f
 
 ### 1. Installation
 
+**Install from PyPI (Recommended for Data Science & Pipelines):**
+```bash
+pip install ai-data-studio
+```
+
+*Or install from source for local development:*
 ```bash
 # Clone the repository
 git clone https://github.com/BurakYildizGameDev/ai-data-studio.git
@@ -180,6 +187,60 @@ generate("clinical vitals", rows=10_000, provider="ollama",
          on_progress=lambda e: print(f"[{e['step']}/{e['total_steps']}] {e['message']}"))
 
 clean_df, report = validate(my_dataframe, my_schema_dict)
+```
+
+#### Zero-Token Parametric Generation (Instant in Jupyter Notebooks)
+
+If you already have a schema or contract definition, compile 100,000+ rows in milliseconds with **zero LLM tokens, 100% offline**:
+
+```python
+from ai_data_studio import compile_dataset
+
+# Relational multi-table generation with 0 orphan foreign keys:
+spec = {
+    "tables": [
+        {
+            "name": "users",
+            "columns": [
+                {"name": "user_id", "type": "int", "distribution": "uniform", "min": 1, "max": 10000},
+                {"name": "country", "type": "str", "distribution": "categorical", "categories": ["US", "DE", "TR", "GB"]},
+            ]
+        },
+        {
+            "name": "transactions",
+            "columns": [
+                {"name": "tx_id", "type": "int"},
+                {"name": "user_id", "type": "int"},
+                {"name": "amount", "type": "float", "distribution": "lognormal", "mean": 4.0, "std": 0.8},
+                {"name": "is_fraud", "type": "bool"},
+            ],
+            "relationships": [
+                {"parent_table": "users", "parent_key": "user_id", "foreign_key": "user_id"}
+            ]
+        }
+    ]
+}
+
+# Returns Dict[str, pd.DataFrame]
+tables = compile_dataset(spec, rows=50_000, seed=42)
+users_df = tables["users"]
+tx_df = tables["transactions"]
+```
+
+Or for a single table:
+```python
+from ai_data_studio import compile_schema
+
+df = compile_schema({
+    "columns": [
+        {"name": "age", "type": "int", "min": 18, "max": 75},
+        {"name": "income", "type": "float", "distribution": "gamma", "mean": 55000, "std": 15000},
+        {"name": "credit_score", "type": "int", "distribution": "normal", "mean": 680, "std": 50},
+    ],
+    "correlations": [
+        {"col_a": "age", "col_b": "income", "target_r": 0.55}
+    ]
+}, rows=10_000, seed=42)
 ```
 
 `import ai_data_studio` stays cheap (~1 ms) — pandas and the provider SDKs load lazily on first use.

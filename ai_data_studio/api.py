@@ -37,6 +37,8 @@ if TYPE_CHECKING:  # pragma: no cover
 __all__ = [
     "generate",
     "validate",
+    "compile_dataset",
+    "compile_schema",
     "build_config",
     "ENGINE_LLM",
     "ENGINE_PARAMETRIC",
@@ -281,3 +283,87 @@ def validate(
         else:
             schema = SchemaContract.from_dict(schema)
     return validator.run_validation(df, schema, seed_df=seed_df, **kwargs)
+
+
+
+def compile_dataset(
+    contract: Any,
+    *,
+    rows: Optional[int] = None,
+    seed: Optional[int] = None,
+) -> Any:
+    """Verilen DatasetContract veya SchemaContract'ı (veya sözlük temsilini)
+    100% yerel, çevrimdışı ve deterministik olarak pandas DataFrame(ler)ine derler.
+
+    Jupyter Notebook veya script içinde tek satırda kullanım sağlar::
+
+        from ai_data_studio import compile_dataset
+
+        # Çok tablolu (ilişkisel) sözleşme:
+        tables = compile_dataset(dataset_dict, rows=10_000)
+        # tables['customers'], tables['orders']
+
+        # Tek tablolu sözleşme:
+        df = compile_dataset(schema_dict, rows=50_000)
+    """
+    from .core.dataset_contract import DatasetContract
+    from .core.parametric_engine import compile_dataset_to_dataframes, compile_schema_to_dataframe
+    from .core.schema_contract import SchemaContract
+
+    if isinstance(contract, DatasetContract):
+        return compile_dataset_to_dataframes(contract, root_rows=rows, seed=seed)
+    if isinstance(contract, SchemaContract):
+        return compile_schema_to_dataframe(contract, n_rows=rows, seed=seed)
+    if isinstance(contract, dict):
+        contract_copy = dict(contract)
+        if "tables" in contract_copy:
+            if "domain" not in contract_copy:
+                contract_copy["domain"] = "synthetic_dataset"
+            raw_tables = []
+            for t in contract_copy.get("tables", []):
+                if isinstance(t, dict):
+                    t_copy = dict(t)
+                    if "domain" not in t_copy:
+                        t_copy["domain"] = t_copy.get("name", "table")
+                    raw_tables.append(t_copy)
+                else:
+                    raw_tables.append(t)
+            contract_copy["tables"] = raw_tables
+            if "root_table" not in contract_copy and raw_tables:
+                first = raw_tables[0]
+                contract_copy["root_table"] = first.get("name", "") if isinstance(first, dict) else getattr(first, "name", "")
+            dc = DatasetContract.from_dict(contract_copy)
+            return compile_dataset_to_dataframes(dc, root_rows=rows, seed=seed)
+
+        if "domain" not in contract_copy:
+            contract_copy["domain"] = "synthetic_data"
+        sc = SchemaContract.from_dict(contract_copy)
+        return compile_schema_to_dataframe(sc, n_rows=rows, seed=seed)
+    raise TypeError(
+        "compile_dataset() beklenen türler: DatasetContract, SchemaContract veya dict; alınan: %s"
+        % type(contract).__name__
+    )
+
+
+def compile_schema(
+    schema: Any,
+    *,
+    rows: Optional[int] = None,
+    seed: Optional[int] = None,
+) -> "pd.DataFrame":
+    """Verilen SchemaContract'ı (veya sözlük temsilini) tek bir DataFrame'e derler."""
+    from .core.parametric_engine import compile_schema_to_dataframe
+    from .core.schema_contract import SchemaContract
+
+    if isinstance(schema, SchemaContract):
+        return compile_schema_to_dataframe(schema, n_rows=rows, seed=seed)
+    if isinstance(schema, dict):
+        s_copy = dict(schema)
+        if "domain" not in s_copy:
+            s_copy["domain"] = "synthetic_data"
+        sc = SchemaContract.from_dict(s_copy)
+        return compile_schema_to_dataframe(sc, n_rows=rows, seed=seed)
+    raise TypeError(
+        "compile_schema() beklenen türler: SchemaContract veya dict; alınan: %s"
+        % type(schema).__name__
+    )

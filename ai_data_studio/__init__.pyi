@@ -4,6 +4,8 @@
 ve IDE'ler ise bu dosyayi okur.
 """
 from .api import build_config as build_config
+from .api import compile_dataset as compile_dataset
+from .api import compile_schema as compile_schema
 from .api import generate as generate
 from .api import validate as validate
 from .core.orchestrator import ENGINE_AUTO as ENGINE_AUTO

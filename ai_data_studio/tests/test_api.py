@@ -30,7 +30,7 @@ class TestLazyPackageSurface(unittest.TestCase):
     """__init__ tembel yukleme sozlesmesi."""
 
     def test_public_names_are_listed(self):
-        for name in ("generate", "validate", "build_config", "PipelineConfig",
+        for name in ("generate", "validate", "compile_dataset", "compile_schema", "build_config", "PipelineConfig",
                      "PipelineResult", "run_pipeline", "SchemaContract"):
             self.assertIn(name, ai_data_studio.__all__)
             self.assertIn(name, dir(ai_data_studio))
@@ -251,3 +251,91 @@ class TestProjectApi(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestCompileDatasetAPI(unittest.TestCase):
+    """compile_dataset ve compile_schema doğrudan çağrı testleri."""
+
+    def test_compile_dataset_single_table_dict(self):
+        from ai_data_studio import compile_dataset
+        schema_dict = {
+            "domain": "test_users",
+            "columns": [
+                {"name": "user_id", "type": "int", "min": 1, "max": 1000},
+                {"name": "age", "type": "int", "min": 18, "max": 65},
+            ]
+        }
+        df = compile_dataset(schema_dict, rows=100, seed=42)
+        self.assertIsInstance(df, pd.DataFrame)
+        self.assertEqual(len(df), 100)
+        self.assertIn("user_id", df.columns)
+        self.assertIn("age", df.columns)
+
+    def test_compile_dataset_relational_dict(self):
+        from ai_data_studio import compile_dataset
+        dataset_dict = {
+            "domain": "ecom",
+            "root_table": "users",
+            "tables": [
+                {
+                    "name": "users",
+                    "domain": "users",
+                    "primary_key": "id",
+                    "columns": [{"name": "id", "type": "int"}]
+                },
+                {
+                    "name": "orders",
+                    "domain": "orders",
+                    "primary_key": "order_id",
+                    "foreign_keys": ["user_id"],
+                    "columns": [
+                        {"name": "order_id", "type": "int"},
+                        {"name": "user_id", "type": "int"}
+                    ]
+                }
+            ],
+            "relationships": [
+                {
+                    "parent_table": "users",
+                    "parent_key": "id",
+                    "child_table": "orders",
+                    "child_key": "user_id",
+                    "min_per_parent": 1,
+                    "max_per_parent": 3,
+                    "mean_per_parent": 2.0
+                }
+            ]
+        }
+        tables = compile_dataset(dataset_dict, rows=50, seed=42)
+        self.assertIsInstance(tables, dict)
+        self.assertIn("users", tables)
+        self.assertIn("orders", tables)
+        self.assertEqual(len(tables["users"]), 50)
+        self.assertTrue(tables["orders"]["user_id"].isin(tables["users"]["id"]).all())
+
+    def test_compile_schema_direct(self):
+        from ai_data_studio import compile_schema, SchemaContract
+        schema = SchemaContract.from_dict({
+            "domain": "test_products",
+            "columns": [{"name": "price", "type": "float", "min": 10.0, "max": 50.0}]
+        })
+        df = compile_schema(schema, rows=60, seed=12)
+        self.assertEqual(len(df), 60)
+        self.assertTrue((df["price"] >= 10.0).all())
+
+    def test_compile_dataset_minimal_dict_without_domain(self):
+        from ai_data_studio import compile_dataset
+        df = compile_dataset({"columns": [{"name": "score", "type": "float"}]}, rows=20, seed=7)
+        self.assertEqual(len(df), 20)
+        self.assertIn("score", df.columns)
+
+    def test_compile_schema_dict_minimal(self):
+        from ai_data_studio import compile_schema
+        df = compile_schema({"columns": [{"name": "val", "type": "int"}]}, rows=15, seed=7)
+        self.assertEqual(len(df), 15)
+        self.assertIn("val", df.columns)
+
+    def test_compile_dataset_invalid_type_raises(self):
+        from ai_data_studio import compile_dataset
+        with self.assertRaises(TypeError):
+            compile_dataset(12345)

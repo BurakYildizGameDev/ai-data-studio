@@ -64,10 +64,16 @@ dev = [
 [project.scripts]
 ai-data-studio = "ai_data_studio.main:main"
 
+[project.urls]
+Homepage = "https://github.com/BurakYildizGameDev/ai-data-studio"
+Repository = "https://github.com/BurakYildizGameDev/ai-data-studio"
+Issues = "https://github.com/BurakYildizGameDev/ai-data-studio/issues"
+Documentation = "https://github.com/BurakYildizGameDev/ai-data-studio#readme"
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["ai_data_studio*"]
 
 [tool.setuptools.package-data]
 # PEP 561: tip stub'lari ve "bu paket tiplenmis" isareti wheel'e girsin.
-ai_data_studio = ["py.typed", "*.pyi"]
+ai_data_studio = ["py.typed", "*.pyi", "assets/*"]

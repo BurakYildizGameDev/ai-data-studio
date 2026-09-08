@@ -27,6 +27,8 @@ __version__ = "2.0.0"
 _EXPORTS = {
     "generate": ("ai_data_studio.api", "generate"),
     "validate": ("ai_data_studio.api", "validate"),
+    "compile_dataset": ("ai_data_studio.api", "compile_dataset"),
+    "compile_schema": ("ai_data_studio.api", "compile_schema"),
     "build_config": ("ai_data_studio.api", "build_config"),
     "PipelineConfig": ("ai_data_studio.core.orchestrator", "PipelineConfig"),
     "PipelineResult": ("ai_data_studio.core.orchestrator", "PipelineResult"),
