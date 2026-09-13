@@ -1,0 +1,21 @@
+# Normalize line endings to LF in the repository for cross-platform consistency.
+# Windows checkouts will still get CRLF if core.autocrlf=true is set locally,
+# but the stored bytes in Git are always LF.
+
+* text=auto eol=lf
+
+# Explicitly binary — never mangle these
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.db  binary
+*.sqlite3 binary
+*.pyc binary
+*.pyd binary
+*.so  binary
+*.exe binary
+*.whl binary
+*.zip binary
+*.tar.gz binary
