@@ -104,56 +104,14 @@ try:
 except Exception:
     pass
 
-# --- Standart modülleri builtins'e ekle: LLM import unutsa bile NameError vermesin ---
-import builtins
-try:
-    from faker import Faker
-    import faker
-    builtins.Faker = Faker
-    builtins.faker = faker
-except Exception:
-    pass
-try:
-    if np is not None:
-        builtins.np = np
-        builtins.numpy = np
-except Exception:
-    pass
-try:
-    import pandas as pd
-    builtins.pd = pd
-    builtins.pandas = pd
-except Exception:
-    pass
-try:
-    import scipy
-    import scipy.stats as stats
-    builtins.scipy = scipy
-    builtins.stats = stats
-except Exception:
-    pass
-
+# Kullanici koduna hicbir ad enjekte EDILMEZ: eksik import burada NameError verir ve
+# self-healing'e geri beslenir. Enjekte edilseydi sandbox'ta calisan kod, disari
+# aktarilan *_generator.py dosyasinda tek basina calismazdi.
 try:
     import user_code
 except Exception:
     traceback.print_exc()
     sys.exit(3)
-
-for _k, _v in (
-    ("Faker", getattr(builtins, "Faker", None)),
-    ("faker", getattr(builtins, "faker", None)),
-    ("np", getattr(builtins, "np", None)),
-    ("numpy", getattr(builtins, "numpy", None)),
-    ("pd", getattr(builtins, "pd", None)),
-    ("pandas", getattr(builtins, "pandas", None)),
-    ("scipy", getattr(builtins, "scipy", None)),
-    ("stats", getattr(builtins, "stats", None)),
-):
-    if _v is not None and not hasattr(user_code, _k):
-        try:
-            setattr(user_code, _k, _v)
-        except Exception:
-            pass
 
 ENTRYPOINTS = {entrypoints!r}
 fn = None
@@ -728,21 +686,28 @@ def sanity_check(df: pd.DataFrame, schema: SchemaContract,
             if clean.empty:
                 issues.append("'%s' kolonunda hiç geçerli sayısal değer yok" % col.name)
                 continue
+            # Lognormal'de olcek hatasinin tipik kaynagi: sozlesmedeki gercek olcekli
+            # mean/std'nin dogrudan rng.lognormal'e verilmesi (exp(50000) -> inf).
+            scale_hint = ""
+            if (col.distribution or "").lower() == "lognormal":
+                scale_hint = (" (lognormal: rng.lognormal(mean, sigma) LOG ölçeğinde parametre "
+                              "alır; önce sigma = sqrt(log1p((std/mean)**2)), "
+                              "mu = log(mean) - sigma**2/2 hesapla)")
             if col.min is not None:
                 below = float((clean < col.min).mean())
                 if below > BOUNDS_VIOLATION_TOLERANCE:
                     issues.append(
                         "'%s' degerlerinin %%%.0f'i min sinirinin (%s) altında - kasitli "
-                        "gurultu için çok yüksek, olceklendirme hatası olabilir"
-                        % (col.name, below * 100, col.min)
+                        "gurultu için çok yüksek, olceklendirme hatası olabilir%s"
+                        % (col.name, below * 100, col.min, scale_hint)
                     )
             if col.max is not None:
                 above = float((clean > col.max).mean())
                 if above > BOUNDS_VIOLATION_TOLERANCE:
                     issues.append(
                         "'%s' degerlerinin %%%.0f'i max sinirinin (%s) üzerinde - kasitli "
-                        "gurultu için çok yüksek, olceklendirme hatası olabilir"
-                        % (col.name, above * 100, col.max)
+                        "gurultu için çok yüksek, olceklendirme hatası olabilir%s"
+                        % (col.name, above * 100, col.max, scale_hint)
                     )
             if col.type == "int" and not pd.api.types.is_integer_dtype(series):
                 if not (clean % 1 == 0).all():
@@ -776,7 +741,12 @@ def sanity_check(df: pd.DataFrame, schema: SchemaContract,
 # 5. Self-healing döngüsü
 # --------------------------------------------------------------------------- #
 def _auto_align_tables(tables: Dict[str, pd.DataFrame], contract) -> None:
-    """Üretilen tabloları şema sözleşmesine uygun şekilde hizalar (sınır kenetleme ve tip düzeltme)."""
+    """Float olarak üretilmiş tam sayı kolonlarını int'e yuvarlar (yalnızca dtype hizalama).
+
+    Değerlere min/max kırpması BİLEREK uygulanmaz: kırpma sanity_check'in sistematik
+    ölçek hatası denetimini kör eder (tamamı inf olan bir kolon tek bir sabite dönüşüp
+    "başarılı" geçer) ve Discriminator'ın ayıklaması gereken kasıtlı gürültüyü siler.
+    """
     for schema in contract.tables:
         df = tables.get(schema.table_name)
         if df is None or not isinstance(df, pd.DataFrame) or df.empty:
@@ -785,19 +755,6 @@ def _auto_align_tables(tables: Dict[str, pd.DataFrame], contract) -> None:
             if col.name not in df.columns:
                 continue
             series = df[col.name]
-            # 1. Sayısal kolonlarda min/max sınırlarının dışındaki değerleri sınıra kenetle (clip)
-            if col.is_numeric and pd.api.types.is_numeric_dtype(series):
-                try:
-                    if col.min is not None and col.max is not None:
-                        df[col.name] = series.clip(lower=col.min, upper=col.max)
-                    elif col.min is not None:
-                        df[col.name] = series.clip(lower=col.min)
-                    elif col.max is not None:
-                        df[col.name] = series.clip(upper=col.max)
-                    series = df[col.name]
-                except Exception:
-                    pass
-            # 2. Tam sayı kolonlar float olarak üretildiyse int'e yuvarla ve dönüştür
             if col.type == "int" and pd.api.types.is_float_dtype(series):
                 try:
                     df[col.name] = series.round().astype("Int64" if col.nullable else "int64")
@@ -887,17 +844,27 @@ def _generation_loop(
         emit(t("codegen.attempt", attempt=attempt, total=max_retries),
              sandbox=True)
 
-        result = execute_in_sandbox(
-            code,
-            n_rows=root_schema.row_count_target,
-            seed=contract.random_seed,
-            timeout=timeout,
-            cancel_event=cancel_event,
-        )
+        # Statik denetim reddi (yasak import, sozdizimi hatasi...) kodu hic
+        # calistirmadan olur; guvenlik acisindan geri beslemek zararsizdir ve model
+        # cogu zaman tek duzeltmede toparlar. Eskiden pipeline ilk denemede dusuyordu.
+        rejected = False
+        try:
+            result = execute_in_sandbox(
+                code,
+                n_rows=root_schema.row_count_target,
+                seed=contract.random_seed,
+                timeout=timeout,
+                cancel_event=cancel_event,
+            )
+        except SecurityError as exc:
+            rejected = True
+            result = ExecutionResult(success=False, traceback=str(exc))
         check_cancel()
 
         if not result.success:
-            feedback = "Kod calistirilirken hata olustu:\n%s" % result.traceback
+            header = ("Kod güvenlik denetiminden geçmedi, hiç çalıştırılmadı:" if rejected
+                      else "Kod calistirilirken hata olustu:")
+            feedback = "%s\n%s" % (header, result.traceback)
             hint = diagnostic_hint(result.traceback)
             if hint:
                 feedback += "\n\nNASIL DUZELTILIR:\n%s" % hint
@@ -1034,6 +1001,42 @@ def generate_dataset_and_execute(
 # soylemek, self-healing dongusunun basari oranini belirgin sekilde artirir.
 _ERROR_HINTS: List[Tuple[str, str]] = [
     (
+        "izin verilmeyen import",
+        "YASAKLI IMPORT: Bu modül sandbox'ta yok ve kod hiç çalıştırılmadı. O import satırını "
+        "kaldır ve aynı işi yalnızca şu modüllerle yap: {allowed_imports}.",
+    ),
+    (
+        "goreli import",
+        "GÖRELİ IMPORT: `from . import x` gibi göreli import kullanma; tüm kod tek dosyada "
+        "olmalı ve yalnızca şu modülleri import edebilir: {allowed_imports}.",
+    ),
+    (
+        "yasakli isim",
+        "YASAKLI ÇAĞRI: open/eval/exec/compile/__import__/input/globals/locals/vars/exit "
+        "kullanma. Dosya okuma-yazma yapma; veriyi yalnızca DataFrame olarak döndür.",
+    ),
+    (
+        "yasakli attribute",
+        "YASAKLI ERİŞİM: __class__, __dict__, __globals__ gibi dunder attribute'lara erişme. "
+        "Aynı işi doğrudan pandas/numpy API'leriyle yap.",
+    ),
+    (
+        "parse edilemedi",
+        "SÖZDİZİMİ HATASI: Dosya Python olarak ayrıştırılamadı. Açıklama metni ya da ``` "
+        "işareti bırakma; yalnızca geçerli ve eksiksiz Python kaynağı döndür.",
+    ),
+    (
+        "unexpected keyword argument",
+        "PARAMETRE ADI HATASI: Bir fonksiyonu olmayan bir anahtar kelime argümanıyla "
+        "çağırıyorsun. numpy Generator imzaları: `rng.normal(loc, scale, size)`, "
+        "`rng.lognormal(mean, sigma, size)`, `rng.gamma(shape, scale, size)`, "
+        "`rng.exponential(scale, size)`, `rng.poisson(lam, size)`, "
+        "`rng.uniform(low, high, size)`, `rng.integers(low, high, size)`. "
+        "DİKKAT: lognormal'in mean/sigma'sı LOG ölçeğindedir; sözleşmedeki gerçek ölçekli "
+        "mean/std'yi önce dönüştür: `sigma = np.sqrt(np.log1p((std / mean) ** 2))`, "
+        "`mu = np.log(mean) - sigma ** 2 / 2`, sonra `rng.lognormal(mu, sigma, n_rows)`.",
+    ),
+    (
         "cannot cast ufunc",
         "DTYPE HATASI: Bir tam sayı (int) dizisine yerinde (+=, -=, *=) ondalikli değer "
         "ekliyorsun. Tüm ara hesaplari float64 olarak yap, tam sayiya cevirmeyi EN SONDA "
@@ -1087,15 +1090,41 @@ _ERROR_HINTS: List[Tuple[str, str]] = [
 ]
 
 
+# Import edilmeden kullanilan yaygin adlar -> eklenmesi gereken satir.
+_MISSING_IMPORTS: Dict[str, str] = {
+    "np": "import numpy as np",
+    "numpy": "import numpy as np",
+    "pd": "import pandas as pd",
+    "pandas": "import pandas as pd",
+    "Faker": "from faker import Faker",
+    "faker": "from faker import Faker",
+    "scipy": "import scipy",
+    "stats": "from scipy import stats",
+    "math": "import math",
+    "random": "import random",
+    "string": "import string",
+    "re": "import re",
+}
+_NOT_DEFINED_RE = re.compile(r"name '([A-Za-z_][A-Za-z0-9_]*)' is not defined")
+
+
 def diagnostic_hint(traceback_text: str) -> str:
     """Hatanin kokunu taniyip modele somut bir duzeltme talimati dondurur.
 
     Taninmayan hata için boş string döner (ham traceback zaten iletiliyor).
     """
-    lowered = (traceback_text or "").lower()
+    text = traceback_text or ""
+    missing = _NOT_DEFINED_RE.findall(text)
+    if missing and missing[-1] in _MISSING_IMPORTS:
+        name = missing[-1]
+        return ("EKSİK IMPORT: `%s` adını import etmeden kullanıyorsun. Dosyanın en başına "
+                "`%s` satırını ekle; sandbox hiçbir modülü senin yerine import etmez."
+                % (name, _MISSING_IMPORTS[name]))
+    lowered = text.lower()
     for needle, hint in _ERROR_HINTS:
         if needle in lowered:
-            return hint
+            return hint.replace("{allowed_imports}",
+                                ", ".join(sorted(config.ALLOWED_IMPORTS)))
     return ""
 
 
@@ -1107,7 +1136,7 @@ def _error_signature(feedback: str) -> str:
     """
     line = _first_line(feedback, 300)
     # Yol, satir numarasi ve tirnak icindeki degerleri sabitle
-    line = re.sub(r"[A-Za-z]:\[^\s\"']+", "<yol>", line)
+    line = re.sub(r"[A-Za-z]:\\[^\s\"']+", "<yol>", line)
     line = re.sub(r"line \d+", "line N", line)
     line = re.sub(r"\d+", "N", line)
     return line.strip().lower()

@@ -248,6 +248,8 @@ class OllamaClient(BaseLLMClient):
             "options": {
                 "temperature": self.temperature if temperature is None else temperature,
                 "num_predict": max_tokens,
+                # Verilmezse Ollama 4096'da kalir ve uzun prompt'un basini sessizce keser.
+                "num_ctx": config.OLLAMA_NUM_CTX,
             },
         }
         try:

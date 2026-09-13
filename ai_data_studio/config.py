@@ -93,6 +93,26 @@ MODEL_PRICING_USD_PER_MTOK = {
 
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 
+
+def _resolve_ollama_num_ctx(default: int = 16384) -> int:
+    """Ollama bağlam penceresi (token).
+
+    İstekte num_ctx verilmezse Ollama modeli 4096 ile yükler ve sığmayan prompt'un
+    başını sessizce keser - hata vermez, model sadece talimatları "unutur". İlişkisel
+    kod prompt'u tek başına ~3k token; düzeltme adımında önceki kod ve traceback de
+    eklenir. Pencere büyüdükçe KV önbelleği VRAM tüketir; düşük VRAM'de
+    AIDATASTUDIO_OLLAMA_NUM_CTX ile küçültülebilir.
+    """
+    raw = os.getenv("AIDATASTUDIO_OLLAMA_NUM_CTX", "").strip()
+    try:
+        value = int(raw) if raw else default
+    except ValueError:
+        return default
+    return value if value >= 2048 else default
+
+
+OLLAMA_NUM_CTX = _resolve_ollama_num_ctx()
+
 # --------------------------------------------------------------------------- #
 # Gemini Arka Uçları
 # --------------------------------------------------------------------------- #

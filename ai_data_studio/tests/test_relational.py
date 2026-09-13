@@ -527,6 +527,13 @@ class TestCodePromptParity(unittest.TestCase):
             self.assertIn(title, single, "%s tek tablolu istemde yok" % name)
             self.assertIn(title, relational, "%s ilişkisel istemde yok" % name)
 
+    def test_lognormal_log_scale_conversion_in_both(self):
+        """Sozlesmedeki mean/std gercek olcekli; numpy log olcekli bekler (canli Job #38)."""
+        single, relational = self._rendered()
+        for prompt in (single, relational):
+            self.assertIn("rng.lognormal(mu, sigma, n_rows)", prompt)
+            self.assertIn("never `scale`", prompt)
+
     def test_faker_template_apis_are_banned_in_both(self):
         """'Unknown formatter' hatasinin kaynagi; ikisinde de yasakli olmali."""
         single, relational = self._rendered()

@@ -64,7 +64,15 @@ $Y$ is derived monotonically from $X$ (e.g. rank-aligned mapping, monotonic tren
 so that decile/bin averages remain monotonically ordered across the feature space."""
 
 
+# Lognormal satiri canli kosudan geldi: sozlesmedeki mean/std GERCEK olceklidir
+# (parametric_engine de boyle yorumlar), numpy ise log olcekli parametre bekler. Model
+# `rng.lognormal(mean=50000, scale=10000)` yazdi; `sigma` ile bile exp(50000) = inf olur.
 HEAVY_TAIL_BLOCK = """ACTUARIAL & HEAVY-TAIL DISTRIBUTIONS:
+- Lognormal: the contract's `mean`/`std` are the column's REAL-scale mean and standard deviation,
+  but `rng.lognormal(mean, sigma, size)` takes the parameters of the underlying normal (LOG scale)
+  and its keyword is `sigma`, never `scale`. Convert first - passing `mean=50000` overflows to inf:
+  `sigma = np.sqrt(np.log1p((std / mean) ** 2)); mu = np.log(mean) - sigma ** 2 / 2`, then
+  `rng.lognormal(mu, sigma, n_rows)` (no `std` in the contract: use `sigma = 0.8`)
 - Zero-Inflated Poisson (`zip`): `np.where(rng.uniform(0, 1, n_rows) < zero_prob, 0, rng.poisson(lam, n_rows))`
 - Tweedie ($1 < p < 2$ Compound Poisson-Gamma): `k = rng.poisson(lam, n_rows); np.where(k > 0, rng.gamma(shape * k, scale), 0.0)`
 - Gamma: `rng.gamma(shape, scale, n_rows)`

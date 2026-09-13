@@ -139,6 +139,9 @@ class TestOllamaREST(unittest.TestCase):
         body = post.call_args[1]["json"]
         self.assertEqual(body["messages"][0]["role"], "system")
         self.assertFalse(body["stream"])
+        # num_ctx verilmezse Ollama 4096'da kalir ve uzun prompt'u sessizce keser.
+        self.assertEqual(body["options"]["num_ctx"], config.OLLAMA_NUM_CTX)
+        self.assertGreaterEqual(body["options"]["num_ctx"], 8192)
         self.assertEqual(logged, {"input_tokens": 120, "output_tokens": 45, "purpose": "chat"})
 
 

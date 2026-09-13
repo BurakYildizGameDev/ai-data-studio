@@ -107,6 +107,19 @@ class TestSandboxExecution(unittest.TestCase):
         self.assertFalse(result.success)
         self.assertIn("bilerek patlatildi", result.traceback)
 
+    def test_missing_import_is_not_papered_over(self):
+        """Harness kullanici koduna ad enjekte etmemeli: sandbox'ta calisan kod,
+        disari aktarilan *_generator.py dosyasinda da tek basina calismali."""
+        code = (
+            "import pandas as pd\n"
+            "\n"
+            "def generate_data(n_rows, seed):\n"
+            "    return pd.DataFrame({'a': np.arange(n_rows)})\n"
+        )
+        result = execute_in_sandbox(code, n_rows=10, timeout=60)
+        self.assertFalse(result.success)
+        self.assertIn("name 'np' is not defined", result.traceback)
+
     def test_missing_entrypoint_is_reported(self):
         code = "import pandas as pd\n\ndef yanlış_isim(n, s):\n    return pd.DataFrame()\n"
         result = execute_in_sandbox(code, n_rows=10, timeout=60)

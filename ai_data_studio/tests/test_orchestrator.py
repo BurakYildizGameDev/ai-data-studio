@@ -69,9 +69,82 @@ class TestSelfHealingLoop(unittest.TestCase):
     def test_forbidden_import_is_reported_as_feedback(self):
         """SecurityError sandbox'ta yakalanip LLM'e geri beslenmeli, sizmamali."""
         client = fake_llm.FakeLLMClient([fake_llm.FORBIDDEN_IMPORT_CODE, fake_llm.GOOD_CODE])
-        with self.assertRaises(Exception) as ctx:
-            generate_and_execute(self.schema, client, timeout=90)
-        self.assertIn("izin verilmeyen import", str(ctx.exception).lower())
+        df, code, meta = generate_and_execute(self.schema, client, timeout=90)
+        self.assertEqual(meta["attempts"], 2)
+        self.assertEqual(len(df), 3000)
+        self.assertEqual(code, fake_llm.GOOD_CODE.strip())
+        self.assertEqual(len(client.feedback_received), 1)
+        feedback = client.feedback_received[0]
+        self.assertIn("izin verilmeyen import: os", feedback)
+        self.assertIn("hiç çalıştırılmadı", feedback)
+        self.assertIn("YASAKLI IMPORT", feedback)
+
+    def test_repeated_forbidden_import_gives_up_with_reason(self):
+        client = fake_llm.FakeLLMClient([fake_llm.FORBIDDEN_IMPORT_CODE])
+        with self.assertRaises(GenerationFailedError) as ctx:
+            generate_and_execute(self.schema, client, max_retries=3, timeout=90)
+        self.assertIn("izin verilmeyen import", str(ctx.exception))
+        self.assertEqual(len(client.feedback_received), 2)
+
+
+class TestAutoAlignDoesNotMaskErrors(unittest.TestCase):
+    """Tip hizalama sistematik hatayi gizlememeli (canli Job #38 senaryosu)."""
+
+    def setUp(self):
+        from ai_data_studio.core.dataset_contract import DatasetContract
+
+        self.schema = SchemaContract.from_dict({**fake_llm.SCHEMA_JSON,
+                                                "row_count_target": 2000})
+        self.contract = DatasetContract.from_schema(self.schema)
+
+    def _frame(self, **overrides):
+        import numpy as np
+        import pandas as pd
+
+        rng = np.random.default_rng(1)
+        n = self.schema.row_count_target
+        data = {
+            "customer_age": rng.normal(38, 12, n).clip(18, 80),
+            "basket_value": rng.lognormal(3.0, 0.6, n),
+            "item_count": rng.integers(1, 30, n),
+            "shipping_cost": rng.uniform(0, 25, n),
+            "returned": rng.random(n) < 0.08,
+        }
+        data.update(overrides)
+        return pd.DataFrame(data)
+
+    def test_overflowing_lognormal_is_still_reported(self):
+        import numpy as np
+        from ai_data_studio.core.generator import _auto_align_tables, _sanity_check_tables
+
+        n = self.schema.row_count_target
+        tables = {self.contract.root_table: self._frame(basket_value=np.full(n, np.inf))}
+        _auto_align_tables(tables, self.contract)
+        issues = _sanity_check_tables(tables, self.contract)
+        self.assertTrue(any("basket_value" in i and "max sinirinin" in i for i in issues),
+                        issues)
+        self.assertTrue(any("LOG ölçeğinde" in i for i in issues), issues)
+        self.assertTrue(np.isinf(tables[self.contract.root_table]["basket_value"]).all())
+
+    def test_out_of_bounds_noise_is_left_for_discriminator(self):
+        from ai_data_studio.core.generator import _auto_align_tables
+
+        frame = self._frame()
+        frame.loc[frame.index[:100], "customer_age"] = 150.0
+        tables = {self.contract.root_table: frame}
+        _auto_align_tables(tables, self.contract)
+        self.assertEqual(int((tables[self.contract.root_table]["customer_age"] == 150).sum()),
+                         100)
+
+    def test_float_int_column_is_rounded(self):
+        import pandas as pd
+        from ai_data_studio.core.generator import _auto_align_tables, _sanity_check_tables
+
+        tables = {self.contract.root_table: self._frame()}
+        _auto_align_tables(tables, self.contract)
+        self.assertTrue(pd.api.types.is_integer_dtype(
+            tables[self.contract.root_table]["customer_age"]))
+        self.assertEqual(_sanity_check_tables(tables, self.contract), [])
 
 
 class TestStripCodeFences(unittest.TestCase):
@@ -531,6 +604,13 @@ class TestRepeatedErrorEscalation(unittest.TestCase):
             "AttributeError: Unknown formatter '0' with locale 'en_US'")
         self.assertEqual(a, b)
 
+    def test_error_signature_strips_windows_paths_in_message(self):
+        from ai_data_studio.core.generator import _error_signature
+        a = _error_signature(r"FileNotFoundError: C:\work\aids_sbx_abc\out.parquet yok")
+        b = _error_signature(r"FileNotFoundError: C:\work\aids_sbx_xyz\out.parquet yok")
+        self.assertEqual(a, b)
+        self.assertIn("<yol>", a)
+
     def test_different_errors_have_different_signatures(self):
         from ai_data_studio.core.generator import _error_signature
         self.assertNotEqual(_error_signature("AttributeError: Unknown formatter"),
@@ -623,6 +703,41 @@ class TestDiagnosticHints(unittest.TestCase):
     def test_broadcast_hint(self):
         from ai_data_studio.core.generator import diagnostic_hint
         self.assertIn("SEKIL", diagnostic_hint("ValueError: could not broadcast input array"))
+
+    def test_forbidden_import_hint_lists_allowed_modules(self):
+        from ai_data_studio.core.generator import diagnostic_hint
+        hint = diagnostic_hint("Sandbox politikasi ihlali -> izin verilmeyen import: os (satır 2)")
+        self.assertIn("YASAKLI IMPORT", hint)
+        self.assertIn("numpy", hint)
+        self.assertNotIn("{allowed_imports}", hint)
+
+    def test_syntax_error_hint(self):
+        from ai_data_studio.core.generator import diagnostic_hint
+        hint = diagnostic_hint("Üretilen kod parse edilemedi (satır 3): invalid syntax")
+        self.assertIn("SÖZDİZİMİ", hint)
+
+    def test_wrong_numpy_keyword_hint_explains_lognormal(self):
+        """Canli Job #38: rng.lognormal(mean=50000, scale=10000) uc denemede tekrarlandi."""
+        from ai_data_studio.core.generator import diagnostic_hint
+        hint = diagnostic_hint(
+            "TypeError: lognormal() got an unexpected keyword argument 'scale'")
+        self.assertIn("PARAMETRE", hint)
+        self.assertIn("rng.lognormal(mean, sigma, size)", hint)
+        self.assertIn("log1p", hint)
+
+    def test_missing_import_hint_names_the_import_line(self):
+        """Canli Job #37: Faker import edilmeden kullanildi."""
+        from ai_data_studio.core.generator import diagnostic_hint
+        hint = diagnostic_hint("NameError: name 'Faker' is not defined")
+        self.assertIn("EKSİK IMPORT", hint)
+        self.assertIn("from faker import Faker", hint)
+        self.assertIn("import numpy as np",
+                      diagnostic_hint("NameError: name 'np' is not defined"))
+
+    def test_unknown_undefined_name_keeps_generic_hint(self):
+        from ai_data_studio.core.generator import diagnostic_hint
+        hint = diagnostic_hint("NameError: name 'undefined_name' is not defined")
+        self.assertIn("TANIMSIZ AD", hint)
 
     def test_unknown_error_gives_no_hint(self):
         from ai_data_studio.core.generator import diagnostic_hint
