@@ -39,7 +39,7 @@ from .ui_utils import (
 )
 from ..i18n import t
 from .views.history_view import HistoryView
-from .views.pipeline_view import PipelineView
+from .views.pipeline_view import PipelineView, TAB_CONSOLE
 from .views.settings_view import SettingsView
 
 log = logging.getLogger(__name__)
@@ -245,7 +245,7 @@ class AppWindow(ctk.CTk):
         self.pipeline_view.progress_panel.reset()
         self.pipeline_view.progress_panel.set_running(True)
         self.pipeline_view.chart_panel.clear()
-        self.pipeline_view.tabs.set("Konsol")
+        self.pipeline_view.tabs.set(TAB_CONSOLE)
         self._set_header(t("app.status.running"), COLOR_INFO)
 
         task_fn = partial(self._pipeline_task, cfg)

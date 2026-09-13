@@ -260,6 +260,14 @@ class TestAppWindow(unittest.TestCase):
         console.clear()
         self.assertEqual(console.get_text().strip(), "")
 
+    def test_start_pipeline_switches_to_console_tab(self):
+        from unittest import mock
+        from ai_data_studio.gui.views.pipeline_view import TAB_CONSOLE, TAB_CHARTS
+        self.app.pipeline_view.tabs.set(TAB_CHARTS)
+        with mock.patch("threading.Thread.start"):
+            self.app.start_pipeline()
+        self.assertEqual(self.app.pipeline_view.tabs.get(), TAB_CONSOLE)
+
     def test_progress_panel_updates(self):
         panel = self.app.pipeline_view.progress_panel
         panel.update_progress(4, 50.0, "Kod uretiliyor")
