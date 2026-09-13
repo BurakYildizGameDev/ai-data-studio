@@ -63,8 +63,8 @@ DEFAULT_RANDOM_SEED = 42
 
 # Sandbox içinde izin verilen kütüphane allowlist'i
 ALLOWED_IMPORTS = {
-    "pandas", "numpy", "faker", "random", "math", "datetime", "json",
-    "string", "itertools", "collections", "decimal", "statistics", "uuid",
+    "pandas", "numpy", "scipy", "faker", "random", "math", "datetime", "json",
+    "string", "itertools", "collections", "decimal", "statistics", "uuid", "re",
 }
 
 # --------------------------------------------------------------------------- #
