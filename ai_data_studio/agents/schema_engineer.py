@@ -23,7 +23,7 @@ Your role in the Multi-Agent Council is to take the consensus reached by Domain 
 
 CRITICAL SPECIFICATION REQUIREMENTS:
 1. Every column must have:
-   - "name": valid snake_case identifier (letters, digits, underscore; no leading digit).
+   - "name": valid pure ASCII snake_case English identifier (letters, digits, underscore; no leading digit; pure ASCII English regardless of user prompt language).
    - "type": "int" | "float" | "bool" | "str" | "category" | "datetime".
    - "distribution": "normal" | "uniform" | "lognormal" | "exponential" | "poisson" | "gamma" | "tweedie" | "zip" | "gpd" | "pareto" | "categorical".
    - "mean" (REQUIRED when distribution is "normal").

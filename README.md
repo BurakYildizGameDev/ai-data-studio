@@ -702,17 +702,30 @@ ai_data_studio/
 
 ## Language
 
-The desktop studio ships in **English (default) and Turkish**. Pick one in
-*Settings → Defaults → Language*; the choice is stored in `settings.json` and applies
-the next time the app starts (widget text is not swapped live — the restart keeps the
-implementation honest rather than half-updating a window).
+The desktop studio and CLI ship with full support for **7 languages**:
+- 🇬🇧 **English (`en`)** — Default
+- 🇹🇷 **Türkçe (`tr`)**
+- 🇩🇪 **Deutsch (`de`)**
+- 🇫🇷 **Français (`fr`)**
+- 🇷🇺 **Русский (`ru`)**
+- 🇨🇳 **简体中文 (`zh`)**
+- 🇯🇵 **日本語 (`ja`)**
+
+Pick your preferred language in *Settings → Defaults → Language*; the choice is saved to `settings.json` and applies on launch.
 
 ```python
 from ai_data_studio import i18n
 
-i18n.set_language("tr")
-i18n.t("pipeline.engine.parametric")   # "Parametrik (hızlı, LLM'siz)"
+i18n.set_language("de")
+i18n.t("settings.keys.title")   # "API-Schlüssel"
 ```
+
+### Multilingual Prompts & ASCII Normalization
+
+You can write your dataset domains or problem descriptions in **any language** (Turkish, Chinese, German, Japanese, Russian, etc.). The prompt compiler enforces a strict constraint:
+> **All generated column names and contract keys MUST be pure ASCII snake_case English identifiers** (e.g. `transaction_amount`, `user_age`, `is_fraud`), regardless of the user's input language.
+
+This prevents Unicode encoding bugs in pandas / database engines while letting users express complex business domains in their native tongue.
 
 Two things are deliberately **not** translated:
 
@@ -722,20 +735,6 @@ Two things are deliberately **not** translated:
   call `t()`.
 - **Log records.** A fixed log language keeps the same failure searchable; otherwise
   one error produces two different lines depending on who ran it.
-
-### Adding a language
-
-Catalogs are plain Python dicts (no `gettext`, no `.mo` files to ship inside the
-PyInstaller bundle). Copy `ai_data_studio/locales/en.py` to `<code>.py`, translate every
-value, and add the code to `i18n.LANGUAGE_NAMES`. `tests/test_i18n.py` walks the source
-with AST and fails on a key that is used but undefined, a key missing from a
-translation, or `{placeholders}` that do not match between languages — a partial
-translation cannot land quietly.
-
-**Current coverage:** the desktop GUI is fully translated (294 keys). The CLI and the
-core/services layer still emit Turkish; they are translated next, and the progress
-messages need a severity field first so the console stops inferring warnings from the
-text of a message.
 
 ## Further Reading
 

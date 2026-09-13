@@ -100,6 +100,7 @@ The JSON object MUST have exactly this shape:
 }
 
 Hard constraints:
+- ALL column names MUST be pure ASCII snake_case English identifiers (e.g. "transaction_amount", "customer_age", "is_fraud"), regardless of what language the domain or task prompt is written in (letters, digits, underscore only; no accented or non-ASCII characters).
 - 12 to 20 columns. Include at least one target/outcome column when the domain implies one.
 - Provide a rich, enterprise-grade schema covering: identifiers, user demographics, financial balances/limits, transaction specifics, device/network telemetries, and outcome/risk labels.
 - Every name in business_rules, correlations, and monotonicity_rules MUST be a column defined in "columns".

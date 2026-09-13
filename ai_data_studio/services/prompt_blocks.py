@@ -124,7 +124,7 @@ CONTRACT_RULES_BLOCK = """- `correlations.columns` must list EXACTLY TWO column 
   (a bool target vs. a numeric driver is a valid point-biserial correlation).
 - "category" columns MUST provide a non-empty "categories" list.
 - "normal" distribution requires "mean".
-- column names: letters, digits and underscore only, never starting with a digit."""
+- column names: ALL column names MUST be pure ASCII snake_case English identifiers (e.g. "transaction_amount", "customer_age", "is_fraud"), regardless of what language the prompt or domain description is written in (letters, digits, underscore only; never start with a digit; no accented or non-ASCII characters)."""
 
 
 # Bir kolon nesnesinin alanlari. Uc istem de ayni listeyi gostermeli - kisaltilan her

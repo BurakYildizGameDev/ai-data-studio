@@ -46,7 +46,43 @@ DEFAULT_LANGUAGE = "en"
 LANGUAGE_NAMES: Dict[str, str] = {
     "en": "English",
     "tr": "Türkçe",
+    "de": "Deutsch",
+    "fr": "Français",
+    "ru": "Русский",
+    "zh": "简体中文",
+    "ja": "日本語",
 }
+
+_LOCALE_PREFIX_MAP = {
+    "tr": "tr", "turkish": "tr",
+    "de": "de", "german": "de",
+    "fr": "fr", "french": "fr",
+    "ru": "ru", "russian": "ru",
+    "zh": "zh", "chinese": "zh",
+    "ja": "ja", "japanese": "ja",
+    "en": "en", "english": "en",
+}
+
+
+def detect_system_language() -> str:
+    """Detects system language code if supported, falling back to DEFAULT_LANGUAGE."""
+    import locale
+    import os
+    try:
+        env_lang = os.getenv("LC_ALL") or os.getenv("LC_MESSAGES") or os.getenv("LANG")
+        if env_lang:
+            code = env_lang.split(".")[0].split("_")[0].lower()
+            if code in _LOCALE_PREFIX_MAP:
+                return _LOCALE_PREFIX_MAP[code]
+        loc = locale.getlocale()[0]
+        if loc:
+            code = loc.split("_")[0].lower()
+            if code in _LOCALE_PREFIX_MAP:
+                return _LOCALE_PREFIX_MAP[code]
+    except Exception:
+        pass
+    return DEFAULT_LANGUAGE
+
 
 _catalogs: Dict[str, Dict[str, str]] = {}
 _language: str = DEFAULT_LANGUAGE

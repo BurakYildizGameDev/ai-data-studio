@@ -14,8 +14,22 @@ from pathlib import Path
 from typing import Dict, Set
 
 from ai_data_studio import i18n
+from ai_data_studio.locales import de as de_catalog
 from ai_data_studio.locales import en as en_catalog
+from ai_data_studio.locales import fr as fr_catalog
+from ai_data_studio.locales import ja as ja_catalog
+from ai_data_studio.locales import ru as ru_catalog
 from ai_data_studio.locales import tr as tr_catalog
+from ai_data_studio.locales import zh as zh_catalog
+
+OTHER_CATALOGS = {
+    "tr": tr_catalog,
+    "de": de_catalog,
+    "fr": fr_catalog,
+    "ru": ru_catalog,
+    "zh": zh_catalog,
+    "ja": ja_catalog,
+}
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 
@@ -61,27 +75,30 @@ class TestCatalogCoverage(unittest.TestCase):
         self.assertEqual(missing, {},
                          "İngilizce katalogda olmayan anahtarlar kullanılıyor")
 
-    def test_turkish_catalog_covers_english(self):
-        missing = sorted(set(en_catalog.MESSAGES) - set(tr_catalog.MESSAGES))
-        self.assertEqual(missing, [], "Türkçe karşılığı olmayan anahtarlar")
+    def test_all_catalogs_cover_english(self):
+        for lang_code, cat in OTHER_CATALOGS.items():
+            missing = sorted(set(en_catalog.MESSAGES) - set(cat.MESSAGES))
+            self.assertEqual(missing, [], f"{lang_code} katalogunda karşılığı olmayan anahtarlar")
 
-    def test_turkish_catalog_has_no_extra_keys(self):
+    def test_all_catalogs_have_no_extra_keys(self):
         """Fazla anahtar da bir kusur: silinmiş bir metnin kalıntısı demek."""
-        extra = sorted(set(tr_catalog.MESSAGES) - set(en_catalog.MESSAGES))
-        self.assertEqual(extra, [], "İngilizce katalogda karşılığı olmayan anahtarlar")
+        for lang_code, cat in OTHER_CATALOGS.items():
+            extra = sorted(set(cat.MESSAGES) - set(en_catalog.MESSAGES))
+            self.assertEqual(extra, [], f"{lang_code} katalogunda İngilizce karşılığı olmayan anahtarlar")
 
     def test_placeholders_match_between_languages(self):
-        """`{ad}` yer tutucuları iki dilde aynı olmalı - yoksa format() patlar."""
+        """`{ad}` yer tutucuları bütün dillerde aynı olmalı - yoksa format() patlar."""
         import re
 
         pattern = re.compile(r"\{(\w+)\}")
-        mismatched = {}
-        for key, english in en_catalog.MESSAGES.items():
-            turkish = tr_catalog.MESSAGES.get(key, "")
-            if set(pattern.findall(english)) != set(pattern.findall(turkish)):
-                mismatched[key] = (sorted(pattern.findall(english)),
-                                   sorted(pattern.findall(turkish)))
-        self.assertEqual(mismatched, {}, "Yer tutucular eşleşmiyor")
+        for lang_code, cat in OTHER_CATALOGS.items():
+            mismatched = {}
+            for key, english in en_catalog.MESSAGES.items():
+                target_text = cat.MESSAGES.get(key, "")
+                if set(pattern.findall(english)) != set(pattern.findall(target_text)):
+                    mismatched[key] = (sorted(pattern.findall(english)),
+                                       sorted(pattern.findall(target_text)))
+            self.assertEqual(mismatched, {}, f"{lang_code} yer tutucuları eşleşmiyor")
 
     def test_keys_are_ascii_and_dotted(self):
         for key in en_catalog.MESSAGES:
@@ -120,7 +137,7 @@ class TestTranslationLookup(unittest.TestCase):
         self.assertEqual(i18n.t("settings.defaults.theme"), "Tema")
 
     def test_unknown_language_falls_back_to_english(self):
-        self.assertEqual(i18n.set_language("de"), "en")
+        self.assertEqual(i18n.set_language("xx"), "en")
         self.assertEqual(i18n.t("settings.defaults.theme"), "Theme")
 
     def test_unknown_key_returns_the_key_itself(self):
@@ -139,7 +156,10 @@ class TestTranslationLookup(unittest.TestCase):
         self.assertIn("{env_var}", text)
 
     def test_available_languages(self):
-        self.assertEqual(sorted(i18n.available_languages()), ["en", "tr"])
+        self.assertEqual(
+            sorted(i18n.available_languages()),
+            ["de", "en", "fr", "ja", "ru", "tr", "zh"],
+        )
 
     def test_language_comes_from_settings(self):
         from unittest import mock
