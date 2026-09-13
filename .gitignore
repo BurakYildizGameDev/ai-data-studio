@@ -15,6 +15,13 @@ dist_pkg/
 venv/
 env/
 
+# Environment & secrets
+.env
+.env.*
+*.env
+*.key
+*.pem
+
 # Runtime data, logs & database
 *.db
 *.sqlite3
@@ -35,10 +42,14 @@ Thumbs.db
 scratch/
 yapilanlar*.md
 yapılanlar*.md
-YAPILANLAR.md
-YAPILACAKLAR.md
-SIRADAKI_ISLER.md
-
-# Turkce gelistirici notlari ve ic analiz raporlari (yayinlanmaz)
+YAPILANLAR*.md
+yapilacaklar*.md
+yapılacaklar*.md
+YAPILACAKLAR*.md
+siradaki*.md
+sıradaki*.md
+SIRADAKI*.md
 *_yapilanlar.md
 *yapilanlar*.md
+*.local.md
+*.scratch.md
