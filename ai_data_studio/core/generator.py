@@ -104,11 +104,56 @@ try:
 except Exception:
     pass
 
+# --- Standart modülleri builtins'e ekle: LLM import unutsa bile NameError vermesin ---
+import builtins
+try:
+    from faker import Faker
+    import faker
+    builtins.Faker = Faker
+    builtins.faker = faker
+except Exception:
+    pass
+try:
+    if np is not None:
+        builtins.np = np
+        builtins.numpy = np
+except Exception:
+    pass
+try:
+    import pandas as pd
+    builtins.pd = pd
+    builtins.pandas = pd
+except Exception:
+    pass
+try:
+    import scipy
+    import scipy.stats as stats
+    builtins.scipy = scipy
+    builtins.stats = stats
+except Exception:
+    pass
+
 try:
     import user_code
 except Exception:
     traceback.print_exc()
     sys.exit(3)
+
+for _k, _v in (
+    ("Faker", getattr(builtins, "Faker", None)),
+    ("faker", getattr(builtins, "faker", None)),
+    ("np", getattr(builtins, "np", None)),
+    ("numpy", getattr(builtins, "numpy", None)),
+    ("pd", getattr(builtins, "pd", None)),
+    ("pandas", getattr(builtins, "pandas", None)),
+    ("scipy", getattr(builtins, "scipy", None)),
+    ("stats", getattr(builtins, "stats", None)),
+):
+    if _v is not None and not hasattr(user_code, _k):
+        try:
+            setattr(user_code, _k, _v)
+        except Exception:
+            pass
 
 ENTRYPOINTS = {entrypoints!r}
 fn = None
@@ -730,6 +775,36 @@ def sanity_check(df: pd.DataFrame, schema: SchemaContract,
 # --------------------------------------------------------------------------- #
 # 5. Self-healing döngüsü
 # --------------------------------------------------------------------------- #
+def _auto_align_tables(tables: Dict[str, pd.DataFrame], contract) -> None:
+    """Üretilen tabloları şema sözleşmesine uygun şekilde hizalar (sınır kenetleme ve tip düzeltme)."""
+    for schema in contract.tables:
+        df = tables.get(schema.table_name)
+        if df is None or not isinstance(df, pd.DataFrame) or df.empty:
+            continue
+        for col in schema.columns:
+            if col.name not in df.columns:
+                continue
+            series = df[col.name]
+            # 1. Sayısal kolonlarda min/max sınırlarının dışındaki değerleri sınıra kenetle (clip)
+            if col.is_numeric and pd.api.types.is_numeric_dtype(series):
+                try:
+                    if col.min is not None and col.max is not None:
+                        df[col.name] = series.clip(lower=col.min, upper=col.max)
+                    elif col.min is not None:
+                        df[col.name] = series.clip(lower=col.min)
+                    elif col.max is not None:
+                        df[col.name] = series.clip(upper=col.max)
+                    series = df[col.name]
+                except Exception:
+                    pass
+            # 2. Tam sayı kolonlar float olarak üretildiyse int'e yuvarla ve dönüştür
+            if col.type == "int" and pd.api.types.is_float_dtype(series):
+                try:
+                    df[col.name] = series.round().astype("Int64" if col.nullable else "int64")
+                except Exception:
+                    pass
+
+
 def _sanity_check_tables(tables, contract) -> List[str]:
     """Her tabloyu kendi semasina karsi denetler, sorunlari tablo adiyla etiketler.
 
@@ -836,6 +911,7 @@ def _generation_loop(
             if not relational:
                 # Tek tablolu kod isimsiz doner; sozlesmedeki adla eslestir.
                 tables = {contract.root_table: result.dataframe}
+            _auto_align_tables(tables, contract)
             issues = _sanity_check_tables(tables, contract)
             if not issues:
                 if relational:

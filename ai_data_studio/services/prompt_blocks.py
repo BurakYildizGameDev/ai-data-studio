@@ -84,7 +84,7 @@ base timestamp, e.g.
 Return real datetime64 values, never strings."""
 
 
-FAKER_BLOCK = """Faker is available as `Faker("{locale}")` with `Faker.seed(seed)`, but PREFER numpy.
+FAKER_BLOCK = """Faker is available with `from faker import Faker`, `fake = Faker("{locale}")` and `Faker.seed(seed)`, but PREFER numpy.
 Faker is slow at 100k rows - if you use it, generate a small pool (<=500 values) and
 sample it with numpy.
 ONLY use simple no-argument providers: name(), first_name(), last_name(), email(),
