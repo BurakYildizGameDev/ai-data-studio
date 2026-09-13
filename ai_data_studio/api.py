@@ -90,6 +90,8 @@ def build_config(
     expand_table: str = "",
     dirty_rate: float = 0.0,
     dirty_table: str = "",
+    agentic: bool = False,
+    max_agent_rounds: int = 2,
 ) -> PipelineConfig:
     """Okunabilir anahtar kelimelerden bir :class:`PipelineConfig` kurar.
 
@@ -185,6 +187,8 @@ def build_config(
         expand_table=expand_table,
         dirty_rate=dirty_rate,
         dirty_table=dirty_table,
+        agentic=agentic,
+        max_agent_rounds=max_agent_rounds,
     )
 
 

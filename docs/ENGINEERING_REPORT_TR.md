@@ -6,7 +6,7 @@
 **Durum:** Üretime Hazır (Production Ready) - %100 Doğrulanmış  
 **Birim Test Başarısı:** 461 / 461 Test Başarılı (%100 Başarı Oranı - 116.21s)  
 **Yazar / Baş Mühendis:** Burak Yıldız (`BurakYildizGameDev`) & Antigravity İleri Eş-Programlama Sistemi  
-**Depo Konumu:** `C:\Users\Burak\Desktop\Application\AI-Driven Synthetic Data Studio & Validator`  
+**Depo:** [BurakYildizGameDev/ai-data-studio](https://github.com/BurakYildizGameDev/ai-data-studio)  
 **Hedef Kitle:** Veri Bilimciler, Makine Öğrenmesi Mühendisleri, FinTek Risk Ekipleri, Siber Güvenlik Analistleri ve Açık Kaynak Topluluğu  
 
 ---

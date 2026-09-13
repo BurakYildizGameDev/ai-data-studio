@@ -229,6 +229,7 @@ class AppWindow(ctk.CTk):
             "time_series": inputs.get("time_series", False),
             "expand_features": inputs.get("expand_features", False),
             "dirty_rate": inputs.get("dirty_rate", 0.0),
+            "agentic": inputs.get("agentic", False),
         })
 
         cfg = PipelineConfig(**inputs)

@@ -143,6 +143,9 @@ class PipelineConfig:
     # sema sinirlari / kategori denetimi tam da enjekte edilen satirlari eler.
     dirty_rate: float = 0.0
     dirty_table: str = ""          # bos -> kok tablo
+    # --- Coklu Ajan Konseyi (Multi-Agent Council) ---------------------- #
+    agentic: bool = False
+    max_agent_rounds: int = 2
 
     def resolved_model(self) -> str:
         return self.model or config.DEFAULT_MODELS.get(self.provider, "")
@@ -310,7 +313,29 @@ def run_pipeline(cfg: PipelineConfig,
         check_cancel()
         state.save_checkpoint(job_id, current_step=2, step_name=STEP_NAMES[2])
         plan: Optional[ProjectPlan] = None
-        if cfg.project_prompt:
+        if cfg.agentic:
+            yield progress(2, "🤖 Çoklu Ajan Konseyi toplanıyor (Domain, Statistician, Critic, Engineer)...")
+            from ..agents.council_coordinator import CouncilCoordinator
+
+            coordinator = CouncilCoordinator(
+                llm_client=llm_client,
+                max_rounds=cfg.max_agent_rounds,
+            )
+            yield progress(2, f"  ├─ [Ajan Konseyi] Müzakere ve denetim başlatıldı (Azami {cfg.max_agent_rounds} tur)...")
+            compiled_result = coordinator.deliberate(
+                domain_prompt=cfg.domain_prompt,
+                row_count=cfg.row_count,
+                seed=cfg.random_seed,
+                locale=cfg.faker_locale,
+                relational=cfg.relational,
+                seed_summary=seed_source if seed_df is not None else "",
+            )
+            if isinstance(compiled_result, DatasetContract):
+                contract = compiled_result
+            else:
+                contract = DatasetContract.from_schema(compiled_result)
+            yield progress(2, f"  └─ [Ajan Konseyi] Konsensüs sağlandı: {len(contract.table_names)} tablo derlendi.", 1.0)
+        elif cfg.project_prompt:
             # Planlayici yolu: kac tablo gerektigine plan karar verir, kullanici degil.
             if not 1 <= cfg.max_tables <= MAX_TABLES:
                 raise ValueError(t("pipeline.error.max_tables_planner",
@@ -1515,6 +1540,10 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--dirty-rate", type=float, default=0.0,
                    help=_help("cli.help.dirty_rate"))
     p.add_argument("--dirty-table", default="", help=_help("cli.help.dirty_table"))
+    p.add_argument("--agentic", action="store_true",
+                   help="Çoklu Ajan Konseyi (Domain, Statistician, Critic, Engineer) ile ortak şema tasarımı.")
+    p.add_argument("--max-agent-rounds", type=int, default=2,
+                   help="Ajanlar arası karşıt eleştiri ve müzakere tur sayısı (varsayılan: 2).")
     p.add_argument("--hardware", action="store_true",
                    help=_help("cli.help.hardware"))
     p.add_argument("--verbose", "-v", action="store_true")
@@ -1646,6 +1675,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         expand_table=args.expand_table,
         dirty_rate=args.dirty_rate,
         dirty_table=args.dirty_table,
+        agentic=args.agentic,
+        max_agent_rounds=args.max_agent_rounds,
     )
 
     state = get_state_manager()

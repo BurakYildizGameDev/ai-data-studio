@@ -386,11 +386,16 @@ class PipelineView(ctk.CTkFrame):
         self.dirty_var = ctk.BooleanVar(value=float(settings.get("dirty_rate", 0.0)) > 0)
         ctk.CTkCheckBox(engines_frame, text=t("pipeline.engine.dirty"),
                         variable=self.dirty_var, command=self._toggle_dirty).grid(
-            row=4, column=0, sticky="w", padx=10, pady=(0, 10))
+            row=4, column=0, sticky="w", padx=10, pady=(0, 4))
         self.dirty_entry = ctk.CTkEntry(engines_frame, width=70)
         self.dirty_entry.insert(0, "%g" % (float(settings.get("dirty_rate", 0.0) or 0.05) * 100))
-        self.dirty_entry.grid(row=4, column=1, sticky="w", padx=(0, 10), pady=(0, 10))
+        self.dirty_entry.grid(row=4, column=1, sticky="w", padx=(0, 10), pady=(0, 4))
         self._toggle_dirty()
+
+        self.agentic_var = ctk.BooleanVar(value=settings.get("agentic", False))
+        ctk.CTkCheckBox(engines_frame, text="🤖 Çoklu Ajan Konseyi (Multi-Agent)",
+                        variable=self.agentic_var).grid(
+            row=5, column=0, columnspan=2, sticky="w", padx=10, pady=(4, 10))
 
         # --- Ilişkisel (çok tablolu) mod ---------------------------------- #
         # CLI'daki --relational / --max-tables / --no-repair-orphans karsiligi.
@@ -597,6 +602,7 @@ class PipelineView(ctk.CTkFrame):
             "time_series": bool(self.time_series_var.get()),
             "expand_features": bool(self.expand_features_var.get()),
             "dirty_rate": dirty_rate,
+            "agentic": bool(self.agentic_var.get()),
             "domain_prompt": prompt,
             # Proje kipinde ayni metin plana da gecer; orchestrator project_prompt
             # doluysa sema uretimi yerine planlayiciyi calistirir.
