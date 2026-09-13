@@ -10,6 +10,8 @@ from typing import Optional
 
 import customtkinter as ctk
 
+from ...i18n import t
+
 LEVEL_COLORS = {
     "info": "#d4d4d4",
     "step": "#4fc3f7",
@@ -35,10 +37,10 @@ class ConsoleLog(ctk.CTkFrame):
         header = ctk.CTkFrame(self, fg_color="transparent")
         header.grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 4))
         header.grid_columnconfigure(0, weight=1)
-        ctk.CTkLabel(header, text="Konsol", font=ctk.CTkFont(size=13, weight="bold")).grid(
+        ctk.CTkLabel(header, text=t("console.title"), font=ctk.CTkFont(size=13, weight="bold")).grid(
             row=0, column=0, sticky="w"
         )
-        ctk.CTkButton(header, text="Temizle", width=70, height=24,
+        ctk.CTkButton(header, text=t("console.clear"), width=70, height=24,
                       command=self.clear).grid(row=0, column=1, sticky="e")
 
         self.textbox = ctk.CTkTextbox(self, wrap="word", font=ctk.CTkFont(family="Consolas", size=12))

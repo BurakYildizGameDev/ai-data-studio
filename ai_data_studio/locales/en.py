@@ -1053,4 +1053,8 @@ MESSAGES = {
     "service.error.gemini_rejected": "Request rejected: {error}",
     "service.error.unknown_provider": "Unknown provider: {provider}",
     "service.error.ollama_delete": "Could not delete model: {error}",
+    "console.title": "Console",
+    "console.clear": "Clear",
+    "settings.cost.summary": "Total {calls} calls | {input_tokens} input + {output_tokens} output tokens | est. ${cost}",
+    "pipeline.engine.multi_agent": "🤖 Multi-Agent Council",
 }

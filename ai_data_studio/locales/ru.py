@@ -721,4 +721,8 @@ MESSAGES = {
     "service.error.gemini_rejected": "Запрос отклонен: {error}",
     "service.error.unknown_provider": "Неизвестный поставщик: {provider}",
     "service.error.ollama_delete": "Не удалось удалить модель: {error}.",
+    "console.title": "Консоль",
+    "console.clear": "Очистить",
+    "settings.cost.summary": "Всего {calls} вызовов | {input_tokens} входных + {output_tokens} выходных токенов | прим. ${cost}",
+    "pipeline.engine.multi_agent": "🤖 Совет мультиагентов (Multi-Agent)",
 }

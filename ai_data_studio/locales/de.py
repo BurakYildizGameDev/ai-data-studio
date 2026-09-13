@@ -721,4 +721,8 @@ MESSAGES = {
     "service.error.gemini_rejected": "Anfrage abgelehnt: {error}",
     "service.error.unknown_provider": "Unbekannter Anbieter: {provider}",
     "service.error.ollama_delete": "Modell konnte nicht gelöscht werden: {error}",
+    "console.title": "Konsole",
+    "console.clear": "Löschen",
+    "settings.cost.summary": "Gesamt {calls} Aufrufe | {input_tokens} Eingabe- + {output_tokens} Ausgabe-Tokens | geschätzt ${cost}",
+    "pipeline.engine.multi_agent": "🤖 Multi-Agenten-Rat (Multi-Agent)",
 }

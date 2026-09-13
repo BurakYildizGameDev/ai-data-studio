@@ -1053,4 +1053,8 @@ MESSAGES = {
     "service.error.gemini_rejected": "İstek reddedildi: {error}",
     "service.error.unknown_provider": "Bilinmeyen sağlayıcı: {provider}",
     "service.error.ollama_delete": "Model silinemedi: {error}",
+    "console.title": "Konsol",
+    "console.clear": "Temizle",
+    "settings.cost.summary": "Toplam {calls} çağrı | {input_tokens} girdi + {output_tokens} çıktı token | tahmini ${cost}",
+    "pipeline.engine.multi_agent": "🤖 Çoklu Ajan Konseyi (Multi-Agent)",
 }

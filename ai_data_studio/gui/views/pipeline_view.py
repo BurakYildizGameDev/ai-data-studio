@@ -393,7 +393,7 @@ class PipelineView(ctk.CTkFrame):
         self._toggle_dirty()
 
         self.agentic_var = ctk.BooleanVar(value=settings.get("agentic", False))
-        ctk.CTkCheckBox(engines_frame, text="🤖 Çoklu Ajan Konseyi (Multi-Agent)",
+        ctk.CTkCheckBox(engines_frame, text=t("pipeline.engine.multi_agent"),
                         variable=self.agentic_var).grid(
             row=5, column=0, columnspan=2, sticky="w", padx=10, pady=(4, 10))
 

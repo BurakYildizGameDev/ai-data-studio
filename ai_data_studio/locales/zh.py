@@ -721,4 +721,8 @@ MESSAGES = {
     "service.error.gemini_rejected": "Request rejected: {error}",
     "service.error.unknown_provider": "Unknown provider: {provider}",
     "service.error.ollama_delete": "Could not delete model: {error}",
+    "console.title": "控制台",
+    "console.clear": "清除",
+    "settings.cost.summary": "共 {calls} 次调用 | {input_tokens} 输入 + {output_tokens} 输出令牌 | 预估 ${cost}",
+    "pipeline.engine.multi_agent": "🤖 多智能体委员会 (Multi-Agent)",
 }

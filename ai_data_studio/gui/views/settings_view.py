@@ -408,9 +408,11 @@ class SettingsView(ctk.CTkScrollableFrame):
     def update_cost(self, summary: Dict[str, Any]) -> None:
         """Toplam maliyet özetini günceller (veriyi app_window state'ten alır)."""
         self.cost_label.configure(
-            text="Toplam %s çağrı | %s girdi + %s çıktı token | tahmini $%.4f"
-                 % (format(summary.get("calls", 0), ","),
-                    format(summary.get("input_tokens", 0), ","),
-                    format(summary.get("output_tokens", 0), ","),
-                    summary.get("cost_usd", 0.0))
+            text=t(
+                "settings.cost.summary",
+                calls=format(summary.get("calls", 0), ","),
+                input_tokens=format(summary.get("input_tokens", 0), ","),
+                output_tokens=format(summary.get("output_tokens", 0), ","),
+                cost="%.4f" % summary.get("cost_usd", 0.0),
+            )
         )

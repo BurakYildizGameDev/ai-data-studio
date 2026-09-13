@@ -721,4 +721,8 @@ MESSAGES = {
     "service.error.gemini_rejected": "Demande rejetée : {error}",
     "service.error.unknown_provider": "Fournisseur inconnu : {provider}",
     "service.error.ollama_delete": "Impossible de supprimer le modèle : {error}",
+    "console.title": "Console",
+    "console.clear": "Effacer",
+    "settings.cost.summary": "Total {calls} appels | {input_tokens} entrée + {output_tokens} sortie jetons | estimé ${cost}",
+    "pipeline.engine.multi_agent": "🤖 Conseil multi-agents (Multi-Agent)",
 }

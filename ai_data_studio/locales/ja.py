@@ -721,4 +721,8 @@ MESSAGES = {
     "service.error.gemini_rejected": "リクエストが拒否されました: {error}",
     "service.error.unknown_provider": "不明なプロバイダー: {provider}",
     "service.error.ollama_delete": "モデルを削除できませんでした: {error}",
+    "console.title": "コンソール",
+    "console.clear": "クリア",
+    "settings.cost.summary": "合計 {calls} 回の呼び出し | {input_tokens} 入力 + {output_tokens} 出力トークン | 推定 ${cost}",
+    "pipeline.engine.multi_agent": "🤖 マルチエージェント評議会 (Multi-Agent)",
 }
