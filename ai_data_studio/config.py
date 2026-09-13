@@ -65,6 +65,7 @@ DEFAULT_RANDOM_SEED = 42
 ALLOWED_IMPORTS = {
     "pandas", "numpy", "scipy", "faker", "random", "math", "datetime", "json",
     "string", "itertools", "collections", "decimal", "statistics", "uuid", "re",
+    "time", "calendar", "typing", "copy", "bisect", "hashlib",
 }
 
 # --------------------------------------------------------------------------- #
