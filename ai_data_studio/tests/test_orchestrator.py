@@ -37,14 +37,14 @@ class TestSelfHealingLoop(unittest.TestCase):
         self.assertEqual(len(df), 3000)
         # Hata gercekten LLM'e geri beslenmis olmali
         self.assertEqual(len(client.feedback_received), 1)
-        self.assertIn("Kod calistirilirken hata", client.feedback_received[0])
+        self.assertIn("The code raised an error while running", client.feedback_received[0])
 
     def test_heals_schema_mismatch(self):
         client = fake_llm.FakeLLMClient([fake_llm.SCHEMA_MISMATCH_CODE, fake_llm.GOOD_CODE])
         df, code, meta = generate_and_execute(self.schema, client, timeout=90)
         self.assertEqual(meta["attempts"], 2)
-        self.assertIn("şema ile uyusmuyor", client.feedback_received[0])
-        self.assertIn("Eksik kolonlar", client.feedback_received[0])
+        self.assertIn("does not match the schema", client.feedback_received[0])
+        self.assertIn("Missing columns", client.feedback_received[0])
 
     def test_heals_on_third_attempt(self):
         client = fake_llm.FakeLLMClient([
@@ -75,15 +75,15 @@ class TestSelfHealingLoop(unittest.TestCase):
         self.assertEqual(code, fake_llm.GOOD_CODE.strip())
         self.assertEqual(len(client.feedback_received), 1)
         feedback = client.feedback_received[0]
-        self.assertIn("izin verilmeyen import: os", feedback)
-        self.assertIn("hiç çalıştırılmadı", feedback)
-        self.assertIn("YASAKLI IMPORT", feedback)
+        self.assertIn("import not allowed: os", feedback)
+        self.assertIn("never ran", feedback)
+        self.assertIn("FORBIDDEN IMPORT", feedback)
 
     def test_repeated_forbidden_import_gives_up_with_reason(self):
         client = fake_llm.FakeLLMClient([fake_llm.FORBIDDEN_IMPORT_CODE])
         with self.assertRaises(GenerationFailedError) as ctx:
             generate_and_execute(self.schema, client, max_retries=3, timeout=90)
-        self.assertIn("izin verilmeyen import", str(ctx.exception))
+        self.assertIn("import not allowed", str(ctx.exception))
         self.assertEqual(len(client.feedback_received), 2)
 
 
@@ -121,9 +121,9 @@ class TestAutoAlignDoesNotMaskErrors(unittest.TestCase):
         tables = {self.contract.root_table: self._frame(basket_value=np.full(n, np.inf))}
         _auto_align_tables(tables, self.contract)
         issues = _sanity_check_tables(tables, self.contract)
-        self.assertTrue(any("basket_value" in i and "max sinirinin" in i for i in issues),
+        self.assertTrue(any("basket_value" in i and "above max" in i for i in issues),
                         issues)
-        self.assertTrue(any("LOG ölçeğinde" in i for i in issues), issues)
+        self.assertTrue(any("LOG-scale" in i for i in issues), issues)
         self.assertTrue(np.isinf(tables[self.contract.root_table]["basket_value"]).all())
 
     def test_out_of_bounds_noise_is_left_for_discriminator(self):
@@ -236,6 +236,35 @@ class TestOrchestratorEndToEnd(unittest.TestCase):
         stored = self.state.get_report(result.job_id)
         self.assertEqual(stored["rows_out"], len(result.dataframe))
         self.assertIn("correlations", stored)
+
+    def test_token_totals_reach_the_summary(self):
+        """get_cost_summary input/output_tokens dondurur; ozet eskiden hep 0 token basiyordu."""
+        from ai_data_studio.i18n import t
+
+        class _Metered(fake_llm.FakeLLMClient):
+            def _complete(self, system, user, max_tokens=16000, temperature=None):
+                self._log_usage(1000, 250, purpose="chat")
+                return super()._complete(system, user, max_tokens, temperature)
+
+        job_id = self.state.create_job(self.cfg.domain_prompt, provider="fake",
+                                       model="fake-model", random_seed=42)
+        client = _Metered(state_manager=self.state, job_id=job_id)
+        iterator = orchestrator.run_pipeline(self.cfg, threading.Event(), self.state,
+                                             job_id=job_id, llm_client=client)
+        events = []
+        while True:
+            try:
+                events.append(next(iterator))
+            except StopIteration as stop:
+                result = stop.value
+                break
+        calls = result.cost["calls"]
+        self.assertGreater(calls, 0)
+        self.assertEqual(result.cost["input_tokens"] + result.cost["output_tokens"], 1250 * calls)
+        expected = t("run.cost.summary", calls=calls, tokens=format(1250 * calls, ","),
+                     cost="%.4f" % result.cost["cost_usd"])
+        self.assertTrue(any(expected in e["message"] for e in events),
+                        [e["message"] for e in events if e["step"] == 7])
 
     def test_business_rules_enforced_in_output(self):
         _, result = self._run()
@@ -573,6 +602,41 @@ class TestSchemaSelfHealing(unittest.TestCase):
         self.assertIn(t("service.error.schema_retries", attempts=3,
                         error="").split(".")[0], str(ctx.exception))
 
+    def test_feedback_to_the_llm_is_english_whatever_the_ui_language(self):
+        """Türkçe arayüzde doğrulama hatası modele Türkçe gidiyordu."""
+        import json
+
+        from ai_data_studio import i18n
+
+        i18n.set_language("tr")
+        self.addCleanup(i18n.reset_for_tests)
+        bad = json.dumps({"domain": "t", "columns": [{"name": "tier", "type": "category"}]})
+        good = json.dumps({"domain": "t", "columns": [{"name": "a", "type": "int"}]})
+        client = self._client([bad, good])
+        client.generate_schema("test", row_count=100, seed=1)
+
+        with i18n.language_override("en"):
+            english = i18n.t("schema.error.categories_required", where="columns[0]",
+                             name="tier")
+        turkish = i18n.t("schema.error.categories_required", where="columns[0]", name="tier")
+        self.assertNotEqual(english, turkish)
+        self.assertIn(english, client.sent[1])
+        self.assertNotIn(turkish, client.sent[1])
+        # Kullanıcıya dönen metinler hâlâ arayüz dilinde.
+        self.assertEqual(i18n.get_language(), "tr")
+
+    def test_final_error_to_the_user_stays_in_the_ui_language(self):
+        from ai_data_studio import i18n
+        from ai_data_studio.core.schema_contract import SchemaValidationError
+
+        i18n.set_language("tr")
+        self.addCleanup(i18n.reset_for_tests)
+        client = self._client(["hâlâ JSON değil"])
+        with self.assertRaises(SchemaValidationError) as ctx:
+            client.generate_dataset_schema("test", row_count=100, seed=1)
+        self.assertIn(i18n.t("service.error.contract_retries", attempts=3,
+                             error="").split(":")[0], str(ctx.exception))
+
     def test_user_settings_still_override_after_retry(self):
         import json
         good = json.dumps({"domain": "t", "row_count_target": 999999,
@@ -693,35 +757,35 @@ class TestDiagnosticHints(unittest.TestCase):
 
     def test_timeout_hint(self):
         from ai_data_studio.core.generator import diagnostic_hint
-        hint = diagnostic_hint("Zaman aşımı: kod 90 saniyede bitmedi")
-        self.assertIn("PERFORMANS", hint)
+        hint = diagnostic_hint("Timeout: the code did not finish within 90 seconds")
+        self.assertIn("PERFORMANCE", hint)
 
     def test_memory_hint(self):
         from ai_data_studio.core.generator import diagnostic_hint
-        self.assertIn("BELLEK", diagnostic_hint("Bellek limiti asildi: 2400 MB > 2048 MB"))
+        self.assertIn("MEMORY", diagnostic_hint("Memory limit exceeded: 2400 MB > 2048 MB"))
 
     def test_broadcast_hint(self):
         from ai_data_studio.core.generator import diagnostic_hint
-        self.assertIn("SEKIL", diagnostic_hint("ValueError: could not broadcast input array"))
+        self.assertIn("SHAPE", diagnostic_hint("ValueError: could not broadcast input array"))
 
     def test_forbidden_import_hint_lists_allowed_modules(self):
         from ai_data_studio.core.generator import diagnostic_hint
-        hint = diagnostic_hint("Sandbox politikasi ihlali -> izin verilmeyen import: os (satır 2)")
-        self.assertIn("YASAKLI IMPORT", hint)
+        hint = diagnostic_hint("Sandbox policy violation -> import not allowed: os (line 2)")
+        self.assertIn("FORBIDDEN IMPORT", hint)
         self.assertIn("numpy", hint)
         self.assertNotIn("{allowed_imports}", hint)
 
     def test_syntax_error_hint(self):
         from ai_data_studio.core.generator import diagnostic_hint
-        hint = diagnostic_hint("Üretilen kod parse edilemedi (satır 3): invalid syntax")
-        self.assertIn("SÖZDİZİMİ", hint)
+        hint = diagnostic_hint("The generated code could not be parsed (line 3): invalid syntax")
+        self.assertIn("SYNTAX ERROR", hint)
 
     def test_wrong_numpy_keyword_hint_explains_lognormal(self):
         """Canli Job #38: rng.lognormal(mean=50000, scale=10000) uc denemede tekrarlandi."""
         from ai_data_studio.core.generator import diagnostic_hint
         hint = diagnostic_hint(
             "TypeError: lognormal() got an unexpected keyword argument 'scale'")
-        self.assertIn("PARAMETRE", hint)
+        self.assertIn("WRONG PARAMETER NAME", hint)
         self.assertIn("rng.lognormal(mean, sigma, size)", hint)
         self.assertIn("log1p", hint)
 
@@ -729,7 +793,7 @@ class TestDiagnosticHints(unittest.TestCase):
         """Canli Job #37: Faker import edilmeden kullanildi."""
         from ai_data_studio.core.generator import diagnostic_hint
         hint = diagnostic_hint("NameError: name 'Faker' is not defined")
-        self.assertIn("EKSİK IMPORT", hint)
+        self.assertIn("MISSING IMPORT", hint)
         self.assertIn("from faker import Faker", hint)
         self.assertIn("import numpy as np",
                       diagnostic_hint("NameError: name 'np' is not defined"))
@@ -737,7 +801,81 @@ class TestDiagnosticHints(unittest.TestCase):
     def test_unknown_undefined_name_keeps_generic_hint(self):
         from ai_data_studio.core.generator import diagnostic_hint
         hint = diagnostic_hint("NameError: name 'undefined_name' is not defined")
-        self.assertIn("TANIMSIZ AD", hint)
+        self.assertIn("UNDEFINED NAME", hint)
+
+    def test_ndtr_missing_import_names_scipy_special(self):
+        """Canli 1.5b kosusu: COPULA ornegi `ndtr(z_corr)` oldu, import yoktu."""
+        from ai_data_studio.core.generator import diagnostic_hint
+        hint = diagnostic_hint("NameError: name 'ndtr' is not defined")
+        self.assertIn("from scipy.special import ndtr", hint)
+
+    def test_wrong_module_import_hint_points_to_scipy_special(self):
+        """Canli 1.5b: `from scipy.stats import ndtr`."""
+        from ai_data_studio.core.generator import diagnostic_hint
+        hint = diagnostic_hint("ImportError: cannot import name 'ndtr' from 'scipy.stats'")
+        self.assertIn("from scipy.special import ndtr", hint)
+
+    def test_faker_instance_seed_hint(self):
+        """Canli 1.5b: `fake.seed(seed)` iki denemede ayni TypeError."""
+        from ai_data_studio.core.generator import diagnostic_hint
+        hint = diagnostic_hint("TypeError: Calling `.seed()` on instances is deprecated. "
+                               "Use the class method `Faker.seed()` instead.")
+        self.assertIn("Faker.seed(seed)", hint)
+
+    def test_key_error_hint_says_contract_is_not_available_at_runtime(self):
+        """Canli 1.5b kosusu: `schema["churned"]["min"]` iki denemede KeyError."""
+        from ai_data_studio.core.generator import diagnostic_hint
+        hint = diagnostic_hint('File "user_code.py", line 39\nKeyError: \'min\'')
+        self.assertIn("KEY ERROR", hint)
+        self.assertIn("NOT available", hint)
+
+
+class TestAutoImportRepair(unittest.TestCase):
+    """Eksik import LLM turu harcamadan onarilir (canli 1.5b: `Faker.seed` importsuz)."""
+
+    MISSING_FAKER = (
+        "import numpy as np\n"
+        "import pandas as pd\n"
+        "\n"
+        "def generate_data(n_rows, seed):\n"
+        "    Faker.seed(seed)\n"
+    ) + fake_llm.GOOD_CODE.split("def generate_data(n_rows, seed):\n", 1)[1]
+
+    def test_patch_inserts_the_import_line(self):
+        from ai_data_studio.core.generator import patch_missing_import
+
+        code, line = patch_missing_import("x = ndtr(1)\n", "NameError: name 'ndtr' is not defined")
+        self.assertEqual(line, "from scipy.special import ndtr")
+        self.assertEqual(code, "from scipy.special import ndtr\nx = ndtr(1)\n")
+
+    def test_patch_keeps_future_import_first(self):
+        from ai_data_studio.core.generator import patch_missing_import
+
+        code, _ = patch_missing_import("from __future__ import annotations\nx = np.ones(2)\n",
+                                       "NameError: name 'np' is not defined")
+        self.assertTrue(code.startswith("from __future__ import annotations\nimport numpy as np\n"))
+
+    def test_patch_leaves_unknown_or_already_imported_names_alone(self):
+        from ai_data_studio.core.generator import patch_missing_import
+
+        self.assertIsNone(patch_missing_import("x = y\n", "NameError: name 'y' is not defined"))
+        self.assertIsNone(patch_missing_import("import numpy as np\n",
+                                               "NameError: name 'np' is not defined"))
+        self.assertIsNone(patch_missing_import("x = 1\n", "ValueError: bad"))
+
+    def test_loop_repairs_missing_import_without_a_fix_call(self):
+        schema = SchemaContract.from_dict({**fake_llm.SCHEMA_JSON, "row_count_target": 300})
+        client = fake_llm.FakeLLMClient([self.MISSING_FAKER])
+        messages = []
+        df, code, meta = generate_and_execute(
+            schema, client, timeout=60,
+            on_progress=lambda message, *args: messages.append(message))
+        self.assertEqual(len(df), 300)
+        self.assertEqual(client.feedback_received, [])        # LLM'e hic geri beslenmedi
+        self.assertEqual(meta["attempts"], 1)                  # deneme hakki harcanmadi
+        self.assertEqual(meta["auto_imports"], ["from faker import Faker"])
+        self.assertTrue(code.startswith("from faker import Faker\n"))
+        self.assertTrue(any("from faker import Faker" in m for m in messages))
 
     def test_unknown_error_gives_no_hint(self):
         from ai_data_studio.core.generator import diagnostic_hint
@@ -766,7 +904,7 @@ class TestDiagnosticHints(unittest.TestCase):
         schema = SchemaContract.from_dict({**fake_llm.SCHEMA_JSON, "row_count_target": 500})
         client = _Recorder([dtype_bug])
         generate_and_execute(schema, client, timeout=60)
-        self.assertIn("NASIL DUZELTILIR", captured["feedback"])
+        self.assertIn("HOW TO FIX", captured["feedback"])
         self.assertIn("DTYPE", captured["feedback"])
 
     def test_escalation_text_is_not_faker_specific(self):

@@ -262,6 +262,15 @@ def run_pipeline(cfg: PipelineConfig,
         yield progress(1, t("run.service_ready", model=llm_client.model), 1.0)
         yield progress(1, "  -> " + t("run.provider_model", provider=cfg.provider,
                                       model=llm_client.model), 1.0)
+        if (engine_choice in (ENGINE_LLM, ENGINE_AUTO)
+                and cfg.provider == config.PROVIDER_OLLAMA):
+            from ..services.ollama_service import is_small_model
+            if is_small_model(llm_client.model):
+                # Davranis degismez (varsayilan motor bilincli olarak llm), ama kullanici
+                # dakikalar sonra FAILED gormeden (llm) ya da bosa giden kod turlarini
+                # beklemeden (auto) once nedenini ve cikisini bilmeli.
+                yield progress(1, t("run.engine.small_model_warning", model=llm_client.model),
+                               1.0, level=config.PROGRESS_WARNING)
 
         # ---------------------------------------------------------------- #
         # [3'] Seed veri - semadan ONCE cekilir ki sema onu referans alabilsin
@@ -314,14 +323,14 @@ def run_pipeline(cfg: PipelineConfig,
         state.save_checkpoint(job_id, current_step=2, step_name=STEP_NAMES[2])
         plan: Optional[ProjectPlan] = None
         if cfg.agentic:
-            yield progress(2, "🤖 Çoklu Ajan Konseyi toplanıyor (Domain, Statistician, Critic, Engineer)...")
+            yield progress(2, t("run.agents.gathering"))
             from ..agents.council_coordinator import CouncilCoordinator
 
             coordinator = CouncilCoordinator(
                 llm_client=llm_client,
                 max_rounds=cfg.max_agent_rounds,
             )
-            yield progress(2, f"  ├─ [Ajan Konseyi] Müzakere ve denetim başlatıldı (Azami {cfg.max_agent_rounds} tur)...")
+            yield progress(2, "  ├─ " + t("run.agents.started", rounds=cfg.max_agent_rounds))
             compiled_result = coordinator.deliberate(
                 domain_prompt=cfg.domain_prompt,
                 row_count=cfg.row_count,
@@ -334,7 +343,8 @@ def run_pipeline(cfg: PipelineConfig,
                 contract = compiled_result
             else:
                 contract = DatasetContract.from_schema(compiled_result)
-            yield progress(2, f"  └─ [Ajan Konseyi] Konsensüs sağlandı: {len(contract.table_names)} tablo derlendi.", 1.0)
+            yield progress(2, "  └─ " + t("run.agents.consensus",
+                                          tables=len(contract.table_names)), 1.0)
         elif cfg.project_prompt:
             # Planlayici yolu: kac tablo gerektigine plan karar verir, kullanici degil.
             if not 1 <= cfg.max_tables <= MAX_TABLES:
@@ -830,7 +840,9 @@ def run_pipeline(cfg: PipelineConfig,
 
         cost = state.get_cost_summary(job_id)
         if cost.get("calls", 0) > 0 or cost.get("cost_usd", 0.0) > 0:
-            tot_tokens = cost.get("prompt_tokens", 0) + cost.get("completion_tokens", 0)
+            # get_cost_summary input_tokens/output_tokens dondurur; eskiden var olmayan
+            # prompt_tokens/completion_tokens okunuyor ve toplam hep 0 basiliyordu.
+            tot_tokens = cost.get("input_tokens", 0) + cost.get("output_tokens", 0)
             yield progress(7, "  -> " + t("run.cost.summary",
                                           calls=cost.get("calls", 0),
                                           tokens=format(tot_tokens, ","),
@@ -916,7 +928,7 @@ def _plan_detail_events(plan: ProjectPlan,
         yield progress(2, "  -> " + t("run.plan.split", kind=detail,
                                       reason=plan.split.reason), 1.0)
     for warning in plan.warnings:
-        yield progress(2, "UYARI: %s" % warning, 1.0,
+        yield progress(2, t("run.warning_prefix", message=warning), 1.0,
                        level=config.PROGRESS_WARNING)
 
 
@@ -980,7 +992,7 @@ def _schema_detail_events(contract: DatasetContract,
                                   corr.expected_sign, corr.min_r), 1.0)
 
         for warning in schema.warnings:
-            yield progress(2, "UYARI: %s" % warning, 1.0,
+            yield progress(2, t("run.warning_prefix", message=warning), 1.0,
                            level=config.PROGRESS_WARNING)
 
     if contract.relationships:
@@ -998,7 +1010,7 @@ def _schema_detail_events(contract: DatasetContract,
                                          if rel.nullable else ""), 1.0)
 
     for warning in contract.warnings:
-        yield progress(2, "UYARI: %s" % warning, 1.0,
+        yield progress(2, t("run.warning_prefix", message=warning), 1.0,
                        level=config.PROGRESS_WARNING)
 
 
@@ -1018,16 +1030,16 @@ def _build_llm_client(cfg: PipelineConfig, state: StateManager,
 # Parametrik kosuda LLM kodu olmadigi icin cikti klasorune bu sablon yazilir.
 # Amac dekoratif degil: uretim %100 deterministik oldugundan bu dosya veri setini
 # birebir yeniden uretir, yani "kod ciktisi" sozu bos kalmaz.
-_PARAMETRIC_CODE_TEMPLATE = '''"""Bu veri seti ParametricEngine ile üretildi - LLM kod üretimi kullanılmadı.
+_PARAMETRIC_CODE_TEMPLATE = '''"""Generated by ParametricEngine - no LLM-written generator code was used.
 
-Şema sözleşmesi aşağıya gömülüdür; üretim deterministiktir, bu dosya aynı seed
-ile aynı veri setini birebir yeniden üretir.
+The Schema Contract is embedded below. Generation is deterministic: running this
+file with the same seed reproduces the dataset exactly.
 
-GEREKSİNİM: LLM'in yazdığı üretici dosyalarının aksine bu dosya ai_data_studio
-paketini içeri alır - motorun kendisi paketin içindedir. Çalıştırmadan önce paket
-import edilebilir olmalı:
+REQUIREMENT: unlike LLM-written generator files, this file imports the
+ai_data_studio package, because the engine itself lives there. Make sure the
+package is importable before running it:
 
-    pip install ai-data-studio      # ya da depo kökünden: pip install -e .
+    pip install ai-data-studio      # or, from the repository root: pip install -e .
 """
 import json
 
@@ -1048,16 +1060,16 @@ if __name__ == "__main__":
     print(generate_data().head())
 '''
 
-_PARAMETRIC_RELATIONAL_CODE_TEMPLATE = '''"""Bu ilişkisel veri seti ParametricEngine ile üretildi - LLM kod üretimi kullanılmadı.
+_PARAMETRIC_RELATIONAL_CODE_TEMPLATE = '''"""Relational dataset generated by ParametricEngine - no LLM-written generator code was used.
 
-Sözleşme aşağıya gömülüdür; üretim deterministiktir, bu dosya aynı seed
-ile aynı veri setini birebir yeniden üretir.
+The Dataset Contract is embedded below. Generation is deterministic: running this
+file with the same seed reproduces the dataset exactly.
 
-GEREKSİNİM: LLM'in yazdığı üretici dosyalarının aksine bu dosya ai_data_studio
-paketini içeri alır - motorun kendisi paketin içindedir. Çalıştırmadan önce paket
-import edilebilir olmalı:
+REQUIREMENT: unlike LLM-written generator files, this file imports the
+ai_data_studio package, because the engine itself lives there. Make sure the
+package is importable before running it:
 
-    pip install ai-data-studio      # ya da depo kökünden: pip install -e .
+    pip install ai-data-studio      # or, from the repository root: pip install -e .
 """
 import json
 
@@ -1541,9 +1553,9 @@ def _build_arg_parser() -> argparse.ArgumentParser:
                    help=_help("cli.help.dirty_rate"))
     p.add_argument("--dirty-table", default="", help=_help("cli.help.dirty_table"))
     p.add_argument("--agentic", action="store_true",
-                   help="Çoklu Ajan Konseyi (Domain, Statistician, Critic, Engineer) ile ortak şema tasarımı.")
+                   help=_help("cli.help.agentic"))
     p.add_argument("--max-agent-rounds", type=int, default=2,
-                   help="Ajanlar arası karşıt eleştiri ve müzakere tur sayısı (varsayılan: 2).")
+                   help=_help("cli.help.max_agent_rounds"))
     p.add_argument("--hardware", action="store_true",
                    help=_help("cli.help.hardware"))
     p.add_argument("--verbose", "-v", action="store_true")
@@ -1566,7 +1578,7 @@ def check_auth() -> int:
             note = t("cli.auth.implicit", source=status["source"])
             ok_any = True
         else:
-            mark = "[YOK] "
+            mark = "[--]  "
             note = t("cli.auth.checked",
                      vars=", ".join(status["checked_env_vars"]))
         print("%s%-12s %s" % (mark, provider, note))
@@ -1594,13 +1606,13 @@ def check_auth() -> int:
             version=ollama_service.get_version() or "?", count=len(models))))
         ok_any = True
     else:
-        print("[YOK] %-12s %s" % (config.PROVIDER_OLLAMA,
+        print("[--]  %-12s %s" % (config.PROVIDER_OLLAMA,
                                     t("cli.auth.ollama_down", host=config.OLLAMA_HOST)))
 
     print("-" * 72)
     if not ok_any:
         print(t("cli.auth.none_available"))
-        print("  Ayarlar sekmesinden anahtar girin, veya:")
+        print("  " + t("cli.auth.none_hint"))
         print("    $env:ANTHROPIC_API_KEY = \"sk-ant-...\"")
         print("    $env:GEMINI_API_KEY    = \"...\"")
         print("    ollama serve")
@@ -1757,7 +1769,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         rows_out=format(result.report["rows_out"], ","),
         rows_in=format(result.report["rows_in"], ","),
         retention="%.1f" % result.report["retention_pct"])))
-    tot_tokens = result.cost.get("prompt_tokens", 0) + result.cost.get("completion_tokens", 0)
+    tot_tokens = result.cost.get("input_tokens", 0) + result.cost.get("output_tokens", 0)
     print("%-12s: %s" % (t("cli.summary.cost"), t(
         "app.done.cost", cost="%.4f" % result.cost.get("cost_usd", 0.0),
         calls=result.cost.get("calls", 0), tokens=format(tot_tokens, ","))))

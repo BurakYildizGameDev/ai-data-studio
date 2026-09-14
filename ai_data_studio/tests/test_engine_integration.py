@@ -191,6 +191,31 @@ class TestAutoEngineFallback(_PipelineCase):
         self.assertIn("def generate_data", result.code)
 
 
+class TestSmallModelWarning(_PipelineCase):
+    """llm motoru + kucuk Ollama modeli: davranis ayni, ama kullanici bastan uyarilir."""
+
+    def _warnings(self, model, engine=orchestrator.ENGINE_LLM):
+        from ai_data_studio import config
+        from ai_data_studio.i18n import t
+
+        client = fake_llm.FakeLLMClient(model=model)
+        events, _ = self._run(self._cfg(provider=config.PROVIDER_OLLAMA, model=model,
+                                        engine=engine), client)
+        expected = t("run.engine.small_model_warning", model=model)
+        return [e for e in events if e["message"] == expected
+                and e["level"] == config.PROGRESS_WARNING]
+
+    def test_small_model_with_llm_or_auto_engine_warns(self):
+        self.assertEqual(len(self._warnings("qwen2.5-coder:1.5b")), 1)
+        # auto da uyarir: veri ayni ama once bosa giden kod turlari beklenir.
+        self.assertEqual(len(self._warnings("qwen2.5-coder:1.5b", orchestrator.ENGINE_AUTO)), 1)
+
+    def test_no_warning_for_parametric_or_large_model(self):
+        self.assertEqual(
+            self._warnings("qwen2.5-coder:1.5b", orchestrator.ENGINE_PARAMETRIC), [])
+        self.assertEqual(self._warnings("qwen2.5-coder:14b"), [])
+
+
 class TestTimeSeriesIntegration(_PipelineCase):
     """--time-series: eklenen kolonlar doğrulamadan sağ çıkmalı."""
 
