@@ -10,7 +10,6 @@
 
 <p align="center">
   <a href="https://github.com/BurakYildizGameDev/ai-data-studio/actions/workflows/ci.yml"><img src="https://github.com/BurakYildizGameDev/ai-data-studio/actions/workflows/ci.yml/badge.svg" alt="CI Status"></a>
-  <a href="https://pypi.org/project/ai-data-studio/"><img src="https://img.shields.io/pypi/v/ai-data-studio.svg" alt="PyPI version"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue.svg" alt="Python 3.10 | 3.11 | 3.12"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License: MIT"></a>
   <a href="https://github.com/astral-sh/ruff"><img src="https://img.shields.io/badge/code%20style-ruff-000000.svg" alt="Code Style: Ruff"></a>
@@ -65,7 +64,7 @@ the number of rows does not change the number of LLM calls.
 
 ### With a small local model
 
-Install the package (`pip install ai-data-studio`) and [Ollama](https://ollama.com/), then:
+[Install the project](#installation) and [Ollama](https://ollama.com/), then:
 
 ```bash
 ollama pull qwen2.5-coder:1.5b      # about 1 GB; runs without a GPU
@@ -133,16 +132,7 @@ The whole script, imports included, runs in about a second.
 
 ## Installation
 
-Python 3.10, 3.11 or 3.12.
-
-```bash
-pip install ai-data-studio  # library, command line and desktop studio
-```
-
-The desktop studio uses Tk. It ships with Python on Windows and macOS; on Debian or Ubuntu
-install it with `sudo apt install python3-tk`.
-
-From source, for development:
+Install from the repository. Python 3.10, 3.11 or 3.12.
 
 ```bash
 git clone https://github.com/BurakYildizGameDev/ai-data-studio.git
@@ -152,8 +142,12 @@ python -m venv .venv
 # Windows:        .venv\Scripts\activate
 # Linux / macOS:  source .venv/bin/activate
 
-pip install -e ".[dev]"     # adds pytest, ruff and PyInstaller
+pip install -e .            # library, command line and desktop studio
+pip install -e ".[dev]"     # adds pytest, ruff and PyInstaller for development
 ```
+
+The desktop studio uses Tk. It ships with Python on Windows and macOS; on Debian or Ubuntu
+install it with `sudo apt install python3-tk`.
 
 ## LLM providers
 
@@ -433,7 +427,6 @@ everywhere. Two things are deliberately **not** translated:
 ```bash
 pip install -e ".[dev]"                   # or: pip install -r requirements-dev.txt
 pytest ai_data_studio/tests               # offline, with mock LLM clients; about two minutes
-                                          # (tests are not part of the PyPI package)
 ruff check . --select=E9,F63,F7,F82       # the lint gate CI runs
 ```
 

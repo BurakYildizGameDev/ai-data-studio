@@ -1039,7 +1039,7 @@ REQUIREMENT: unlike LLM-written generator files, this file imports the
 ai_data_studio package, because the engine itself lives there. Make sure the
 package is importable before running it:
 
-    pip install ai-data-studio      # or, from the repository root: pip install -e .
+    pip install -e .                # from the repository root
 """
 import json
 
@@ -1069,7 +1069,7 @@ REQUIREMENT: unlike LLM-written generator files, this file imports the
 ai_data_studio package, because the engine itself lives there. Make sure the
 package is importable before running it:
 
-    pip install ai-data-studio      # or, from the repository root: pip install -e .
+    pip install -e .                # from the repository root
 """
 import json
 
