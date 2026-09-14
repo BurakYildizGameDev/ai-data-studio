@@ -82,10 +82,11 @@ jobs:
       - name: Release notes from CHANGELOG.md
         run: |
           version="${GITHUB_REF_NAME#v}"
-          awk -v v="$version" '
-            $0 ~ "^## \\[" v "\\]" {found=1; next}
-            found && /^## \[/ {exit}
-            found && /^\[[^]]+\]: / {next}
+          # index/substr instead of regexes: no escaping differences between awk variants
+          awk -v h="## [$version]" '
+            index($0, h) == 1 {found=1; next}
+            found && index($0, "## [") == 1 {exit}
+            found && substr($0, 1, 1) == "[" && index($0, "]: ") > 0 {next}
             found {print}
           ' CHANGELOG.md > notes.md
           test -s notes.md
