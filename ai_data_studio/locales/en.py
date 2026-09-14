@@ -588,7 +588,11 @@ MESSAGES = {
     "cli.help.inject_fraud": "Inject parametric fraud scenarios into the synthetic data",
     "cli.help.fraud_rate": "Fraud injection rate (default: 0.005, i.e. 0.5%)",
     "cli.help.fraud_target_col": "Fraud label column (default: is_fraud)",
-    "cli.help.audit_privacy": "Run the NNDR, differential privacy and HIPAA Safe Harbor audit",
+    "cli.help.audit_privacy": (
+        "Run heuristic privacy checks: nearest-neighbour memorisation test (DCR/NNDR), "
+        "distribution divergence score and identifier column-name scan - not a compliance "
+        "certification"
+    ),
     "cli.help.fraud_table": "Which table the fraud injection applies to (default: the root table)",
     "cli.help.audit_table": (
         "Which table the privacy audit applies to: empty = the root table (default), "
@@ -611,8 +615,9 @@ MESSAGES = {
     ),
     "cli.help.engine": (
         "Generation engine: 'llm' writes code and runs it in the sandbox (default), "
-        "'parametric' compiles the schema directly (no LLM code, single table), "
-        "'auto' falls back to parametric when code generation runs out of attempts"
+        "'parametric' compiles the schema directly (no LLM code; single- and "
+        "multi-table), 'auto' falls back to 'parametric' when code generation runs out of "
+        "attempts"
     ),
     "cli.help.time_series": (
         "Add time-series and velocity dynamics: chronological ordering, circadian "
@@ -674,8 +679,11 @@ MESSAGES = {
         "[{x} -> {y} ({direction})]: Spearman r={r}, bin compliance={compliance}% [{verdict}]"
     ),
     "validation.privacy_nndr": "Privacy & NNDR: DCR={dcr}, NNDR={nndr} (memorisation risk: {risk})",
-    "validation.hipaa_warning": "HIPAA Safe Harbor warning: {summary}",
-    "validation.hipaa_ok": "HIPAA Safe Harbor compliance: VERIFIED",
+    "validation.hipaa_warning": "Identifier column-name scan: {summary}",
+    "validation.hipaa_ok": (
+        "Identifier column-name scan: no matches (column names only; values are not "
+        "inspected)"
+    ),
     "validation.verdict.ok": "OK",
     "validation.verdict.below": "BELOW EXPECTATION",
     "validation.verdict.violation": "VIOLATION",
@@ -744,6 +752,10 @@ MESSAGES = {
     "hipaa.title.biometric": "Biometric identifiers",
     "hipaa.title.face": "Full-face photos and comparable images",
     "hipaa.title.unique_code": "Any other unique identifying number or code",
+    "hipaa.title.email": "Email addresses",
+    "hipaa.title.certificate": "Certificate / licence numbers",
+    "hipaa.title.url": "Web URLs",
+    "hipaa.title.ip": "IP addresses",
     "hipaa.category.direct": "Direct identifier",
     "hipaa.category.quasi": "Quasi-identifier",
     "hipaa.category.timestamp": "Timestamp (date shifting required)",
@@ -755,54 +767,87 @@ MESSAGES = {
     "hipaa.category.digital": "Digital trace",
     "hipaa.category.network": "Network identifier",
     "hipaa.category.visual_biometric": "Visual biometric",
+    "hipaa.category.government_id": "Government-issued identifier",
+    "hipaa.category.official_document": "Official document",
+    "hipaa.category.biometric": "Biometric data",
 
     # --- Privacy audit report ----------------------------------------------- #
-    "privacy.report.title": "HIPAA Safe Harbor & Differential Privacy Audit Report",
+    "privacy.report.title": "Privacy Check Report (heuristic)",
+    "privacy.report.scope": (
+        "**Scope:** heuristic checks only - a nearest-neighbour memorisation test against "
+        "reference data (DCR/NNDR), a histogram divergence score, and a column-name scan "
+        "that uses the 18 HIPAA Safe Harbor identifier categories as a checklist. It is "
+        "not a differential-privacy guarantee and not a HIPAA compliance certification."
+    ),
     "privacy.report.table": "Table",
-    "privacy.report.summary_heading": "Executive Summary",
-    "privacy.report.overall_status": "Overall privacy status",
-    "privacy.report.guarantee": "Privacy level",
-    "privacy.report.epsilon": "Estimated differential privacy",
+    "privacy.report.summary_heading": "Summary",
+    "privacy.report.overall_status": "Overall status",
+    "privacy.report.guarantee": "Memorisation check",
+    "privacy.report.epsilon": "Distribution divergence score",
+    "privacy.report.epsilon_note": (
+        "95th percentile of |log(p_synthetic / p_reference)| over 20-bin histograms of up "
+        "to five shared numeric columns; lower means closer distributions. It is not a "
+        "differential-privacy epsilon."
+    ),
     "privacy.report.memorisation_heading": "Reference Data Memorisation Analysis",
     "privacy.report.no_reference": (
-        "No reference (seed) data was supplied, so the DCR/NNDR comparison was skipped. "
-        "The data was generated from scratch."
+        "No reference (seed) data was supplied, so the DCR/NNDR comparison did not run "
+        "and the **memorisation risk was not measured**."
     ),
     "privacy.report.no_reference_table": (
         "There is no reference (seed) data for this table; the DCR/NNDR comparison "
         "could not run, so the **memorisation risk was not measured**."
     ),
     "privacy.report.nn_intro": (
-        "A nearest-neighbour analysis was run to confirm that the synthetic data does "
-        "not copy reference patient/customer records verbatim:"
+        "A nearest-neighbour analysis checks whether synthetic rows are near-copies of "
+        "reference records. It compares the numeric columns both datasets share, "
+        "standardised, on a random sample of rows:"
     ),
     "privacy.report.metric_header": "| Metric | Value | Threshold | Risk level |",
     "privacy.report.dcr_p5": "5th percentile DCR",
     "privacy.report.safe_distance": "Safe distance",
     "privacy.report.identical_matches": "Identical record count",
     "privacy.report.mean_nndr": "Mean NNDR",
-    "privacy.report.nndr_note_label": "NNDR reading:",
+    "privacy.report.nndr_note_label": "Reading NNDR:",
     "privacy.report.nndr_note": (
-        "the closer the ratio is to 1.0, the more it shows that no synthetic row copies "
-        "a real person - the rows are new, independent points on the manifold."
+        "a ratio close to 1.0 means a synthetic row is about as far from its nearest "
+        "reference record as from the second nearest, so it is not a near-copy of a "
+        "single record. An identical match or a low ratio points to a copied row. Only "
+        "numeric columns are compared."
     ),
-    "privacy.report.hipaa_heading": "HIPAA 18-Identifier Scan",
-    "privacy.report.audit_result": "Audit result",
-    "privacy.report.all_passed": "ALL CRITERIA PASSED",
-    "privacy.report.review_required": "AREAS REQUIRING REVIEW",
+    "privacy.report.hipaa_heading": "Identifier Column-Name Scan",
+    "privacy.report.hipaa_scope": (
+        "Column **names** are matched against patterns for the 18 HIPAA Safe Harbor "
+        "identifier categories, and an age column is checked for values over 89. Cell "
+        "values are not inspected: an identifier stored under an unrelated name is "
+        "missed, and a harmless column whose name contains a pattern (such as "
+        "`mobile_sessions`) is flagged."
+    ),
+    "privacy.report.audit_result": "Scan result",
+    "privacy.report.all_passed": "NO MATCHES",
+    "privacy.report.review_required": "COLUMNS TO REVIEW",
     "privacy.report.age_over_89": "Rows with age over 89",
     "privacy.report.age_rule": "HIPAA rule: ages over 89 must be grouped as 90+",
-    "privacy.report.identifiers_heading": "Possible Identifier Columns Detected",
-    "privacy.report.identifiers_header": "| Column | HIPAA category | Status / action |",
+    "privacy.report.identifiers_heading": "Column Names Matching an Identifier Pattern",
+    "privacy.report.identifiers_header": "| Column | Identifier category | Suggested action |",
     "privacy.report.no_identifiers": (
-        "No unmasked personal identifier (PII) column was detected in the schema."
+        "No column name matched an identifier pattern. Cell values were not inspected."
     ),
     "privacy.report.footer": (
-        "This report was generated automatically by the AI Synthetic Data Studio PrivacyAuditor."
+        "Generated automatically by the AI Synthetic Data Studio PrivacyAuditor. These "
+        "are heuristic checks; review the data yourself before sharing it."
     ),
-    "privacy.action.mask": "Should be masked or encoded with synthetic Faker data.",
-    "privacy.summary.compliant": "HIPAA Safe Harbor compliant.",
-    "privacy.summary.findings": "{columns} identifier columns and {ages} rows aged 89+ were detected.",
+    "privacy.action.mask": "Review; mask it or replace it with synthetic values (e.g. Faker).",
+    "privacy.summary.compliant": "No identifier-like column names and no ages over 89 found.",
+    "privacy.summary.findings": (
+        "Found {columns} identifier-like column name(s) and {ages} row(s) with age over "
+        "89."
+    ),
+    "privacy.assessment.copies_found": (
+        "Possible copies of reference records (identical rows or low NNDR)"
+    ),
+    "privacy.assessment.no_copies": "No near-copies of reference records found in the sample",
+    "privacy.assessment.not_measured": "Not measured - no reference data to compare against",
     # --- Schema contract validation ----------------------------------------- #
     "schema.error.empty_response": "The LLM response was empty - no JSON block found",
     "schema.error.no_json": "No valid JSON block was found in the LLM response",

@@ -1,13 +1,15 @@
-"""Gizlilik ve HIPAA Uyumluluk Denetçisi (PrivacyAuditor).
+"""Sezgisel gizlilik kontrolleri (PrivacyAuditor).
 
 Bu modül:
   1. En Yakın Komşu Mesafe Oranı (NNDR - Nearest Neighbor Distance Ratio) ve
      En Yakın Kayda Mesafe (DCR - Distance to Closest Record) metrikleriyle
-     sentetik verinin referans veriyi ezberleme (memorization) riskini matematiksel olarak ölçer.
-  2. Diferansiyel Gizlilik (Empirical Differential Privacy / epsilon-DP) skoru hesaplar.
-  3. HIPAA Safe Harbor 18 Doğrudan Tanımlayıcı (18 Direct Identifiers) taraması yapar.
-  4. Tarih öteleme (date shifting) ve 89 yaş üstü kümeleme (age > 89 -> 90+) kurallarını uygular.
-  5. Kapsamlı bir "HIPAA Safe Harbor & Privacy Compliance" raporu üretir.
+     sentetik satırların referans kayıtların kopyası olup olmadığını örneklem üzerinde ölçer.
+  2. Histogram tabanlı bir dağılım farkı skoru hesaplar (rapordaki ``empirical_epsilon``).
+     Adı tarihsel: bu bir diferansiyel gizlilik epsilon'u DEĞİLDİR, garanti vermez.
+  3. Kolon ADLARINI 18 HIPAA Safe Harbor tanımlayıcı kategorisinin desenleriyle eşleştirir.
+     Hücre değerlerine bakmaz; bir uyumluluk sertifikası değildir.
+  4. Tarih öteleme (date shifting) ve 89 yaş üstü kümeleme (age > 89 -> 90+) yardımcıları sunar.
+  5. Bulguları, kapsamını açıkça yazan bir Markdown raporuna döker.
 """
 from __future__ import annotations
 
@@ -33,97 +35,100 @@ __all__ = [
     "audit_dataset_privacy",
 ]
 
-# HIPAA Safe Harbor 18 Tanımlayıcı regex desenleri
+# HIPAA Safe Harbor'un 18 tanımlayıcı kategorisi için kolon ADI desenleri.
+# Başlık ve kategori katalog ANAHTARI olarak tutulur ve tarama anında çevrilir:
+# modül yüklenirken t() çağırmak metni o anki dile dondurur, sonradan dil
+# değişse de rapor eski dilde kalırdı.
 HIPAA_IDENTIFIER_RULES: Dict[str, Dict[str, Any]] = {
     "NAMES": {
-        "title": t("hipaa.title.names"),
+        "title_key": "hipaa.title.names",
         "patterns": [r"name", r"first_name", r"last_name", r"full_name", r"ad$", r"soyad", r"hasta_adi", r"hasta_ad"],
-        "category": t("hipaa.category.direct"),
+        "category_key": "hipaa.category.direct",
     },
     "GEOGRAPHIC": {
-        "title": t("hipaa.title.geographic"),
+        "title_key": "hipaa.title.geographic",
         "patterns": [r"address", r"street", r"sokak", r"cadde", r"mahalle", r"zip", r"postal_code", r"posta_kodu"],
-        "category": t("hipaa.category.quasi"),
+        "category_key": "hipaa.category.quasi",
     },
     "DATES": {
-        "title": t("hipaa.title.dates"),
+        "title_key": "hipaa.title.dates",
         "patterns": [r"birth_date", r"dob", r"admission_date", r"discharge_date", r"death_date", r"dogum_tarihi", r"yatis_tarihi"],
-        "category": t("hipaa.category.timestamp"),
+        "category_key": "hipaa.category.timestamp",
     },
     "PHONE": {
-        "title": t("hipaa.title.phone"),
+        "title_key": "hipaa.title.phone",
         "patterns": [r"phone", r"telephone", r"mobile", r"gsm", r"telefon", r"cep_tel"],
-        "category": t("hipaa.category.direct"),
+        "category_key": "hipaa.category.direct",
     },
     "FAX": {
-        "title": t("hipaa.title.fax"),
+        "title_key": "hipaa.title.fax",
         "patterns": [r"fax", r"faks"],
-        "category": t("hipaa.category.direct"),
+        "category_key": "hipaa.category.direct",
     },
     "EMAIL": {
-        "title": "E-posta adresleri (Email addresses)",
+        "title_key": "hipaa.title.email",
         "patterns": [r"email", r"e_mail", r"eposta", r"mail_adresi"],
-        "category": t("hipaa.category.direct"),
+        "category_key": "hipaa.category.direct",
     },
     "SSN_TCKN": {
-        "title": t("hipaa.title.ssn"),
+        "title_key": "hipaa.title.ssn",
         "patterns": [r"ssn", r"social_security", r"tckn", r"tc_no", r"kimlik_no", r"national_id"],
-        "category": "Hassas Resmi Kimlik",
+        "category_key": "hipaa.category.government_id",
     },
     "MRN": {
-        "title": t("hipaa.title.mrn"),
+        "title_key": "hipaa.title.mrn",
         "patterns": [r"mrn", r"medical_record", r"protokol", r"hasta_no", r"patient_id", r"dosya_no"],
-        "category": t("hipaa.category.health_system"),
+        "category_key": "hipaa.category.health_system",
     },
     "HEALTH_PLAN": {
-        "title": t("hipaa.title.health_plan"),
+        "title_key": "hipaa.title.health_plan",
         "patterns": [r"health_plan", r"insurance_id", r"sigorta_no", r"police_no"],
-        "category": t("hipaa.category.health_financial"),
+        "category_key": "hipaa.category.health_financial",
     },
     "ACCOUNT_NUMBERS": {
-        "title": t("hipaa.title.account"),
+        "title_key": "hipaa.title.account",
         "patterns": [r"account_number", r"account_no", r"iban", r"hesap_no", r"kredi_karti"],
-        "category": t("hipaa.category.financial"),
+        "category_key": "hipaa.category.financial",
     },
     "CERTIFICATE_LICENSE": {
-        "title": "Sertifika / Ehliyet No (Certificate & License Numbers)",
+        "title_key": "hipaa.title.certificate",
         "patterns": [r"license", r"driver_license", r"ehliyet", r"diploma_no"],
-        "category": "Resmi Belge",
+        "category_key": "hipaa.category.official_document",
     },
     "VEHICLE": {
-        "title": t("hipaa.title.vehicle"),
+        "title_key": "hipaa.title.vehicle",
         "patterns": [r"vin", r"license_plate", r"plaka", r"chassis"],
-        "category": t("hipaa.category.asset"),
+        "category_key": "hipaa.category.asset",
     },
     "DEVICE_IDENTIFIERS": {
-        "title": t("hipaa.title.device"),
+        "title_key": "hipaa.title.device",
         "patterns": [r"serial_no", r"device_id", r"imei", r"mac_address", r"cihaz_no"],
-        "category": t("hipaa.category.hardware"),
+        "category_key": "hipaa.category.hardware",
     },
     "WEB_URL": {
-        "title": "Web Siteleri (Universal Resource Locators - URL)",
+        "title_key": "hipaa.title.url",
         "patterns": [r"url", r"website", r"web_site", r"profil_url"],
-        "category": t("hipaa.category.digital"),
+        "category_key": "hipaa.category.digital",
     },
     "IP_ADDRESS": {
-        "title": "IP Adresleri (Internet Protocol Addresses)",
+        "title_key": "hipaa.title.ip",
         "patterns": [r"ip_address", r"ip$", r"ipv4", r"ipv6", r"ip_adresi"],
-        "category": t("hipaa.category.network"),
+        "category_key": "hipaa.category.network",
     },
     "BIOMETRIC": {
-        "title": t("hipaa.title.biometric"),
+        "title_key": "hipaa.title.biometric",
         "patterns": [r"biometric", r"fingerprint", r"voice_print", r"iris", r"parmak_izi"],
-        "category": "Biyometrik Veri",
+        "category_key": "hipaa.category.biometric",
     },
     "FULL_FACE_PHOTO": {
-        "title": t("hipaa.title.face"),
+        "title_key": "hipaa.title.face",
         "patterns": [r"photo", r"picture", r"face_image", r"vesikalik", r"resim_url"],
-        "category": t("hipaa.category.visual_biometric"),
+        "category_key": "hipaa.category.visual_biometric",
     },
     "ANY_UNIQUE_CODE": {
-        "title": t("hipaa.title.unique_code"),
+        "title_key": "hipaa.title.unique_code",
         "patterns": [r"uuid", r"guid", r"unique_id", r"barkod", r"barcode"],
-        "category": t("hipaa.category.unique_key"),
+        "category_key": "hipaa.category.unique_key",
     },
 }
 
@@ -198,10 +203,13 @@ class PrivacyAuditReport:
     table_name: str = ""
     dcr: Optional[DCRResult] = None
     nndr: Optional[NNDRResult] = None
+    # Histogram tabanlı dağılım farkı skoru; adı geriye uyumluluk için korunuyor,
+    # diferansiyel gizlilik epsilon'u DEĞİL (bkz. estimate_empirical_epsilon).
     empirical_epsilon: Optional[float] = None
-    privacy_guarantee: str = "Standard Anonymization"
+    # Ezberleme kontrolünün okunur özeti (çevrilmiş metin); adı tarihsel.
+    privacy_guarantee: str = ""
     hipaa_audit: HIPAAAuditResult = field(default_factory=HIPAAAuditResult)
-    overall_privacy_status: str = "COMPLIANT"
+    overall_privacy_status: str = "NO_ISSUES_FOUND"
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -236,7 +244,7 @@ class PrivacyAuditReport:
         """Denetim raporunu kurumsal bir Markdown dokümanına çevirir."""
         lines = [
             "# " + t("privacy.report.title"),
-            "**Standard:** HIPAA Safe Harbor (45 CFR § 164.514(b)) & NNDR/DCR Memorization Audit",
+            t("privacy.report.scope"),
         ]
         if self.table_name:
             lines.append("**%s:** `%s`" % (t("privacy.report.table"), self.table_name))
@@ -248,8 +256,9 @@ class PrivacyAuditReport:
             "- **%s:** %s" % (t("privacy.report.guarantee"), self.privacy_guarantee),
         ]
         if self.empirical_epsilon is not None:
-            lines.append("- **%s ($\\epsilon$):** `%.3f`"
-                         % (t("privacy.report.epsilon"), self.empirical_epsilon))
+            lines.append("- **%s:** `%.3f` - %s"
+                         % (t("privacy.report.epsilon"), self.empirical_epsilon,
+                            t("privacy.report.epsilon_note")))
 
         lines += [
             "",
@@ -289,16 +298,17 @@ class PrivacyAuditReport:
         lines += [
             "",
             "## 3. " + t("privacy.report.hipaa_heading"),
+            t("privacy.report.hipaa_scope"),
+            "",
             "- **%s:** %s" % (t("privacy.report.audit_result"),
                               "✅ " + t("privacy.report.all_passed")
                               if self.hipaa_audit.passed
                               else "⚠️ " + t("privacy.report.review_required")),
-            "- **%s:** %d %s" % (
+            "- **%s:** %d%s" % (
                 t("privacy.report.age_over_89"),
                 self.hipaa_audit.age_greater_than_89_count,
-                "(%s)" % t("privacy.report.age_rule")
-                if self.hipaa_audit.age_greater_than_89_count > 0
-                else "(%s)" % t("monotonicity.compliant")
+                " (%s)" % t("privacy.report.age_rule")
+                if self.hipaa_audit.age_greater_than_89_count > 0 else ""
             ),
         ]
 
@@ -323,7 +333,7 @@ class PrivacyAuditReport:
 
 
 class PrivacyAuditor:
-    """DCR, NNDR, Epsilon-DP ve HIPAA Safe Harbor denetleyicisi."""
+    """DCR/NNDR ezberleme testi, dağılım farkı skoru ve tanımlayıcı kolon adı taraması."""
 
     def __init__(self, sample_size: int = 2000, random_seed: int = 42):
         self.sample_size = sample_size
@@ -347,17 +357,18 @@ class PrivacyAuditor:
 
             if report.dcr.identical_matches > 0 or report.nndr.memorization_risk == "HIGH":
                 report.overall_privacy_status = "MEMORIZATION_DETECTED"
-                report.privacy_guarantee = "Risk: Potential Copy of Real Records"
+                report.privacy_guarantee = t("privacy.assessment.copies_found")
             else:
-                report.overall_privacy_status = "COMPLIANT"
-                report.privacy_guarantee = (
-                    "High Differential Privacy (eps <= %.2f)" % report.empirical_epsilon
-                    if report.empirical_epsilon else "Strong NNDR Protection"
-                )
+                report.overall_privacy_status = (
+                    "NO_ISSUES_FOUND" if report.hipaa_audit.passed else "REVIEW_REQUIRED")
+                report.privacy_guarantee = t("privacy.assessment.no_copies")
         else:
+            # Referans yoksa ezberleme ölçülemez; "sızıntı yok" demek ölçülmemiş
+            # bir şeyi garanti etmek olurdu.
             report.has_reference_data = False
-            report.overall_privacy_status = "COMPLIANT" if report.hipaa_audit.passed else "REVIEW_REQUIRED"
-            report.privacy_guarantee = "Synthetic Native (No Real Reference Leakage)"
+            report.overall_privacy_status = (
+                "NO_ISSUES_FOUND" if report.hipaa_audit.passed else "REVIEW_REQUIRED")
+            report.privacy_guarantee = t("privacy.assessment.not_measured")
 
         return report
 
@@ -460,9 +471,16 @@ class PrivacyAuditor:
         return nndr_res
 
     def estimate_empirical_epsilon(self, synth_df: pd.DataFrame, seed_df: pd.DataFrame) -> float:
-        """Empirical Diferansiyel Gizlilik (\\epsilon) üst sınırını tahmin eder."""
+        """Sentetik ve referans dağılımları arasındaki farkı tek bir skora indirger.
+
+        En fazla 5 ortak sayısal kolonun 20 kutulu histogramlarında
+        ``|log(p_sentetik / p_referans)|`` değerinin 95. yüzdeliği alınır ve
+        kolonlar üzerinden ortalanır. Düşük değer dağılımların yakın olduğunu
+        gösterir. Adındaki "epsilon" tarihsel: bu bir diferansiyel gizlilik
+        ölçümü DEĞİLDİR - DP bir üretim mekanizmasının özelliğidir, çıktı
+        histogramından kanıtlanamaz.
+        """
         try:
-            # Sayısal ortak kolonların histogram ayrışmasını (Kullback-Leibler / Wasserstein) baz al
             common_cols = [
                 c for c in synth_df.columns
                 if c in seed_df.columns and pd.api.types.is_numeric_dtype(synth_df[c])
@@ -490,7 +508,7 @@ class PrivacyAuditor:
                 p_s = (hist_s + 1e-4) / (hist_s.sum() + 1e-4 * len(hist_s))
                 p_r = (hist_r + 1e-4) / (hist_r.sum() + 1e-4 * len(hist_r))
 
-                # Max log-likelihood ratio (DP tanımı gereği: max |log(P(S)/P(R))|)
+                # Kutu başına mutlak log oranı; uç kutulara karşı 95. yüzdelik
                 ratio = np.abs(np.log(p_s / p_r))
                 epsilons.append(float(np.percentile(ratio, 95)))
 
@@ -499,7 +517,12 @@ class PrivacyAuditor:
             return 1.25
 
     def scan_hipaa_identifiers(self, df: pd.DataFrame) -> HIPAAAuditResult:
-        """Veri çerçevesini 18 HIPAA tanımlayıcısına ve 89 yaş kuralına karşı tarar."""
+        """Kolon ADLARINI 18 HIPAA tanımlayıcı desenine, yaş kolonunu 89 kuralına karşı tarar.
+
+        Hücre değerlerine bakılmaz: ilgisiz bir adla saklanan tanımlayıcı
+        kaçar, adında desen geçen zararsız bir kolon (``mobile_sessions``)
+        işaretlenir.
+        """
         found: List[Dict[str, Any]] = []
 
         for col in df.columns:
@@ -510,8 +533,8 @@ class PrivacyAuditor:
                         found.append({
                             "column": col,
                             "rule_key": key,
-                            "title": rule["title"],
-                            "category": rule["category"],
+                            "title": t(rule["title_key"]),
+                            "category": t(rule["category_key"]),
                             "action": t("privacy.action.mask"),
                         })
                         break

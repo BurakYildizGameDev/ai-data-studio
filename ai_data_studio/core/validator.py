@@ -737,7 +737,7 @@ def run_validation(
         except Exception as exc:
             log.warning("Monotonluk denetimi hatası: %s", exc)
 
-    # -- 7. Gizlilik ve HIPAA Safe Harbor Denetimi ----------------------- #
+    # -- 7. Gizlilik kontrolleri (sezgisel; uyumluluk sertifikası değil) -- #
     if audit_privacy or seed_df is not None:
         try:
             from .privacy_auditor import audit_dataset_privacy

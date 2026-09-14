@@ -125,9 +125,9 @@ class PipelineConfig:
     # yalnizca raporlanir - CI kapisi olarak kullanilabilsin diye.
     repair_orphans: bool = True
     # --- Uretim motoru (bkz. ENGINES) --------------------------------- #
-    # "parametric" ve "auto"nun parametrik yolu SU AN TEK TABLOLUDUR: sozlesmeyi
-    # dogrudan derler, yabanci anahtar tutarliligini kuramaz. Iliskisel kosuda
-    # bu yuzden acik hata verilir, sessizce LLM'e donulmez.
+    # "parametric" ve "auto"nun parametrik yolu tek ve cok tablolu sozlesmeyi
+    # dogrudan derler; iliskiselde cocuk yabanci anahtarlari ebeveynin uretilmis
+    # anahtarlarindan cekilir (bkz. _generate_parametric).
     engine: str = ENGINE_LLM
     # --- [5.5] Uretim sonrasi, DOGRULAMA ONCESI zenginlestiriciler ----- #
     time_series: bool = False
@@ -1112,9 +1112,9 @@ def _privacy_report_from_dict(pa_data: Dict[str, Any]):
         dcr=dcr_obj,
         nndr=nndr_obj,
         empirical_epsilon=pa_data.get("empirical_epsilon"),
-        privacy_guarantee=pa_data.get("privacy_guarantee", "Standard"),
+        privacy_guarantee=pa_data.get("privacy_guarantee", ""),
         hipaa_audit=hipaa_obj,
-        overall_privacy_status=pa_data.get("overall_privacy_status", "COMPLIANT"),
+        overall_privacy_status=pa_data.get("overall_privacy_status", "NO_ISSUES_FOUND"),
     )
 
 

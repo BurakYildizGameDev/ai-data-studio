@@ -113,6 +113,33 @@ class TestHIPAAIdentifierScanner(unittest.TestCase):
         self.assertTrue(audit.is_hipaa_safe)
         self.assertEqual(len(audit.flagged_columns), 0)
 
+    def test_every_rule_points_to_catalog_keys(self):
+        """Kural başlıkları anahtar olarak tutuluyor; katalog kapsama testi
+        dinamik t() çağrılarını göremediği için burada ayrıca denetlenir."""
+        from ai_data_studio.core.privacy_auditor import HIPAA_IDENTIFIER_RULES
+        from ai_data_studio.locales import en
+
+        for name, rule in HIPAA_IDENTIFIER_RULES.items():
+            self.assertIn(rule["title_key"], en.MESSAGES, name)
+            self.assertIn(rule["category_key"], en.MESSAGES, name)
+
+    def test_titles_follow_the_language_chosen_after_import(self):
+        """Başlıklar eskiden modül yüklenirken çevriliyordu; sonradan seçilen dil
+        rapora hiç yansımıyordu (ve dört kuralın başlığı sabit Türkçe'ydi)."""
+        from ai_data_studio import i18n
+
+        df = pd.DataFrame({"email": ["a@b.c"], "tckn": ["1"]})
+        self.addCleanup(i18n.reset_for_tests)
+        titles = {}
+        for lang in ("en", "de"):
+            i18n.set_language(lang)
+            audit = PrivacyAuditor().scan_hipaa_identifiers(df)
+            titles[lang] = {item["column"]: (item["title"], item["category"])
+                            for item in audit.identifiers_found}
+        self.assertEqual(titles["en"]["email"], ("Email addresses", "Direct identifier"))
+        self.assertEqual(titles["en"]["tckn"][1], "Government-issued identifier")
+        self.assertEqual(titles["de"]["email"][0], "E-Mail-Adressen")
+
 
 class TestClinicalDateShifting(unittest.TestCase):
     """Klinik tarih öteleme (Date Shifting) testleri."""
@@ -219,6 +246,53 @@ class TestPrivacyAuditorEndToEnd(unittest.TestCase):
         self.assertIn("nndr", summary)
         self.assertIn("empirical_epsilon", summary)
         self.assertIn("hipaa", summary)
+
+    def test_report_does_not_claim_guarantees_it_cannot_give(self):
+        """Histogram oranı bir DP epsilon'u değil, kolon adı taraması bir HIPAA
+        uyumluluğu değil; rapor bunları garanti gibi sunmamalı."""
+        from ai_data_studio.i18n import language_override, t
+
+        # Dört kolon: 1-2 sayısal kolonda bağımsız veri de NNDR eşiğine takılıyor
+        # (yerel yoğunlukta P(d1/d2 < 0.2) ~ 0.2^d); burada o sınır test edilmiyor.
+        rng = np.random.default_rng(7)
+        cols = ["age", "cholesterol", "systolic_bp", "hba1c"]
+        ref_df = pd.DataFrame(rng.normal(size=(200, 4)), columns=cols)
+        synth_df = pd.DataFrame(rng.normal(size=(200, 4)), columns=cols)
+        with language_override("en"):
+            report = audit_dataset_privacy(synth_df, ref_df)
+            md = report.to_markdown()
+
+        self.assertEqual(report.overall_privacy_status, "NO_ISSUES_FOUND")
+        lowered = md.lower()
+        for claim in ("compliant", "verified", "high differential privacy", "$\\epsilon$"):
+            self.assertNotIn(claim, lowered)
+        with language_override("en"):
+            self.assertIn(t("privacy.report.scope"), md)
+            self.assertIn(t("privacy.report.epsilon_note"), md)
+            self.assertIn(t("privacy.report.hipaa_scope"), md)
+
+    def test_without_reference_memorisation_is_reported_as_not_measured(self):
+        from ai_data_studio.i18n import language_override, t
+
+        with language_override("en"):
+            report = audit_dataset_privacy(pd.DataFrame({"score": [1.0, 2.0, 3.0]}))
+            self.assertEqual(report.privacy_guarantee, t("privacy.assessment.not_measured"))
+        self.assertEqual(report.overall_privacy_status, "NO_ISSUES_FOUND")
+        self.assertIsNone(report.empirical_epsilon)
+
+    def test_identifier_finding_needs_review_even_with_reference_data(self):
+        """Referans veri varken tarama bulgusu eskiden durumu etkilemiyordu."""
+        rng = np.random.default_rng(3)
+        cols = ["phone", "score", "visits", "spend"]
+        ref_df = pd.DataFrame(rng.normal(size=(200, 4)), columns=cols)
+        synth_df = pd.DataFrame(rng.normal(size=(200, 4)), columns=cols)
+
+        report = audit_dataset_privacy(synth_df, ref_df)
+
+        self.assertFalse(report.hipaa_audit.passed)
+        self.assertEqual(report.dcr.identical_matches, 0)
+        self.assertNotEqual(report.nndr.memorization_risk, "HIGH")
+        self.assertEqual(report.overall_privacy_status, "REVIEW_REQUIRED")
 
 
 class TestValidatorIntegration(unittest.TestCase):

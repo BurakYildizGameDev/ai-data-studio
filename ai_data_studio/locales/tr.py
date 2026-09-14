@@ -586,7 +586,11 @@ MESSAGES = {
     "cli.help.inject_fraud": "Sentetik veriye parametrik dolandırıcılık (fraud) senaryoları enjekte et",
     "cli.help.fraud_rate": "Dolandırıcılık enjeksiyon oranı (varsayılan: 0.005 yani %0.5)",
     "cli.help.fraud_target_col": "Dolandırıcılık etiket kolonu (varsayılan: is_fraud)",
-    "cli.help.audit_privacy": "NNDR, Diferansiyel Gizlilik ve HIPAA Safe Harbor denetimi yap",
+    "cli.help.audit_privacy": (
+        "Sezgisel gizlilik kontrollerini çalıştır: en yakın komşu ezberleme testi "
+        "(DCR/NNDR), dağılım farkı skoru ve tanımlayıcı kolon adı taraması - uyumluluk "
+        "sertifikası değildir"
+    ),
     "cli.help.fraud_table": "Dolandırıcılık enjeksiyonu hangi tabloya uygulansın (varsayılan: kök tablo)",
     "cli.help.audit_table": (
         "Gizlilik denetimi hangi tabloya uygulansın: boş = kök tablo (varsayılan), "
@@ -608,9 +612,9 @@ MESSAGES = {
         "sağlanamazsa çıkış kodu 3)"
     ),
     "cli.help.engine": (
-        "Üretim motoru: 'llm' kod üretir ve sandbox'ta koşar (varsayılan), "
-        "'parametric' şemayı doğrudan derler (LLM kodu yok, tek tablo), 'auto' kod "
-        "üretimi tükenirse parametriğe düşer"
+        "Üretim motoru: 'llm' kod üretir ve sandbox'ta koşar (varsayılan), 'parametric' "
+        "şemayı doğrudan derler (LLM kodu yok; tek ve çok tablo), 'auto' kod üretimi "
+        "tükenirse 'parametric'e düşer"
     ),
     "cli.help.time_series": (
         "Zaman serisi ve hız dinamiği ekle: kronolojik sıralama, sirkadiyen ritim, "
@@ -672,8 +676,11 @@ MESSAGES = {
         "[{x} -> {y} ({direction})]: Spearman r={r}, Dilim Uyumu=%{compliance} [{verdict}]"
     ),
     "validation.privacy_nndr": "Gizlilik & NNDR: DCR={dcr}, NNDR={nndr} (ezberleme riski: {risk})",
-    "validation.hipaa_warning": "HIPAA Safe Harbor uyarısı: {summary}",
-    "validation.hipaa_ok": "HIPAA Safe Harbor uyumluluğu: DOĞRULANDI",
+    "validation.hipaa_warning": "Tanımlayıcı kolon adı taraması: {summary}",
+    "validation.hipaa_ok": (
+        "Tanımlayıcı kolon adı taraması: eşleşme yok (yalnızca kolon adlarına bakıldı, "
+        "değerler incelenmedi)"
+    ),
     "validation.verdict.ok": "UYGUN",
     "validation.verdict.below": "BEKLENENİN ALTINDA",
     "validation.verdict.violation": "İHLAL",
@@ -742,6 +749,10 @@ MESSAGES = {
     "hipaa.title.biometric": "Biyometrik tanımlayıcılar",
     "hipaa.title.face": "Yüz fotoğrafları ve benzer görüntüler",
     "hipaa.title.unique_code": "Her türlü benzersiz kod veya numara",
+    "hipaa.title.email": "E-posta adresleri",
+    "hipaa.title.certificate": "Sertifika / ehliyet numaraları",
+    "hipaa.title.url": "Web adresleri (URL)",
+    "hipaa.title.ip": "IP adresleri",
     "hipaa.category.direct": "Doğrudan tanımlayıcı",
     "hipaa.category.quasi": "Yarı tanımlayıcı (quasi-identifier)",
     "hipaa.category.timestamp": "Zaman damgası (date shifting gerekir)",
@@ -753,54 +764,94 @@ MESSAGES = {
     "hipaa.category.digital": "Dijital iz",
     "hipaa.category.network": "Ağ tanımlayıcı",
     "hipaa.category.visual_biometric": "Görsel biyometri",
+    "hipaa.category.government_id": "Resmi kimlik numarası",
+    "hipaa.category.official_document": "Resmi belge",
+    "hipaa.category.biometric": "Biyometrik veri",
 
     # --- Gizlilik denetim raporu ------------------------------------------------ #
-    "privacy.report.title": "HIPAA Safe Harbor & Diferansiyel Gizlilik Denetim Raporu",
+    "privacy.report.title": "Gizlilik Kontrol Raporu (sezgisel)",
+    "privacy.report.scope": (
+        "**Kapsam:** yalnızca sezgisel kontroller - referans veriye karşı en yakın komşu "
+        "ezberleme testi (DCR/NNDR), histogram tabanlı dağılım farkı skoru ve 18 HIPAA "
+        "Safe Harbor tanımlayıcı kategorisini kontrol listesi olarak kullanan bir kolon "
+        "adı taraması. Diferansiyel gizlilik garantisi ya da HIPAA uyumluluk sertifikası "
+        "değildir."
+    ),
     "privacy.report.table": "Tablo",
-    "privacy.report.summary_heading": "Yönetici Özeti",
-    "privacy.report.overall_status": "Genel gizlilik durumu",
-    "privacy.report.guarantee": "Gizlilik seviyesi",
-    "privacy.report.epsilon": "Tahmini diferansiyel gizlilik",
-    "privacy.report.memorisation_heading": "Referans Veri Ezberleme (Memorization) Analizi",
+    "privacy.report.summary_heading": "Özet",
+    "privacy.report.overall_status": "Genel durum",
+    "privacy.report.guarantee": "Ezberleme kontrolü",
+    "privacy.report.epsilon": "Dağılım farkı skoru",
+    "privacy.report.epsilon_note": (
+        "En fazla beş ortak sayısal kolonun 20 kutulu histogramlarında |log(p_sentetik / "
+        "p_referans)| değerinin 95. yüzdeliği; düşük değer dağılımların daha yakın "
+        "olduğunu gösterir. Diferansiyel gizlilik epsilon'u değildir."
+    ),
+    "privacy.report.memorisation_heading": "Referans Veri Ezberleme Analizi",
     "privacy.report.no_reference": (
-        "Referans (seed) veri sağlanmadığı için DCR/NNDR karşılaştırması atlandı. Veri "
-        "sıfırdan sentetik üretildi."
+        "Referans (seed) veri sağlanmadığı için DCR/NNDR karşılaştırması çalışmadı, yani "
+        "**ezberleme riski ölçülmedi**."
     ),
     "privacy.report.no_reference_table": (
         "Bu tablo için referans (seed) veri yok; DCR/NNDR karşılaştırması yapılamadı, "
         "yani **ezberleme riski ölçülmedi**."
     ),
     "privacy.report.nn_intro": (
-        "Sentetik verinin referans hasta/müşteri kayıtlarını birebir kopyalamadığını "
-        "teyit etmek için En Yakın Komşu analizi uygulanmıştır:"
+        "En yakın komşu analizi, sentetik satırların referans kayıtların neredeyse "
+        "kopyası olup olmadığını kontrol eder. İki veri setinin ortak sayısal kolonları "
+        "standartlaştırılarak rastgele bir satır örnekleminde karşılaştırılır:"
     ),
     "privacy.report.metric_header": "| Metrik | Değer | Eşik değer | Risk seviyesi |",
-    "privacy.report.dcr_p5": "5% yüzdelik DCR",
+    "privacy.report.dcr_p5": "5. yüzdelik DCR",
     "privacy.report.safe_distance": "Güvenli mesafe",
     "privacy.report.identical_matches": "Birebir eşleşen kayıt sayısı",
     "privacy.report.mean_nndr": "Ortalama NNDR",
     "privacy.report.nndr_note_label": "NNDR yorumu:",
     "privacy.report.nndr_note": (
-        "oran 1.0'a yaklaştıkça sentetik satırların hiçbir gerçek kişiyi kopyalamadığı, "
-        "manifold üzerinde yeni ve bağımsız sentetik bireyler oluşturduğu kanıtlanır."
+        "oranın 1.0'a yakın olması, sentetik satırın en yakın referans kayda ikinci en "
+        "yakın kayıt kadar uzak olduğunu, yani tek bir kaydın neredeyse kopyası "
+        "olmadığını gösterir. Birebir eşleşme ya da düşük oran kopyalanmış bir satıra "
+        "işaret eder. Yalnızca sayısal kolonlar karşılaştırılır."
     ),
-    "privacy.report.hipaa_heading": "HIPAA 18 Tanımlayıcı Taraması",
-    "privacy.report.audit_result": "Denetim sonucu",
-    "privacy.report.all_passed": "TÜM KRİTERLERİ GEÇTİ",
-    "privacy.report.review_required": "İNCELENMESİ GEREKEN ALANLAR VAR",
+    "privacy.report.hipaa_heading": "Tanımlayıcı Kolon Adı Taraması",
+    "privacy.report.hipaa_scope": (
+        "Kolon **adları** 18 HIPAA Safe Harbor tanımlayıcı kategorisinin desenleriyle "
+        "eşleştirilir ve yaş kolonunda 89'dan büyük değer aranır. Hücre değerlerine "
+        "bakılmaz: ilgisiz bir adla saklanan tanımlayıcı gözden kaçar, adında desen geçen "
+        "zararsız bir kolon (ör. `mobile_sessions`) ise işaretlenir."
+    ),
+    "privacy.report.audit_result": "Tarama sonucu",
+    "privacy.report.all_passed": "EŞLEŞME YOK",
+    "privacy.report.review_required": "İNCELENECEK KOLONLAR VAR",
     "privacy.report.age_over_89": "89 yaş üstü satır sayısı",
     "privacy.report.age_rule": "HIPAA kuralı: 89 yaş üstü 90+ olarak kümelenmelidir",
-    "privacy.report.identifiers_heading": "Tespit Edilen Olası Tanımlayıcı Kolonlar",
-    "privacy.report.identifiers_header": "| Kolon adı | HIPAA kategorisi | Durum / aksiyon |",
+    "privacy.report.identifiers_heading": "Tanımlayıcı Desenine Uyan Kolon Adları",
+    "privacy.report.identifiers_header": (
+        "| Kolon adı | Tanımlayıcı kategorisi | Önerilen aksiyon |"
+    ),
     "privacy.report.no_identifiers": (
-        "Şemada doğrudan maskesiz kişisel tanımlayıcı (PII) kolon tespit edilmemiştir."
+        "Hiçbir kolon adı tanımlayıcı desenine uymadı. Hücre değerleri incelenmedi."
     ),
     "privacy.report.footer": (
-        "Bu rapor AI Synthetic Data Studio PrivacyAuditor tarafından otomatik oluşturulmuştur."
+        "Bu rapor AI Synthetic Data Studio PrivacyAuditor tarafından otomatik "
+        "oluşturuldu. Kontroller sezgiseldir; veriyi paylaşmadan önce kendiniz de gözden "
+        "geçirin."
     ),
-    "privacy.action.mask": "Sentetik Faker verisi ile maskelenmiş veya kodlanmış olmalıdır.",
-    "privacy.summary.compliant": "HIPAA Safe Harbor uyumlu.",
-    "privacy.summary.findings": "{columns} tanımlayıcı kolon ve {ages} adet 89+ yaş kaydı tespit edildi.",
+    "privacy.action.mask": (
+        "Gözden geçirin; maskeleyin ya da sentetik değerlerle (ör. Faker) değiştirin."
+    ),
+    "privacy.summary.compliant": "Tanımlayıcıya benzeyen kolon adı ve 89 yaş üstü kayıt bulunmadı.",
+    "privacy.summary.findings": (
+        "Tanımlayıcıya benzeyen {columns} kolon adı ve yaşı 89'dan büyük {ages} satır "
+        "bulundu."
+    ),
+    "privacy.assessment.copies_found": (
+        "Referans kayıtların olası kopyaları var (birebir eşleşme ya da düşük NNDR)"
+    ),
+    "privacy.assessment.no_copies": (
+        "Örneklemde referans kayıtların kopyasına benzeyen satır bulunmadı"
+    ),
+    "privacy.assessment.not_measured": "Ölçülmedi - karşılaştırılacak referans veri yok",
     # --- Şema sözleşmesi doğrulaması -------------------------------------------- #
     "schema.error.empty_response": "LLM yanıtı boş - JSON bloğu bulunamadı",
     "schema.error.no_json": "LLM yanıtında geçerli JSON bloğu bulunamadı",
