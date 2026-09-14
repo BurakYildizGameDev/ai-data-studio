@@ -123,7 +123,7 @@ HIPAA_IDENTIFIER_RULES: Dict[str, Dict[str, Any]] = {
     "ANY_UNIQUE_CODE": {
         "title": t("hipaa.title.unique_code"),
         "patterns": [r"uuid", r"guid", r"unique_id", r"barkod", r"barcode"],
-        "category": "Benzersiz Anahtar",
+        "category": t("hipaa.category.unique_key"),
     },
 }
 

@@ -350,6 +350,9 @@ def test_pipeline_agentic_integration():
     assert result.schema.domain == "ecommerce_orders"
 
     # Step 2'de konsey olaylarının geçtiğini doğrula
+    from ai_data_studio.i18n import t
+
     step2_msgs = [e["message"] for e in events if e["step"] == 2]
-    assert any("Ajan Konseyi" in m for m in step2_msgs)
+    assert t("run.agents.gathering") in step2_msgs
+    assert any(t("run.agents.consensus", tables=1) in m for m in step2_msgs)
 

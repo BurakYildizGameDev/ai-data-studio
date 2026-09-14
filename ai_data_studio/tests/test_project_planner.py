@@ -13,6 +13,7 @@ import unittest
 
 from ai_data_studio.core.project_planner import ProjectPlan, SplitStrategy
 from ai_data_studio.core.schema_contract import SchemaValidationError
+from ai_data_studio.i18n import t
 
 ID = {"type": "int", "min": 1, "max": 10 ** 9}
 
@@ -94,7 +95,7 @@ class TestValidPlan(unittest.TestCase):
         summary = ProjectPlan.from_dict(plan_dict()).summary()
         self.assertIn("binary_classification", summary)
         self.assertIn("customers.churned", summary)
-        self.assertIn("2 tablo", summary)
+        self.assertIn(t("plan.summary.tables", count=2), summary)
 
     def test_no_warnings_on_a_complete_plan(self):
         self.assertEqual(ProjectPlan.from_dict(plan_dict()).warnings, [])

@@ -36,7 +36,9 @@ Kurallar
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List
+import threading
+from contextlib import contextmanager
+from typing import Any, Dict, Iterator, List
 
 log = logging.getLogger(__name__)
 
@@ -87,6 +89,8 @@ def detect_system_language() -> str:
 _catalogs: Dict[str, Dict[str, str]] = {}
 _language: str = DEFAULT_LANGUAGE
 _resolved = False
+# Yalnizca o anki is parcacigini etkileyen dil (bkz. language_override).
+_thread_state = threading.local()
 
 
 def _load_catalog(language: str) -> Dict[str, str]:
@@ -121,9 +125,32 @@ def set_language(language: str) -> str:
     return _language
 
 
+@contextmanager
+def language_override(language: str) -> Iterator[None]:
+    """Blok süresince YALNIZCA bu iş parçacığında ``t()`` başka dilde çalışır.
+
+    Neden: sözleşme doğrulama hataları ``t()`` ile arayüz dilinde üretiliyor ve aynı
+    metin self-healing isteminde modele geri gönderiliyordu - Türkçe arayüzde model
+    Türkçe düzeltme talimatı alıyordu ("LLM metni çeviri dışı" kuralına aykırı).
+    Global ``set_language`` kullanılamaz: pipeline işçi iş parçacığında koşarken arayüz
+    iş parçacığı aynı anda ``t()`` çağırıyor ve bir anlığına İngilizce metin basardı.
+    """
+    code = (language or "").strip().lower()
+    if code not in LANGUAGE_NAMES:
+        code = DEFAULT_LANGUAGE
+    previous = getattr(_thread_state, "language", None)
+    _thread_state.language = code
+    try:
+        yield
+    finally:
+        _thread_state.language = previous
+
+
 def get_language() -> str:
     """Aktif dil kodu; ilk çağrıda ayarlardan çözülür."""
-    global _resolved
+    override = getattr(_thread_state, "language", None)
+    if override:
+        return override
     if not _resolved:
         try:
             from . import config

@@ -244,7 +244,7 @@ def generate(
     """
     project = kwargs.get("project", "")
     if not domain and not project:
-        raise TypeError("generate() icin 'domain' ya da 'project' verilmeli")
+        raise TypeError("generate() needs either 'domain' or 'project'")
     # Proje modunda job kaydi ve raporlar proje metnini tasir.
     cfg = build_config(domain or project, **kwargs)
     iterator = run_pipeline(cfg, cancel_event, llm_client=llm_client)
@@ -344,7 +344,7 @@ def compile_dataset(
         sc = SchemaContract.from_dict(contract_copy)
         return compile_schema_to_dataframe(sc, n_rows=rows, seed=seed)
     raise TypeError(
-        "compile_dataset() beklenen türler: DatasetContract, SchemaContract veya dict; alınan: %s"
+        "compile_dataset() expects a DatasetContract, SchemaContract or dict, got %s"
         % type(contract).__name__
     )
 
@@ -368,6 +368,6 @@ def compile_schema(
         sc = SchemaContract.from_dict(s_copy)
         return compile_schema_to_dataframe(sc, n_rows=rows, seed=seed)
     raise TypeError(
-        "compile_schema() beklenen türler: SchemaContract veya dict; alınan: %s"
+        "compile_schema() expects a SchemaContract or dict, got %s"
         % type(schema).__name__
     )

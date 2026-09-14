@@ -19,6 +19,10 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, NamedTuple, Optional
 
+# i18n modul duzeyinde config'i import etmez (dili ilk t() cagrisinda tembelce cozer),
+# bu yuzden bu import dongu olusturmaz.
+from .i18n import t
+
 APP_NAME = "AIDataStudio"
 KEYRING_SERVICE = "AIDataStudio"
 
@@ -338,13 +342,13 @@ def resolve_credential(provider: str) -> Credential:
     Claude Code OAuth token'i -> SDK'nin kendi çözüm zinciri (profil / ADC / hf login) -> yok.
     """
     if provider not in _KEYRING_ACCOUNTS:
-        return Credential(KIND_NONE, None, "bilinmeyen sağlayıcı")
+        return Credential(KIND_NONE, None, t("auth.source.unknown_provider"))
 
     value = _keyring_value(provider)
     if value:
         kind = (anthropic_value_kind(value) if provider == PROVIDER_ANTHROPIC
                 else KIND_API_KEY)
-        return Credential(kind, value, "keyring (Windows Credential Manager)")
+        return Credential(kind, value, t("auth.source.keyring"))
 
     for env_var in CREDENTIAL_ENV_VARS[provider]:
         value = os.getenv(env_var)
@@ -355,18 +359,18 @@ def resolve_credential(provider: str) -> Credential:
                 kind = anthropic_value_kind(value)
             else:
                 kind = KIND_API_KEY
-            return Credential(kind, value, "%s ortam değişkeni" % env_var)
+            return Credential(kind, value, t("auth.source.env_var", var=env_var))
 
     if provider == PROVIDER_ANTHROPIC:
         claude_token = claude_code_oauth_token()
         if claude_token:
-            return Credential(KIND_AUTH_TOKEN, claude_token, "Claude Code OAuth oturumu")
+            return Credential(KIND_AUTH_TOKEN, claude_token, t("auth.source.claude_code"))
 
     fallback = _sdk_default_source(provider)
     if fallback:
         return Credential(KIND_SDK_DEFAULT, None, fallback)
 
-    return Credential(KIND_NONE, None, "hiçbir kaynakta bulunamadı")
+    return Credential(KIND_NONE, None, t("auth.source.not_found"))
 
 
 # --------------------------------------------------------------------------- #
@@ -422,7 +426,7 @@ def gemini_backend() -> str:
 def set_gemini_backend(backend: str) -> None:
     """Arka ucu kalıcı olarak kaydeder."""
     if backend not in (GEMINI_BACKEND_AISTUDIO, GEMINI_BACKEND_CLI):
-        raise ValueError("Bilinmeyen Gemini arka ucu: %s" % backend)
+        raise ValueError("Unknown Gemini backend: %s" % backend)
     save_settings({"gemini_backend": backend})
 
 
@@ -433,7 +437,7 @@ def _sdk_default_source(provider: str) -> Optional[str]:
     """
     if provider == PROVIDER_ANTHROPIC:
         if anthropic_profile_dir():
-            return "ant auth login profili"
+            return t("auth.source.ant_profile")
         if os.getenv("ANTHROPIC_FEDERATION_RULE_ID"):
             return "Workload Identity Federation"
     elif provider == PROVIDER_GEMINI:
@@ -441,12 +445,12 @@ def _sdk_default_source(provider: str) -> Optional[str]:
         # Oturumun gerçekten geçerli olduğu ancak CLI'a sorularak anlaşılır;
         # bunu health_check() / "Bağlantıyı test et" yapar.
         if gemini_backend() == GEMINI_BACKEND_CLI and agy_available():
-            return "Antigravity CLI (agy) oturumu"
+            return t("auth.source.agy_session")
     elif provider == "huggingface":
         try:
             from huggingface_hub import get_token
             if get_token():
-                return "huggingface-cli login token'i"
+                return t("auth.source.hf_login")
         except Exception:
             pass
     return None
@@ -474,27 +478,22 @@ def oauth_status(provider: str) -> Dict[str, Any]:
         else:
             cmd = ["claude", "setup-token"]
 
-        note = ("Açılan konsoldaki token'i kopyalayıp yukarıdaki "
-                "'API anahtarı' alanına yapıştırın - böylece oturum süreli "
-                "olmaktan çıkar.")
+        note = t("auth.oauth.claude_note")
         if creds["found"] and creds["expired"]:
-            detail = ("Claude Code oturumu bulundu ama SÜRESİ DOLMUŞ - "
-                      "yenilemek için bir terminalde `claude` çalıştırın")
+            detail = t("auth.oauth.claude_expired")
         elif creds["found"]:
-            detail = "Claude Code OAuth ile oturum açık"
+            detail = t("auth.oauth.claude_active")
             if creds["expires_at"]:
                 import datetime
                 left = creds["expires_at"] - datetime.datetime.now().timestamp()
                 hours = max(0, int(left // 3600))
-                detail += " (yaklaşık %d saat geçerli)" % hours
+                detail += t("auth.oauth.hours_left", hours=hours)
                 if hours < 24:
-                    note = ("Bu oturum %d saat sonra doluyor. Kalıcı kullanım için "
-                            "'Giriş yap' ile uzun ömürlü token üretin veya bir API "
-                            "anahtarı girin." % hours)
+                    note = t("auth.oauth.claude_expiring_note", hours=hours)
         elif profile:
-            detail = "Profil: %s" % profile
+            detail = t("auth.oauth.profile", path=profile)
         else:
-            detail = "Oturum açılmamış"
+            detail = t("settings.oauth.not_logged_in")
 
         return {
             "supported": True,
@@ -510,18 +509,15 @@ def oauth_status(provider: str) -> Dict[str, Any]:
         # oturumunun kullanıldığı yoldaki mantığın aynısı: kimlik dosyasına
         # dokunmayız, CLI'ı çağırırız, o kendi oturumunu kullanır.
         installed = agy_available()
-        detail = ("Antigravity CLI kurulu - oturum 'Bağlantıyı test et' ile doğrulanır"
-                  if installed else "Antigravity CLI (`agy`) kurulu değil")
+        detail = (t("auth.oauth.agy_installed") if installed
+                  else t("auth.oauth.agy_missing"))
         return {
             "supported": True,
             "logged_in": installed,
             "detail": detail,
             "command": [AGY_EXECUTABLE],
             "install_hint": "https://antigravity.google/download",
-            "note": ("Mevcut Antigravity oturumunuzu kullanır - API anahtarı, GCP "
-                     "projesi veya faturalandırma gerekmez. Karşılığında yavaştır: "
-                     "ajan CLI her çağrıda kendi bağlamını yüklediği için tek bir "
-                     "adım dakikalar sürebilir."),
+            "note": t("auth.oauth.agy_note"),
             "api_key_url": API_KEY_URLS[PROVIDER_GEMINI],
         }
     if provider == "huggingface":
@@ -533,7 +529,8 @@ def oauth_status(provider: str) -> Dict[str, Any]:
         return {
             "supported": True,
             "logged_in": logged_in,
-            "detail": "Token kayıtlı" if logged_in else "huggingface-cli login yapılmamış",
+            "detail": (t("auth.oauth.hf_token_saved") if logged_in
+                       else t("auth.oauth.hf_not_logged_in")),
             "command": ["huggingface-cli", "login"],
             "install_hint": "pip install huggingface_hub[cli]",
             "note": "",
@@ -586,25 +583,21 @@ def credential_status(provider: str) -> Dict[str, Any]:
 
 def missing_credential_message(provider: str) -> str:
     """Kimlik bulunamadığında nerelere bakıldığını söyleyen hata metni."""
-    env_vars = " veya ".join(CREDENTIAL_ENV_VARS.get(provider, ()))
-    extra = {
-        PROVIDER_ANTHROPIC: " veya `claude` CLI ile oturum açın",
-        PROVIDER_GEMINI: (" (https://aistudio.google.com adresinden ücretsiz "
-                          "alabilirsiniz) ya da Antigravity CLI girişini seçin"),
-        "huggingface": " veya `huggingface-cli login` çalıştırın",
-    }.get(provider, "")
-    return (
-        "%s için kimlik bilgisi bulunamadı. Ayarlar sekmesinden anahtar girin, "
-        "%s ortam değişkenini tanımlayın%s."
-        % (provider, env_vars, extra)
-    )
+    env_vars = " / ".join(CREDENTIAL_ENV_VARS.get(provider, ()))
+    extra_key = {
+        PROVIDER_ANTHROPIC: "auth.missing.extra_anthropic",
+        PROVIDER_GEMINI: "auth.missing.extra_gemini",
+        "huggingface": "auth.missing.extra_huggingface",
+    }.get(provider)
+    return t("auth.missing.message", provider=provider, env_vars=env_vars,
+             extra=t(extra_key) if extra_key else "")
 
 
 def set_api_key(provider: str, value: str) -> bool:
     """Key'i OS credential store'a yazar. Başarılı olursa True."""
     account = _KEYRING_ACCOUNTS.get(provider)
     if account is None:
-        raise ValueError("Bilinmeyen sağlayıcı: " + str(provider))
+        raise ValueError("Unknown provider: " + str(provider))
     kr = _keyring()
     if kr is None:
         return False

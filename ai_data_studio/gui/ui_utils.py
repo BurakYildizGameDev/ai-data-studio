@@ -46,7 +46,7 @@ def show_if(widget, visible: bool) -> None:
         pass
 
 
-def status_dot(parent, text: str = "Hazır", color: str = COLOR_MUTED):
+def status_dot(parent, text: str = "", color: str = COLOR_MUTED):
     """Sağ üstte 'nokta + metin' biçiminde durum göstergesi döndürür.
 
     Döner: (kapsayıcı_frame, nokta_label, metin_label)

@@ -454,7 +454,8 @@ def _fallback_card(schema, stats: Dict[str, Any], repo_id: str = "") -> str:
                          % (rule["rule"], format(rule.get("violations", 0), ",")))
     for corr in stats.get("correlations", []):
         lines.append("- Correlation %s: r = %s (expected %s, min %s) - %s"
-                     % ("/".join(corr["pair"]), corr.get("actual_r"),
+                     % ("/".join(corr["pair"]),
+                        "n/a" if corr.get("actual_r") is None else corr.get("actual_r"),
                         corr.get("expected_sign"), corr.get("min_r"),
                         "PASS" if corr.get("pass") else "FAIL"))
     dist = stats.get("distributions") or {}

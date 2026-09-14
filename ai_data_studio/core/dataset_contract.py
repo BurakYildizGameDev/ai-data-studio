@@ -159,8 +159,7 @@ class DatasetContract:
             raise SchemaValidationError(t("contract.error.tables_required"))
         if len(raw_tables) > MAX_TABLES:
             raise SchemaValidationError(
-                "'tables' en fazla %d tablo icerebilir, %d geldi"
-                % (MAX_TABLES, len(raw_tables))
+                t("contract.error.too_many_tables", limit=MAX_TABLES, count=len(raw_tables))
             )
 
         tables = [SchemaContract.from_dict(t) for t in raw_tables]
@@ -216,8 +215,8 @@ class DatasetContract:
             self.root_table = self._infer_root(by_name)
         if self.root_table not in by_name:
             raise SchemaValidationError(
-                "root_table '%s' tablolar arasinda yok: %s"
-                % (self.root_table, sorted(by_name))
+                t("schema.error.root_table_missing", root=self.root_table,
+                  tables=sorted(by_name))
             )
 
         for rel in self.relationships:

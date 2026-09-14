@@ -37,9 +37,10 @@ class TestHardwareProfiler(unittest.TestCase):
 
     def test_format_hardware_report(self):
         rep = format_hardware_report()
-        self.assertIn("DONANIM PROFİLİ VE MODEL TAVSİYE RAPORU", rep)
-        self.assertIn("İşlemci (CPU):", rep)
-        self.assertIn("Sistem RAM:", rep)
+        from ai_data_studio.i18n import t
+        self.assertIn(t("hardware.report.title"), rep)
+        self.assertIn(t("hardware.report.cpu"), rep)
+        self.assertIn(t("hardware.report.ram"), rep)
 
 
 if __name__ == "__main__":

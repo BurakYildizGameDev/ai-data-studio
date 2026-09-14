@@ -112,7 +112,7 @@ class SplitStrategy:
         kind = _require_str(data, "kind", where).lower()
         if kind not in SPLIT_KINDS:
             raise SchemaValidationError(
-                "%s: 'kind' su degerlerden biri olmali: %s" % (where, sorted(SPLIT_KINDS))
+                t("plan.error.split_kind", where=where, valid=sorted(SPLIT_KINDS))
             )
         return cls(
             kind=kind,
@@ -179,13 +179,13 @@ class ProjectPlan:
 
         raw_dataset = data.get("dataset")
         if raw_dataset is None:
-            raise SchemaValidationError("'dataset' alani zorunlu (Dataset Contract)")
+            raise SchemaValidationError(t("plan.error.dataset_required"))
         contract = DatasetContract.from_dict(raw_dataset)
 
         task_type = _require_str(data, "task_type", "plan").lower()
         if task_type not in TASK_TYPES:
             raise SchemaValidationError(
-                "'task_type' su degerlerden biri olmali: %s" % sorted(TASK_TYPES)
+                t("plan.error.task_type", valid=sorted(TASK_TYPES))
             )
 
         target = None
@@ -194,10 +194,7 @@ class ProjectPlan:
 
         raw_leakage = data.get("excluded_leakage")
         if raw_leakage is None:
-            raise SchemaValidationError(
-                "'excluded_leakage' alani zorunlu - sizinti yaratacak kolonlari "
-                "dusundugunu gostermelisin (hicbiri yoksa bos liste ver)"
-            )
+            raise SchemaValidationError(t("plan.error.leakage_required"))
         if not isinstance(raw_leakage, list):
             raise SchemaValidationError(t("plan.error.leakage_list"))
         exclusions = [LeakageExclusion.from_dict(item, i)
@@ -211,7 +208,7 @@ class ProjectPlan:
                 ratio = float(ratio)
             except (TypeError, ValueError):
                 raise SchemaValidationError(
-                    "'positive_class_ratio' sayi olmali, %r geldi" % (ratio,)
+                    t("plan.error.class_ratio_number", value=repr(ratio))
                 ) from None
 
         plan = cls(
@@ -244,8 +241,8 @@ class ProjectPlan:
             table = self._table_or_raise(self.target.table, "target")
             if self.target.column not in table.column_names:
                 raise SchemaValidationError(
-                    "Hedef kolon '%s' '%s' tablosunda yok. Tanimli kolonlar: %s"
-                    % (self.target.column, self.target.table, sorted(table.column_names))
+                    t("plan.error.target_column_missing", column=self.target.column,
+                      table=self.target.table, columns=sorted(table.column_names))
                 )
         elif self.target is not None:
             self.warnings.append(
@@ -264,9 +261,7 @@ class ProjectPlan:
         )
         if still_present:
             raise SchemaValidationError(
-                "Sizintili ilan edilen kolon(lar) sozlesmede hala duruyor: %s. "
-                "Ayiklanan kolonlar uretilmemeli - ya sozlesmeden cikar ya da "
-                "sizinti listesinden." % still_present
+                t("plan.error.leakage_still_present", columns=still_present)
             )
         if supervised and not self.excluded_leakage:
             self.warnings.append(
@@ -279,8 +274,7 @@ class ProjectPlan:
                       if e.column == self.target.column]
             if leaked:
                 raise SchemaValidationError(
-                    "Hedef kolon '%s' ayni zamanda sizinti olarak isaretlenmis"
-                    % self.target.column
+                    t("plan.error.target_is_leakage", column=self.target.column)
                 )
 
         # 4) Sinif dengesi: siniflandirmada zorunlu, regresyonda anlamsiz.
@@ -309,10 +303,7 @@ class ProjectPlan:
         if self.split is not None:
             self._validate_split()
         elif supervised:
-            self.warnings.append(
-                "Train/test ayrimi belirtilmemis - varsayilan rastgele bolme dogru "
-                "olmayabilir (zamana bagli ya da ayni varliga ait satirlar varsa)."
-            )
+            self.warnings.append(t("plan.warning.no_split"))
 
         # 6) Plan ile semanin sinif dengesi celismemeli.
         self._check_target_ratio_agreement()
@@ -322,8 +313,8 @@ class ProjectPlan:
             return self.contract.table(name)
         except KeyError:
             raise SchemaValidationError(
-                "%s: '%s' tablosu sozlesmede yok. Tanimli tablolar: %s"
-                % (where, name, self.contract.table_names)
+                t("plan.error.table_missing", where=where, table=name,
+                  tables=self.contract.table_names)
             ) from None
 
     def _validate_split(self) -> None:
@@ -333,7 +324,7 @@ class ProjectPlan:
 
         if not split.column:
             raise SchemaValidationError(
-                "split: '%s' bolme icin 'column' zorunlu" % split.kind
+                t("plan.error.split_column_required", kind=split.kind)
             )
         table_name = split.table or (self.target.table if self.target
                                      else self.contract.root_table)
@@ -364,9 +355,10 @@ class ProjectPlan:
             column.target_ratio = self.positive_class_ratio
         elif abs(column.target_ratio - self.positive_class_ratio) > 0.02:
             raise SchemaValidationError(
-                "Plan sinif dengesini %.3f diyor ama '%s' kolonunun target_ratio'su "
-                "%.3f. Ikisi ayni sayiyi soylemeli."
-                % (self.positive_class_ratio, self.target.label(), column.target_ratio)
+                t("plan.error.ratio_disagreement",
+                  plan_ratio="%.3f" % self.positive_class_ratio,
+                  target=self.target.label(),
+                  column_ratio="%.3f" % column.target_ratio)
             )
 
     # -- erisim ------------------------------------------------------------ #
@@ -383,16 +375,17 @@ class ProjectPlan:
 
     def summary(self) -> str:
         """Konsola basmak icin tek satirlik ozet."""
-        parts = ["gorev: %s" % self.task_type]
+        parts = [t("plan.summary.task", task=self.task_type)]
         if self.target is not None:
-            parts.append("hedef: %s" % self.target.label())
+            parts.append(t("plan.summary.target", target=self.target.label()))
         if self.positive_class_ratio is not None:
-            parts.append("pozitif sinif: %%%.1f" % (self.positive_class_ratio * 100))
-        parts.append("%d tablo" % len(self.contract.tables))
+            parts.append(t("plan.summary.positive_class", ratio=t(
+                "common.percent", value="%.1f" % (self.positive_class_ratio * 100))))
+        parts.append(t("plan.summary.tables", count=len(self.contract.tables)))
         if self.excluded_leakage:
-            parts.append("%d sizinti kolonu ayiklandi" % len(self.excluded_leakage))
+            parts.append(t("plan.summary.leakage", count=len(self.excluded_leakage)))
         if self.split is not None:
-            parts.append("bolme: %s" % self.split.kind)
+            parts.append(t("plan.summary.split", kind=self.split.kind))
         return " | ".join(parts)
 
     # -- serilestirme ------------------------------------------------------ #

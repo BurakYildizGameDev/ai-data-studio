@@ -72,7 +72,7 @@ class TestStaticImportCheck(unittest.TestCase):
     def test_syntax_error_reported(self):
         with self.assertRaises(SecurityError) as ctx:
             static_import_check("def broken(:\n    pass\n")
-        self.assertIn("parse edilemedi", str(ctx.exception))
+        self.assertIn("could not be parsed", str(ctx.exception))
 
 
 class TestSandboxExecution(unittest.TestCase):
@@ -142,7 +142,7 @@ class TestSandboxExecution(unittest.TestCase):
         result = execute_in_sandbox(code, n_rows=10, timeout=5)
         self.assertFalse(result.success)
         self.assertEqual(result.killed_reason, "timeout")
-        self.assertIn("Zaman aşımı", result.traceback)
+        self.assertIn("Timeout", result.traceback)
 
     def test_memory_hog_is_killed(self):
         code = (
@@ -157,7 +157,7 @@ class TestSandboxExecution(unittest.TestCase):
         )
         result = execute_in_sandbox(code, n_rows=10, timeout=60, memory_limit_mb=400)
         self.assertFalse(result.success)
-        self.assertIn("Bellek limiti", result.killed_reason)
+        self.assertIn("Memory limit", result.killed_reason)
 
     def test_cancel_event_stops_execution(self):
         code = (
@@ -170,7 +170,7 @@ class TestSandboxExecution(unittest.TestCase):
         threading.Timer(1.5, cancel.set).start()
         result = execute_in_sandbox(code, n_rows=10, timeout=60, cancel_event=cancel)
         self.assertFalse(result.success)
-        self.assertIn("iptal", result.killed_reason.lower())
+        self.assertIn("cancel", result.killed_reason.lower())
 
 
 class TestSanityCheck(unittest.TestCase):
@@ -187,7 +187,7 @@ class TestSanityCheck(unittest.TestCase):
     def test_missing_column_detected(self):
         df = self.result.dataframe.drop(columns=["income"])
         issues = sanity_check(df, self.schema)
-        self.assertTrue(any("Eksik kolonlar" in i for i in issues))
+        self.assertTrue(any("Missing columns" in i for i in issues))
 
     def test_extra_column_detected(self):
         df = self.result.dataframe.copy()
@@ -198,7 +198,7 @@ class TestSanityCheck(unittest.TestCase):
     def test_row_shortfall_detected(self):
         df = self.result.dataframe.head(100)
         issues = sanity_check(df, self.schema)
-        self.assertTrue(any("Satır sayısı çok düşük" in i for i in issues))
+        self.assertTrue(any("Too few rows" in i for i in issues))
 
     def test_deliberate_noise_is_not_flagged(self):
         """Mimari geregi üretilen veri %10-20 gurultu icerir; onu ayiklamak
@@ -212,13 +212,13 @@ class TestSanityCheck(unittest.TestCase):
         df = self.result.dataframe.copy()
         df.loc[df.index[:2000], "age"] = 200       # %40 - kasitli gurultu olamaz
         issues = sanity_check(df, self.schema)
-        self.assertTrue(any("max sinirinin" in i for i in issues))
+        self.assertTrue(any("above max" in i for i in issues))
 
     def test_target_ratio_violation_detected(self):
         df = self.result.dataframe.copy()
         df["clicked"] = True
         issues = sanity_check(df, self.schema)
-        self.assertTrue(any("True orani" in i for i in issues))
+        self.assertTrue(any("True ratio" in i for i in issues))
 
 
 class TestSandboxChildRunner(unittest.TestCase):

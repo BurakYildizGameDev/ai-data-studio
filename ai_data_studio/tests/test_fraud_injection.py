@@ -172,7 +172,8 @@ class TestSchemaContractAnomalySupport(unittest.TestCase):
         d = contract.to_dict()
         self.assertEqual(d["preserve_anomaly_column"], "is_fraud")
         self.assertEqual(d["preserve_anomaly_value"], 1)
-        self.assertIn("anomali koruma: is_fraud", contract.summary())
+        from ai_data_studio.i18n import t
+        self.assertIn(t("schema.summary.anomaly", column="is_fraud"), contract.summary())
 
     def test_schema_contract_warns_on_unknown_preserve_column(self):
         contract = SchemaContract.from_dict({

@@ -248,9 +248,9 @@ class SettingsView(ctk.CTkScrollableFrame):
             return False, config.missing_credential_message("huggingface")
         try:
             info = hf_service._api(token).whoami()
-            return True, "Giriş yapıldı: %s" % info.get("name", "?")
+            return True, t("settings.hf.signed_in", name=info.get("name", "?"))
         except Exception as exc:
-            return False, "Token doğrulanamadı: %s" % exc
+            return False, t("settings.hf.token_invalid", error=exc)
 
     def _save_key(self, provider: str) -> None:
         value = self.key_entries[provider].get().strip()
@@ -263,6 +263,11 @@ class SettingsView(ctk.CTkScrollableFrame):
             return
         self.key_entries[provider].delete(0, "end")
         self._refresh_key_status()
+        if value:
+            # Durum satiri kaynagi zaten gosteriyor; kaydin gerceklestigini de soyle.
+            self.key_status[provider].configure(
+                text="%s - %s" % (t("settings.keys.saved"),
+                                  self.key_status[provider].cget("text")))
         if self.on_settings_changed is not None:
             self.on_settings_changed()
 
@@ -313,12 +318,14 @@ class SettingsView(ctk.CTkScrollableFrame):
         command = info["command"]
         status_label, hint_label = self.oauth_status_labels[provider]
         if not command:
-            status_label.configure(text="Bu sağlayıcı için OAuth girişi yok",
+            status_label.configure(text=t("settings.oauth.unsupported"),
                                    text_color="#ffb74d")
             hint_label.configure(text=info.get("note", ""))
             return
         if not config.cli_available(command[0]):
-            status_label.configure(text="%s bulunamadı" % command[0], text_color="#e57373")
+            status_label.configure(text=t("settings.oauth.command_not_found",
+                                          command=command[0]),
+                                   text_color="#e57373")
             hint_label.configure(text=info["install_hint"])
             return
         status_label.configure(text=t("auth.oauth.console_opened"),
@@ -326,7 +333,8 @@ class SettingsView(ctk.CTkScrollableFrame):
         try:
             config.launch_login_process(command)
         except Exception as exc:
-            status_label.configure(text="Başlatılamadı: %s" % exc, text_color="#e57373")
+            status_label.configure(text=t("settings.oauth.launch_failed", error=exc),
+                                   text_color="#e57373")
 
     def _change_language(self, label: str) -> None:
         """Dili kaydeder ve yeniden başlatma gerektiğini söyler.
@@ -346,35 +354,35 @@ class SettingsView(ctk.CTkScrollableFrame):
 
     # ------------------------------------------------------------------ #
     def refresh_ollama(self) -> None:
-        self.ollama_status.configure(text="Kontrol ediliyor...", text_color="#8a8a8a")
+        self.ollama_status.configure(text=t("settings.ollama.checking"), text_color="#8a8a8a")
         threading.Thread(target=self._check_ollama, daemon=True,
                          name="ollama-check").start()
 
     def _check_ollama(self) -> None:
         try:
             if not ollama_service.is_available():
-                text, color = "Daemon çalışmıyor - başlatmak için: ollama serve", "#ffb74d"
+                text, color = t("settings.ollama.daemon_down"), "#ffb74d"
             else:
                 models = ollama_service.list_models()
                 version = ollama_service.get_version() or "?"
                 if models:
-                    names = ", ".join(m["name"] for m in models[:6])
-                    text = "Ollama %s çalışıyor - %d model: %s" % (version, len(models), names)
+                    text = t("settings.ollama.running", version=version, count=len(models))
                 else:
-                    text = "Ollama %s çalışıyor - hiç model kurulu değil" % version
+                    text = t("settings.ollama.no_models", version=version)
                 color = "#81c784"
         except Exception as exc:  # pragma: no cover
-            text, color = "Kontrol edilemedi: %s" % exc, "#e57373"
+            text, color = t("settings.ollama.check_failed", error=exc), "#e57373"
         post_to_ui(self, lambda: self.ollama_status.configure(text=text, text_color=color))
 
     def _pull_model(self) -> None:
         name = self.pull_entry.get().strip()
         if not name:
-            self.pull_status.configure(text="Önce bir model adı girin", text_color="#ffb74d")
+            self.pull_status.configure(text=t("settings.ollama.enter_model_name"),
+                                       text_color="#ffb74d")
             return
         self.pull_button.configure(state="disabled")
         self.pull_progress.set(0)
-        self.pull_status.configure(text="İndirme başlatılıyor...", text_color="#8a8a8a")
+        self.pull_status.configure(text=t("settings.ollama.pull_starting"), text_color="#8a8a8a")
         threading.Thread(target=self._pull_worker, args=(name,), daemon=True,
                          name="ollama-pull").start()
 
@@ -386,16 +394,18 @@ class SettingsView(ctk.CTkScrollableFrame):
 
         try:
             ok = ollama_service.pull_model(name, on_progress=on_progress)
-            message = ("İndirildi: %s" % name) if ok else ("İndirilemedi: %s" % name)
+            message = (t("settings.ollama.pull_done", model=name) if ok
+                       else t("settings.ollama.pull_failed", model=name))
             color = "#81c784" if ok else "#e57373"
         except Exception as exc:
-            message, color = "Hata: %s" % exc, "#e57373"
+            message, color = t("settings.ollama.pull_error", error=exc), "#e57373"
         post_to_ui(self, lambda: self._finish_pull(message, color))
 
     def _update_pull_ui(self, percent, status: str) -> None:
         if percent is not None:
             self.pull_progress.set(percent / 100.0)
-            self.pull_status.configure(text="%s - %%%.1f" % (status, percent))
+            self.pull_status.configure(
+                text="%s - %s" % (status, t("common.percent", value="%.1f" % percent)))
         else:
             self.pull_status.configure(text=status)
 

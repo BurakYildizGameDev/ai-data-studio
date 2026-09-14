@@ -394,7 +394,7 @@ def test_credential(provider: str):
         from ...services.cloud_llm_service import create_client
         client = create_client(provider)
         if client.health_check():
-            return True, "kaynak: %s" % client.credential.source
-        return False, client.last_health_error or "bilinmeyen hata"
+            return True, t("cli.auth.source", source=client.credential.source)
+        return False, client.last_health_error or t("common.unknown_error")
     except Exception as exc:
         return False, str(exc)

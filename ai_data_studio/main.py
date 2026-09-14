@@ -49,13 +49,19 @@ def main() -> int:
             config.write_text(config.LOG_DIR / "crash.log", message)
         except Exception:
             pass
+        error_line = message.strip().splitlines()[-1]
+        crash_log = config.LOG_DIR / "crash.log"
+        try:
+            # Cokme i18n'in kendisinden de gelmis olabilir: dialog yine de acilmali.
+            from ai_data_studio.i18n import t
+            title = t("app.crash.title")
+            body = t("app.crash.body", error=error_line, path=crash_log)
+        except Exception:
+            title = "AI Synthetic Data Studio - Unexpected error"
+            body = "The application could not start.\n\n%s\n\nDetails: %s" % (error_line, crash_log)
         try:
             import tkinter.messagebox as messagebox
-            messagebox.showerror(
-                "AI Synthetic Data Studio - Beklenmeyen hata",
-                "Uygulama başlatılamadı.\n\n%s\n\nAyrinti: %s"
-                % (message.strip().splitlines()[-1], config.LOG_DIR / "crash.log"),
-            )
+            messagebox.showerror(title, body)
         except Exception:
             if sys.stderr is not None:
                 sys.stderr.write(message)

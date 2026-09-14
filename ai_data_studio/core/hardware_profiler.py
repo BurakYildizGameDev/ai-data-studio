@@ -17,6 +17,8 @@ import subprocess
 from dataclasses import dataclass
 from typing import Optional
 
+from ..i18n import t
+
 log = logging.getLogger(__name__)
 
 # Donanım Kademeleri
@@ -54,7 +56,8 @@ class HardwareProfile:
     def to_dict(self) -> dict:
         return {
             "cpu_name": self.cpu_name,
-            "cpu_cores": f"{self.cpu_physical_cores} fiziksel / {self.cpu_logical_cores} mantıksal",
+            "cpu_cores": t("hardware.cores", physical=self.cpu_physical_cores,
+                           logical=self.cpu_logical_cores),
             "ram_total_gb": round(self.ram_total_gb, 2),
             "ram_available_gb": round(self.ram_available_gb, 2),
             "has_gpu": self.has_gpu,
@@ -72,7 +75,7 @@ class HardwareProfile:
 def _detect_nvidia_gpu() -> tuple[bool, str, float, float]:
     """nvidia-smi aracılığıyla NVIDIA GPU ve VRAM miktarını okur."""
     if shutil.which("nvidia-smi") is None:
-        return False, "Yok / Entegre", 0.0, 0.0
+        return False, "", 0.0, 0.0
 
     try:
         cmd = [
@@ -100,7 +103,7 @@ def _detect_nvidia_gpu() -> tuple[bool, str, float, float]:
     except Exception as exc:
         log.debug("nvidia-smi okuma hatası: %s", exc)
 
-    return False, "Yok / Entegre", 0.0, 0.0
+    return False, "", 0.0, 0.0
 
 
 def _detect_torch_cuda() -> tuple[bool, str, float, float]:
@@ -125,7 +128,7 @@ def profile_hardware() -> HardwareProfile:
     import psutil
 
     # 1. CPU
-    cpu_name = platform.processor() or platform.machine() or "Bilinmeyen CPU"
+    cpu_name = platform.processor() or platform.machine() or t("hardware.cpu_unknown")
     cores_phys = psutil.cpu_count(logical=False) or 2
     cores_log = psutil.cpu_count(logical=True) or cores_phys
 
@@ -138,32 +141,35 @@ def profile_hardware() -> HardwareProfile:
     has_gpu, gpu_name, vram_total_gb, vram_free_gb = _detect_nvidia_gpu()
     if not has_gpu:
         has_gpu, gpu_name, vram_total_gb, vram_free_gb = _detect_torch_cuda()
+    if not has_gpu:
+        gpu_name = t("hardware.gpu_none")
 
     # 4. Kademe ve Model Tavsiyesi
+    vram = "%.1f" % vram_total_gb
     if has_gpu and vram_total_gb >= 15.0:
         tier = TIER_ENTERPRISE
         model = MODEL_14B
         mode = "gpu_cuda"
         limit = 1_000_000
-        notes = f"Yüksek Seviye GPU ({gpu_name}, {vram_total_gb:.1f} GB VRAM). 14B ve 32B modeller tam CUDA hızında çalışabilir."
+        notes = t("hardware.notes.enterprise", gpu=gpu_name, vram=vram)
     elif has_gpu and vram_total_gb >= 7.5:
         tier = TIER_HIGH
         model = MODEL_7B
         mode = "gpu_cuda"
         limit = 500_000
-        notes = f"Güçlü GPU ({gpu_name}, {vram_total_gb:.1f} GB VRAM). 7B model sıfır gecikmeyle tam ekran kartında çalışır."
+        notes = t("hardware.notes.high", gpu=gpu_name, vram=vram)
     elif (has_gpu and vram_total_gb >= 3.5) or ram_total_gb >= 15.0:
         tier = TIER_MID
         model = MODEL_7B if has_gpu else MODEL_3B
         mode = "gpu_cuda" if has_gpu else "cpu_only"
         limit = 100_000
-        notes = f"Orta Seviye Sistem ({vram_total_gb:.1f} GB VRAM / {ram_total_gb:.1f} GB RAM). 7B Q4 veya 3B model önerilir."
+        notes = t("hardware.notes.mid", vram=vram, ram="%.1f" % ram_total_gb)
     else:
         tier = TIER_ULTRA_LOW
         model = MODEL_1_5B
         mode = "cpu_only"
         limit = 25_000
-        notes = "Düşük Donanım / Entegre Grafik. 986 MB'lık Qwen 1.5B modeli CPU modunda güvenle çalıştırılmalıdır."
+        notes = t("hardware.notes.low")
 
     return HardwareProfile(
         cpu_name=cpu_name,
@@ -188,21 +194,31 @@ def format_hardware_report(prof: Optional[HardwareProfile] = None) -> str:
     if prof is None:
         prof = profile_hardware()
 
-    gpu_str = f"{prof.gpu_name} ({prof.vram_total_gb:.1f} GB VRAM)" if prof.has_gpu else "Yok / Entegre Grafik"
+    gpu_str = (t("hardware.report.gpu_value", gpu=prof.gpu_name,
+                 vram="%.1f" % prof.vram_total_gb)
+               if prof.has_gpu else t("hardware.gpu_none"))
 
-    lines = [
-        "============================================================",
-        "          DONANIM PROFİLİ VE MODEL TAVSİYE RAPORU           ",
-        "============================================================",
-        f"  İşlemci (CPU):    {prof.cpu_name}",
-        f"  Çekirdekler:      {prof.cpu_physical_cores} Fiziksel / {prof.cpu_logical_cores} Mantıksal",
-        f"  Sistem RAM:       {prof.ram_total_gb:.1f} GB (Kullanılabilir: {prof.ram_available_gb:.1f} GB)",
-        f"  Grafik Kartı:     {gpu_str}",
-        f"  Donanım Kademesi: {prof.hardware_tier}",
-        f"  Çalışma Modu:     {prof.execution_mode.upper()}",
-        f"  Önerilen Model:   {prof.recommended_model}",
-        f"  Önerilen Satır:   {prof.recommended_row_limit:,} Satıra kadar optimize",
-        f"  Açıklama:         {prof.notes}",
-        "============================================================",
+    fields = [
+        ("hardware.report.cpu", prof.cpu_name),
+        ("hardware.report.cores", t("hardware.cores", physical=prof.cpu_physical_cores,
+                                    logical=prof.cpu_logical_cores)),
+        ("hardware.report.ram", t("hardware.report.ram_value",
+                                  total="%.1f" % prof.ram_total_gb,
+                                  available="%.1f" % prof.ram_available_gb)),
+        ("hardware.report.gpu", gpu_str),
+        ("hardware.report.tier", prof.hardware_tier),
+        ("hardware.report.mode", prof.execution_mode.upper()),
+        ("hardware.report.model", prof.recommended_model),
+        ("hardware.report.rows", t("hardware.report.rows_value",
+                                   rows=format(prof.recommended_row_limit, ","))),
+        ("hardware.report.notes", prof.notes),
     ]
+    # Etiket uzunlugu dile gore degisir; hizalama cevirmene birakilmaz.
+    labels = [t(key) for key, _ in fields]
+    width = max(len(label) for label in labels) + 2
+    rule = "=" * 60
+    lines = [rule, t("hardware.report.title").center(60), rule]
+    lines += ["  %-*s%s" % (width, label, value)
+              for label, (_, value) in zip(labels, fields)]
+    lines.append(rule)
     return "\n".join(lines)

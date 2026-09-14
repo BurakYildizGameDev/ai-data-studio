@@ -227,7 +227,9 @@ class OllamaDialog(ctk.CTkToplevel):
     def _update_progress(self, percent, label: str, name: str) -> None:
         if percent is not None:
             self.progress.set(percent / 100.0)
-            self._set_status("%s - %s  %%%.1f" % (name, label, percent), INFO_COLOR)
+            self._set_status("%s - %s  %s" % (name, label,
+                                               t("common.percent", value="%.1f" % percent)),
+                             INFO_COLOR)
         else:
             self._set_status("%s - %s" % (name, label), INFO_COLOR)
 

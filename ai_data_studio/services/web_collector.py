@@ -23,6 +23,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import pandas as pd
 
 from ..core.schema_contract import extract_json_block
+from ..i18n import t
 from .llm_base import BaseLLMClient
 
 log = logging.getLogger(__name__)
@@ -258,6 +259,6 @@ def collect_web_seed(
     df = extract_seed_dataframe(raw_text, domain_prompt, llm_client)
     source_summary = ", ".join(sources[:2]) if sources else query_or_url
     if len(sources) > 2:
-        source_summary += " (+%d kaynak)" % (len(sources) - 2)
+        source_summary += " " + t("web.more_sources", count=len(sources) - 2)
 
     return df, source_summary

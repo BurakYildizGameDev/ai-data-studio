@@ -161,6 +161,36 @@ class TestTranslationLookup(unittest.TestCase):
             ["de", "en", "fr", "ja", "ru", "tr", "zh"],
         )
 
+    def test_language_override_is_scoped_and_thread_local(self):
+        """GUI işçi iş parçacığında İngilizce üretirken arayüz Türkçe kalmalı."""
+        import threading
+
+        i18n.set_language("tr")
+        seen = {}
+        inside = threading.Event()
+        release = threading.Event()
+
+        def worker():
+            with i18n.language_override("en"):
+                seen["worker"] = i18n.t("settings.defaults.theme")
+                inside.set()
+                release.wait(5)
+
+        thread = threading.Thread(target=worker)
+        thread.start()
+        inside.wait(5)
+        seen["ui_during"] = i18n.t("settings.defaults.theme")
+        release.set()
+        thread.join(5)
+
+        self.assertEqual(seen, {"worker": "Theme", "ui_during": "Tema"})
+        self.assertEqual(i18n.t("settings.defaults.theme"), "Tema")
+        with i18n.language_override("en"):
+            with i18n.language_override("de"):
+                pass
+            self.assertEqual(i18n.get_language(), "en")     # iç içe blok önceki dile döner
+        self.assertEqual(i18n.get_language(), "tr")
+
     def test_language_comes_from_settings(self):
         from unittest import mock
         from ai_data_studio import config

@@ -131,10 +131,12 @@ def check_cardinality(tables: Dict[str, pd.DataFrame],
 
         violations: List[str] = []
         if not within:
-            violations.append("ortalama %.2f, beklenen %.2f (+/-%%%d)"
-                              % (observed_mean, expected, CARDINALITY_TOLERANCE * 100))
+            violations.append(t("relational.violation.mean",
+                                observed="%.2f" % observed_mean, expected="%.2f" % expected,
+                                tolerance=int(CARDINALITY_TOLERANCE * 100)))
         if rel.max_per_parent is not None and observed_max > rel.max_per_parent:
-            violations.append("en yuksek %d, ust sinir %d" % (observed_max, rel.max_per_parent))
+            violations.append(t("relational.violation.max", observed=observed_max,
+                                limit=rel.max_per_parent))
 
         results.append({
             "relationship": rel.label(),

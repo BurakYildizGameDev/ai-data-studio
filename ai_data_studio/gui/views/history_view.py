@@ -155,7 +155,8 @@ class HistoryView(ctk.CTkFrame):
             for corr in report.get("correlations", []):
                 lines.append("  " + t(
                     "history.validation.correlation",
-                    pair="/".join(corr["pair"]), r=corr.get("actual_r"),
+                    pair="/".join(corr["pair"]),
+                    r="-" if corr.get("actual_r") is None else corr.get("actual_r"),
                     verdict=t("history.verdict.pass") if corr.get("pass")
                     else t("history.verdict.fail")))
 

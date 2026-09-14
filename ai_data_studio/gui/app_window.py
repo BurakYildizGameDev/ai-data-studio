@@ -356,7 +356,7 @@ class AppWindow(ctk.CTk):
               rows_out=format(result.report["rows_out"], ","),
               retention="%.1f" % result.report["retention_pct"]),
             "success")
-        tot_tokens = result.cost.get("prompt_tokens", 0) + result.cost.get("completion_tokens", 0)
+        tot_tokens = result.cost.get("input_tokens", 0) + result.cost.get("output_tokens", 0)
         self.console.write(
             t("app.done.cost", cost="%.4f" % result.cost.get("cost_usd", 0.0),
               calls=result.cost.get("calls", 0), tokens=format(tot_tokens, ",")),
