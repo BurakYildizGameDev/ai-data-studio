@@ -283,10 +283,15 @@ class TestAppWindow(unittest.TestCase):
         self.assertEqual(console.get_text().strip(), "")
 
     def test_start_pipeline_switches_to_console_tab(self):
+        """Kimlik hazir kabul edilir: ilk CI kosusunda (kimliksiz temiz makine) form
+        dogrulamasi baslatmayi erken durdurdu ve test yalnizca Claude Code girisi olan
+        gelistirici makinesinde geciyordu. Kimliksiz davranis ayri testte olculuyor."""
         from unittest import mock
         from ai_data_studio.gui.views.pipeline_view import TAB_CONSOLE, TAB_CHARTS
+        selector = self.app.pipeline_view.model_selector
         self.app.pipeline_view.tabs.set(TAB_CHARTS)
-        with mock.patch("threading.Thread.start"):
+        with mock.patch("threading.Thread.start"), \
+                mock.patch.object(type(selector), "is_ready", return_value=True):
             self.app.start_pipeline()
         self.assertEqual(self.app.pipeline_view.tabs.get(), TAB_CONSOLE)
 
