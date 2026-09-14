@@ -373,7 +373,7 @@ def remove_isolation_forest_outliers(df: pd.DataFrame, columns: List[str],
 # 4. Korelasyon & dagilim dogrulamasi (Bolum 6.4)
 # --------------------------------------------------------------------------- #
 def validate_correlations(df: pd.DataFrame, schema: SchemaContract) -> List[Dict[str, Any]]:
-    """Semada beklenen korelasyonlarin (Pearson veya Spearman rank) veride gercekten olusup olusmadigini olcer."""
+    """Semada beklenen korelasyonlarin (Pearson, Spearman ya da Kendall) veride gercekten olusup olusmadigini olcer."""
     rules = schema.correlations
     if not rules or df.empty:
         return []
@@ -386,6 +386,8 @@ def validate_correlations(df: pd.DataFrame, schema: SchemaContract) -> List[Dict
         method = getattr(rule, "method", "pearson") or "pearson"
         corr_matrix = corr_spearman if method == "spearman" else corr_pearson
 
+        # Kendall icin matris kurulmaz (pandas'in kendall'i buyuk veride cok yavas);
+        # sayisal olup olmadigi Pearson matrisinden okunur, deger cift basina olculur.
         if c1 not in corr_matrix.columns or c2 not in corr_matrix.columns:
             results.append({
                 "pair": [c1, c2], "expected_sign": rule.expected_sign, "min_r": rule.min_r,
@@ -393,7 +395,12 @@ def validate_correlations(df: pd.DataFrame, schema: SchemaContract) -> List[Dict
                 "reason": t("validation.corr_skip.not_numeric"),
             })
             continue
-        r = corr_matrix.loc[c1, c2]
+        if method == "kendall":
+            from .correlation import pair_correlation
+
+            r = pair_correlation(df[c1], df[c2], "kendall")
+        else:
+            r = corr_matrix.loc[c1, c2]
         if pd.isna(r):
             results.append({
                 "pair": [c1, c2], "expected_sign": rule.expected_sign, "min_r": rule.min_r,

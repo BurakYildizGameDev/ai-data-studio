@@ -593,3 +593,39 @@ def test_mixed_numeric_and_binary_drivers_for_binary_target():
     # Boolean surucu (negatif isaret ve anlamli korelasyon)
     r_card = df["card_present"].astype(float).corr(labels)
     assert r_card <= -0.08, f"card_present korelasyonu zayif veya isaretsiz: r={r_card:.4f}"
+
+
+def test_kendall_rules_are_generated_and_validated_as_kendall():
+    """Motor ve doğrulayıcı `kendall` kuralını sessizce Pearson ile ölçüyordu.
+
+    Gauss kopulasında tau = (2/pi) asin(r) < r: Pearson'a kalibre edilmiş veri gerçek
+    Kendall ölçümünde kuralı düşürürdü. İkisi artık aynı ölçüyü kullanıyor.
+    """
+    from scipy.stats import kendalltau
+
+    from ai_data_studio.core import validator
+
+    schema = SchemaContract(
+        domain="kendall_check",
+        description="test",
+        row_count_target=20000,
+        random_seed=3,
+        columns=[
+            ColumnSpec(name="tenure", type="float", min=0, max=100, distribution="normal", mean=50, std=15),
+            ColumnSpec(name="spend", type="float", min=1, max=10000, distribution="lognormal", mean=300),
+        ],
+        correlations=[
+            CorrelationRule(columns=["tenure", "spend"], expected_sign="positive", min_r=0.5,
+                            method="kendall"),
+        ],
+    )
+    df = compile_schema_to_dataframe(schema, n_rows=20000, seed=3)
+    tau = kendalltau(df["tenure"], df["spend"])[0]
+    assert tau >= 0.5, tau
+    # Pearson'a kalibre edilseydi tau ~0.33 kalırdı; sıra ölçüsünü gerçekten hedefliyor.
+    assert tau - 0.5 < 0.1, tau
+
+    result = validator.validate_correlations(df, schema)[0]
+    assert result["method"] == "kendall"
+    assert result["pass"] is True
+    assert abs(result["actual_r"] - tau) < 0.01

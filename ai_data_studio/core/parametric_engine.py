@@ -22,6 +22,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
+from .correlation import latent_from_target, pair_correlation
 from .dataset_contract import DatasetContract
 from .schema_contract import ColumnSpec, SchemaContract
 
@@ -508,20 +509,20 @@ class ParametricEngine:
         def measure(values: Dict[str, np.ndarray]) -> Dict[Tuple[int, int], float]:
             out = {}
             for (i, j), (_, method) in desired.items():
-                a = pd.Series(values[columns[i]], dtype=float)
-                b = pd.Series(values[columns[j]], dtype=float)
-                r = a.corr(b, method="spearman" if method == "spearman" else "pearson")
-                out[(i, j)] = 0.0 if pd.isna(r) else float(r)
+                # Doğrulayıcıyla aynı ölçü (bkz. core/correlation.py).
+                r = pair_correlation(values[columns[i]], values[columns[j]], method)
+                out[(i, j)] = 0.0 if np.isnan(r) else r
             return out
 
         def error(observed: Dict[Tuple[int, int], float]) -> float:
             return sum(abs(observed[key] - target) for key, (target, _) in desired.items())
 
-        # Normal latent -> sira korelasyonu: rho_s = (6/pi) asin(rho/2). Hedefi sira
-        # olcegine gore cevirerek baslanir, sonra olculen sapmayla bir kez kalibre edilir
-        # (lognormal kuyruk / Poisson basamaklari Pearson'u latentin altina ceker).
-        latent = {key: float(np.clip(2.0 * np.sin(np.pi * target / 6.0), -0.99, 0.99))
-                  for key, (target, _) in desired.items()}
+        # Normal latent -> sira korelasyonu: rho_s = (6/pi) asin(rho/2), Kendall icin
+        # tau = (2/pi) asin(rho). Hedefi sira olcegine gore cevirerek baslanir, sonra
+        # olculen sapmayla kalibre edilir (lognormal kuyruk / Poisson basamaklari
+        # Pearson'u latentin altina ceker).
+        latent = {key: latent_from_target(target, method)
+                  for key, (target, method) in desired.items()}
         best = build(latent)
         best_obs = measure(best)
         for _ in range(2):
