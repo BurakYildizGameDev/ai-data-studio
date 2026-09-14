@@ -1111,7 +1111,10 @@ def _privacy_report_from_dict(pa_data: Dict[str, Any]):
         table_name=pa_data.get("table_name", ""),
         dcr=dcr_obj,
         nndr=nndr_obj,
-        empirical_epsilon=pa_data.get("empirical_epsilon"),
+        # Eski kayıtlardaki "empirical_epsilon" farklı (ve yanıltıcı) bir ölçüydü;
+        # yeni skor adı altında gösterilmez.
+        distribution_divergence=pa_data.get("distribution_divergence"),
+        distribution_divergence_columns=pa_data.get("distribution_divergence_columns") or {},
         privacy_guarantee=pa_data.get("privacy_guarantee", ""),
         hipaa_audit=hipaa_obj,
         overall_privacy_status=pa_data.get("overall_privacy_status", "NO_ISSUES_FOUND"),

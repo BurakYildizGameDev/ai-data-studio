@@ -74,6 +74,87 @@ class TestDCRAndNNDR(unittest.TestCase):
         dcr = auditor.compute_dcr(synth, ref)
         self.assertIsInstance(dcr, DCRResult)
 
+    def test_independent_low_dimensional_data_is_not_flagged(self):
+        """Sabit eşiklerle 1-2 sayısal kolonda kopya olmayan veri de HIGH çıkıyordu:
+        yerel yoğunlukta P(d1/d2 < 0.2) ~ 0.2^d (d=2, n=2000 -> %3,8 > %2 eşik)."""
+        for d in (1, 2):
+            for seed in (0, 1, 2):
+                rng = np.random.default_rng(seed)
+                cols = ["c%d" % i for i in range(d)]
+                ref = pd.DataFrame(rng.normal(size=(2000, d)), columns=cols)
+                synth = pd.DataFrame(rng.normal(size=(2000, d)), columns=cols)
+                dcr, nndr = PrivacyAuditor().compute_dcr_nndr(synth, ref)
+                self.assertNotEqual(nndr.memorization_risk, "HIGH", (d, seed, nndr))
+                self.assertNotEqual(dcr.risk_level, "HIGH", (d, seed, dcr))
+                self.assertGreater(nndr.baseline_low_ratio_rate, 0.02 if d == 2 else 0.1)
+
+    def test_near_copies_are_flagged_against_the_baseline(self):
+        """Satırların %10'u referans kaydın gürültülü kopyası: birebir eşleşme yok ama
+        NNDR < 0.2 payı taban çizgisini belirgin aşar."""
+        rng = np.random.default_rng(5)
+        cols = ["a", "b", "c"]
+        ref = pd.DataFrame(rng.normal(size=(1500, 3)), columns=cols)
+        synth = pd.DataFrame(rng.normal(size=(1500, 3)), columns=cols)
+        copied = rng.choice(len(ref), 150, replace=False)
+        synth.iloc[:150] = ref.iloc[copied].to_numpy() + rng.normal(0, 1e-3, size=(150, 3))
+
+        dcr, nndr = PrivacyAuditor().compute_dcr_nndr(synth, ref)
+
+        self.assertEqual(dcr.identical_matches, 0)
+        self.assertEqual(nndr.memorization_risk, "HIGH")
+        self.assertGreater(nndr.low_ratio_rate, nndr.baseline_low_ratio_rate + 0.05)
+
+    def test_natural_ties_in_discrete_data_are_not_memorisation(self):
+        """Az değerli kesikli kolonlarda birebir eşleşme doğaldır; referansın kendi
+        içindeki tekrar oranı taban çizgisidir."""
+        rng = np.random.default_rng(9)
+        ref = pd.DataFrame({"visits": rng.integers(0, 5, 800), "items": rng.integers(0, 4, 800)})
+        synth = pd.DataFrame({"visits": rng.integers(0, 5, 800), "items": rng.integers(0, 4, 800)})
+
+        dcr, nndr = PrivacyAuditor().compute_dcr_nndr(synth, ref)
+
+        self.assertGreater(dcr.identical_matches, 0)
+        self.assertGreater(dcr.baseline_identical_rate, 0.5)
+        self.assertNotEqual(dcr.risk_level, "HIGH")
+        self.assertFalse(dcr.memorization_risk)
+
+    def test_single_exact_copy_of_continuous_data_is_high(self):
+        """Referansta hiç tekrar yoksa tek bir birebir kopya gerçek bir kaydın sızmasıdır."""
+        rng = np.random.default_rng(11)
+        cols = ["a", "b", "c", "d"]
+        ref = pd.DataFrame(rng.normal(size=(500, 4)), columns=cols)
+        synth = pd.DataFrame(rng.normal(size=(500, 4)), columns=cols)
+        synth.iloc[0] = ref.iloc[42]
+
+        dcr = PrivacyAuditor().compute_dcr(synth, ref)
+
+        self.assertEqual(dcr.identical_matches, 1)
+        self.assertEqual(dcr.risk_level, "HIGH")
+
+
+class TestDistributionDivergence(unittest.TestCase):
+    def test_score_is_bounded_and_separates_shifted_data(self):
+        """Eski skor aynı dağılımdan 300'er satırda 3,19 veriyordu (sınırsız)."""
+        rng = np.random.default_rng(2)
+        ref = pd.DataFrame({"x": rng.normal(0, 1, 5000), "y": rng.gamma(2, 1, 5000)})
+        same = pd.DataFrame({"x": rng.normal(0, 1, 5000), "y": rng.gamma(2, 1, 5000)})
+        shifted = pd.DataFrame({"x": rng.normal(2, 1, 5000), "y": rng.gamma(6, 1, 5000)})
+        auditor = PrivacyAuditor()
+
+        close, per_column = auditor.estimate_distribution_divergence(same, ref)
+        far, _ = auditor.estimate_distribution_divergence(shifted, ref)
+
+        self.assertEqual(sorted(per_column), ["x", "y"])
+        self.assertLess(close, 0.1)
+        self.assertGreater(far, 0.5)
+        self.assertLessEqual(far, 1.0)
+
+    def test_no_shared_numeric_columns_gives_none(self):
+        score, per_column = PrivacyAuditor().estimate_distribution_divergence(
+            pd.DataFrame({"a": ["x"] * 30}), pd.DataFrame({"a": ["y"] * 30}))
+        self.assertIsNone(score)
+        self.assertEqual(per_column, {})
+
 
 class TestHIPAAIdentifierScanner(unittest.TestCase):
     """HIPAA Safe Harbor 18 Doğrudan Tanımlayıcı tarama testleri."""
@@ -244,7 +325,8 @@ class TestPrivacyAuditorEndToEnd(unittest.TestCase):
         summary = report.to_dict()
         self.assertIn("dcr", summary)
         self.assertIn("nndr", summary)
-        self.assertIn("empirical_epsilon", summary)
+        self.assertIn("distribution_divergence", summary)
+        self.assertIn("baseline_low_ratio_rate", summary["nndr"])
         self.assertIn("hipaa", summary)
 
     def test_report_does_not_claim_guarantees_it_cannot_give(self):
@@ -264,11 +346,11 @@ class TestPrivacyAuditorEndToEnd(unittest.TestCase):
 
         self.assertEqual(report.overall_privacy_status, "NO_ISSUES_FOUND")
         lowered = md.lower()
-        for claim in ("compliant", "verified", "high differential privacy", "$\\epsilon$"):
+        for claim in ("compliant", "verified", "high differential privacy", "epsilon"):
             self.assertNotIn(claim, lowered)
         with language_override("en"):
             self.assertIn(t("privacy.report.scope"), md)
-            self.assertIn(t("privacy.report.epsilon_note"), md)
+            self.assertIn(t("privacy.report.divergence_note"), md)
             self.assertIn(t("privacy.report.hipaa_scope"), md)
 
     def test_without_reference_memorisation_is_reported_as_not_measured(self):
@@ -278,7 +360,7 @@ class TestPrivacyAuditorEndToEnd(unittest.TestCase):
             report = audit_dataset_privacy(pd.DataFrame({"score": [1.0, 2.0, 3.0]}))
             self.assertEqual(report.privacy_guarantee, t("privacy.assessment.not_measured"))
         self.assertEqual(report.overall_privacy_status, "NO_ISSUES_FOUND")
-        self.assertIsNone(report.empirical_epsilon)
+        self.assertIsNone(report.distribution_divergence)
 
     def test_identifier_finding_needs_review_even_with_reference_data(self):
         """Referans veri varken tarama bulgusu eskiden durumu etkilemiyordu."""

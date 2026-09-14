@@ -783,11 +783,12 @@ MESSAGES = {
     "privacy.report.summary_heading": "Summary",
     "privacy.report.overall_status": "Overall status",
     "privacy.report.guarantee": "Memorisation check",
-    "privacy.report.epsilon": "Distribution divergence score",
-    "privacy.report.epsilon_note": (
-        "95th percentile of |log(p_synthetic / p_reference)| over 20-bin histograms of up "
-        "to five shared numeric columns; lower means closer distributions. It is not a "
-        "differential-privacy epsilon."
+    "privacy.report.divergence": "Distribution divergence",
+    "privacy.report.divergence_note": (
+        "mean Jensen-Shannon distance between the synthetic and reference histograms of "
+        "the shared numeric columns (20 bins at reference quantiles); 0 means identical "
+        "histograms, 1 means no overlap. Small samples give values above 0 even for "
+        "identical distributions. It is not a privacy measure."
     ),
     "privacy.report.memorisation_heading": "Reference Data Memorisation Analysis",
     "privacy.report.no_reference": (
@@ -799,21 +800,27 @@ MESSAGES = {
         "could not run, so the **memorisation risk was not measured**."
     ),
     "privacy.report.nn_intro": (
-        "A nearest-neighbour analysis checks whether synthetic rows are near-copies of "
-        "reference records. It compares the numeric columns both datasets share, "
-        "standardised, on a random sample of rows:"
+        "A nearest-neighbour analysis checks whether synthetic rows sit closer to "
+        "reference records than reference records sit to each other. Both are measured on "
+        "the numeric columns the datasets share, standardised, on a random sample of "
+        "rows; the baseline column is what uncopied data from the same distribution looks "
+        "like:"
     ),
-    "privacy.report.metric_header": "| Metric | Value | Threshold | Risk level |",
+    "privacy.report.metric_header": (
+        "| Metric | Synthetic → reference | Reference → reference (baseline) | Risk level "
+        "|"
+    ),
     "privacy.report.dcr_p5": "5th percentile DCR",
-    "privacy.report.safe_distance": "Safe distance",
     "privacy.report.identical_matches": "Identical record count",
     "privacy.report.mean_nndr": "Mean NNDR",
+    "privacy.report.low_nndr_share": "Share of rows with NNDR < 0.2",
     "privacy.report.nndr_note_label": "Reading NNDR:",
     "privacy.report.nndr_note": (
-        "a ratio close to 1.0 means a synthetic row is about as far from its nearest "
-        "reference record as from the second nearest, so it is not a near-copy of a "
-        "single record. An identical match or a low ratio points to a copied row. Only "
-        "numeric columns are compared."
+        "compare each value with its baseline, not with a fixed threshold. With one or "
+        "two numeric columns a sizeable share of low ratios is normal. Identical rows or "
+        "low ratios well above the baseline point to copied or near-copied records. A "
+        "5th-percentile DCR below the baseline alone can also mean the synthetic data is "
+        "concentrated in dense regions, so it raises the risk to MEDIUM at most."
     ),
     "privacy.report.hipaa_heading": "Identifier Column-Name Scan",
     "privacy.report.hipaa_scope": (

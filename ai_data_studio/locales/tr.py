@@ -781,11 +781,12 @@ MESSAGES = {
     "privacy.report.summary_heading": "Özet",
     "privacy.report.overall_status": "Genel durum",
     "privacy.report.guarantee": "Ezberleme kontrolü",
-    "privacy.report.epsilon": "Dağılım farkı skoru",
-    "privacy.report.epsilon_note": (
-        "En fazla beş ortak sayısal kolonun 20 kutulu histogramlarında |log(p_sentetik / "
-        "p_referans)| değerinin 95. yüzdeliği; düşük değer dağılımların daha yakın "
-        "olduğunu gösterir. Diferansiyel gizlilik epsilon'u değildir."
+    "privacy.report.divergence": "Dağılım farkı",
+    "privacy.report.divergence_note": (
+        "ortak sayısal kolonlarda sentetik ve referans histogramları arasındaki ortalama "
+        "Jensen-Shannon mesafesi (referans yüzdeliklerinde 20 kutu); 0 aynı histogram, 1 "
+        "hiç örtüşme yok demektir. Küçük örneklemde aynı dağılım için bile 0'dan büyük "
+        "çıkar. Bir gizlilik ölçüsü değildir."
     ),
     "privacy.report.memorisation_heading": "Referans Veri Ezberleme Analizi",
     "privacy.report.no_reference": (
@@ -797,21 +798,28 @@ MESSAGES = {
         "yani **ezberleme riski ölçülmedi**."
     ),
     "privacy.report.nn_intro": (
-        "En yakın komşu analizi, sentetik satırların referans kayıtların neredeyse "
-        "kopyası olup olmadığını kontrol eder. İki veri setinin ortak sayısal kolonları "
-        "standartlaştırılarak rastgele bir satır örnekleminde karşılaştırılır:"
+        "En yakın komşu analizi, sentetik satırların referans kayıtlara, referans "
+        "kayıtların birbirine olduğundan daha yakın olup olmadığını kontrol eder. İkisi "
+        "de iki veri setinin ortak sayısal kolonlarında, standartlaştırılarak, rastgele "
+        "bir satır örnekleminde ölçülür; taban çizgisi sütunu aynı dağılımdan gelen, "
+        "kopyalanmamış verinin nasıl göründüğünü gösterir:"
     ),
-    "privacy.report.metric_header": "| Metrik | Değer | Eşik değer | Risk seviyesi |",
+    "privacy.report.metric_header": (
+        "| Metrik | Sentetik → referans | Referans → referans (taban çizgisi) | Risk "
+        "seviyesi |"
+    ),
     "privacy.report.dcr_p5": "5. yüzdelik DCR",
-    "privacy.report.safe_distance": "Güvenli mesafe",
     "privacy.report.identical_matches": "Birebir eşleşen kayıt sayısı",
     "privacy.report.mean_nndr": "Ortalama NNDR",
+    "privacy.report.low_nndr_share": "NNDR < 0.2 olan satır payı",
     "privacy.report.nndr_note_label": "NNDR yorumu:",
     "privacy.report.nndr_note": (
-        "oranın 1.0'a yakın olması, sentetik satırın en yakın referans kayda ikinci en "
-        "yakın kayıt kadar uzak olduğunu, yani tek bir kaydın neredeyse kopyası "
-        "olmadığını gösterir. Birebir eşleşme ya da düşük oran kopyalanmış bir satıra "
-        "işaret eder. Yalnızca sayısal kolonlar karşılaştırılır."
+        "her değeri sabit bir eşikle değil taban çizgisiyle karşılaştırın. Bir iki "
+        "sayısal kolonda düşük oranların hatırı sayılır bir payı normaldir. Taban "
+        "çizgisinin belirgin üstündeki birebir eşleşmeler ya da düşük oranlar kopyalanmış "
+        "veya neredeyse kopyalanmış kayıtlara işaret eder. Yalnızca DCR 5. yüzdeliğinin "
+        "taban çizgisinin altında olması sentetik verinin yoğun bölgelerde toplandığı "
+        "anlamına da gelebilir; bu yüzden riski en fazla MEDIUM'a çıkarır."
     ),
     "privacy.report.hipaa_heading": "Tanımlayıcı Kolon Adı Taraması",
     "privacy.report.hipaa_scope": (

@@ -4,8 +4,8 @@ Bu modül:
   1. En Yakın Komşu Mesafe Oranı (NNDR - Nearest Neighbor Distance Ratio) ve
      En Yakın Kayda Mesafe (DCR - Distance to Closest Record) metrikleriyle
      sentetik satırların referans kayıtların kopyası olup olmadığını örneklem üzerinde ölçer.
-  2. Histogram tabanlı bir dağılım farkı skoru hesaplar (rapordaki ``empirical_epsilon``).
-     Adı tarihsel: bu bir diferansiyel gizlilik epsilon'u DEĞİLDİR, garanti vermez.
+  2. Ortak sayısal kolonların histogramları arasındaki Jensen-Shannon mesafesini
+     hesaplar (``distribution_divergence``). Bir gizlilik garantisi DEĞİLDİR.
   3. Kolon ADLARINI 18 HIPAA Safe Harbor tanımlayıcı kategorisinin desenleriyle eşleştirir.
      Hücre değerlerine bakmaz; bir uyumluluk sertifikası değildir.
   4. Tarih öteleme (date shifting) ve 89 yaş üstü kümeleme (age > 89 -> 90+) yardımcıları sunar.
@@ -133,15 +133,54 @@ HIPAA_IDENTIFIER_RULES: Dict[str, Dict[str, Any]] = {
 }
 
 
+def _fmt(value: Optional[float], pattern: str, scale: float = 1.0) -> str:
+    """Rapor hücresi; taban çizgisi olmayan eski kayıtlarda "-" yazar."""
+    return "-" if value is None else pattern % (value * scale)
+
+
+_RISK_ORDER = {"LOW": 0, "MEDIUM": 1, "HIGH": 2}
+
+
+def _worst(*levels: str) -> str:
+    return max(levels, key=lambda level: _RISK_ORDER.get(level, 0))
+
+
+def _rate_excess_level(rate: float, baseline: float, n: int, n_baseline: int,
+                       high_floor: float, medium_floor: float) -> str:
+    """Bir oranın taban çizgisini örnekleme hatasının ötesinde aşıp aşmadığı.
+
+    İki oran farkının standart hatasıyla (havuzlanmış binom) karşılaştırılır;
+    küçük örneklemde gürültüyü kopya sanmamak için sabit bir alt eşik de vardır.
+    """
+    pooled = (rate * n + baseline * n_baseline) / float(n + n_baseline)
+    pooled = min(max(pooled, 1.0 / (n + n_baseline)), 1.0 - 1e-9)
+    se = float(np.sqrt(pooled * (1.0 - pooled) * (1.0 / n + 1.0 / n_baseline)))
+    excess = rate - baseline
+    if excess > max(high_floor, 3.0 * se):
+        return "HIGH"
+    if excess > max(medium_floor, 2.0 * se):
+        return "MEDIUM"
+    return "LOW"
+
+
 @dataclass
 class DCRResult:
-    """Distance to Closest Record (DCR) hesaplama çıktısı."""
+    """Distance to Closest Record (DCR) hesaplama çıktısı.
+
+    ``baseline_*`` alanları referans->referans (satırın kendisi hariç) ölçümüdür:
+    aynı dağılımdan gelen, KOPYA OLMAYAN verinin nasıl göründüğü. Eski kayıtlarda
+    bulunmaz (None).
+    """
 
     min_dcr: float = 0.0
     mean_dcr: float = 0.0
     percentile_5th: float = 0.0
     identical_matches: int = 0
-    risk_level: str = "LOW"  # LOW, MEDIUM, HIGH
+    risk_level: str = "LOW"  # LOW, MEDIUM, HIGH, UNKNOWN
+    identical_rate: float = 0.0
+    baseline_min_dcr: Optional[float] = None
+    baseline_percentile_5th: Optional[float] = None
+    baseline_identical_rate: Optional[float] = None
 
     @property
     def min_distance(self) -> float:
@@ -153,7 +192,9 @@ class DCRResult:
 
     @property
     def memorization_risk(self) -> bool:
-        return self.identical_matches > 0 or self.risk_level == "HIGH"
+        # Kesikli veride birebir eşleşme doğal olarak olur; karar taban çizgisine göre
+        # verilen risk seviyesindedir.
+        return self.risk_level == "HIGH"
 
 
 @dataclass
@@ -163,8 +204,11 @@ class NNDRResult:
     mean_nndr: float = 1.0
     median_nndr: float = 1.0
     percentile_5th: float = 1.0
-    low_ratio_count: int = 0  # nndr < 0.2 olan şüpheli ezberlenmiş kayıt sayısı
-    memorization_risk: str = "LOW"  # LOW, MEDIUM, HIGH
+    low_ratio_count: int = 0  # nndr < 0.2 olan satır sayısı
+    memorization_risk: str = "LOW"  # LOW, MEDIUM, HIGH, UNKNOWN
+    low_ratio_rate: float = 0.0
+    baseline_mean_nndr: Optional[float] = None
+    baseline_low_ratio_rate: Optional[float] = None
 
     @property
     def mean_ratio(self) -> float:
@@ -203,35 +247,27 @@ class PrivacyAuditReport:
     table_name: str = ""
     dcr: Optional[DCRResult] = None
     nndr: Optional[NNDRResult] = None
-    # Histogram tabanlı dağılım farkı skoru; adı geriye uyumluluk için korunuyor,
-    # diferansiyel gizlilik epsilon'u DEĞİL (bkz. estimate_empirical_epsilon).
-    empirical_epsilon: Optional[float] = None
+    # Ortak sayısal kolonların histogramları arasındaki ortalama Jensen-Shannon
+    # mesafesi (0 = aynı, 1 = hiç örtüşme yok). Bir gizlilik garantisi DEĞİL.
+    distribution_divergence: Optional[float] = None
+    distribution_divergence_columns: Dict[str, float] = field(default_factory=dict)
     # Ezberleme kontrolünün okunur özeti (çevrilmiş metin); adı tarihsel.
     privacy_guarantee: str = ""
     hipaa_audit: HIPAAAuditResult = field(default_factory=HIPAAAuditResult)
     overall_privacy_status: str = "NO_ISSUES_FOUND"
 
     def to_dict(self) -> Dict[str, Any]:
+        from dataclasses import asdict
+
         return {
             "has_reference_data": self.has_reference_data,
             "table_name": self.table_name,
             "overall_privacy_status": self.overall_privacy_status,
             "privacy_guarantee": self.privacy_guarantee,
-            "empirical_epsilon": self.empirical_epsilon,
-            "dcr": {
-                "min_dcr": self.dcr.min_dcr,
-                "mean_dcr": self.dcr.mean_dcr,
-                "percentile_5th": self.dcr.percentile_5th,
-                "identical_matches": self.dcr.identical_matches,
-                "risk_level": self.dcr.risk_level,
-            } if self.dcr else None,
-            "nndr": {
-                "mean_nndr": self.nndr.mean_nndr,
-                "median_nndr": self.nndr.median_nndr,
-                "percentile_5th": self.nndr.percentile_5th,
-                "low_ratio_count": self.nndr.low_ratio_count,
-                "memorization_risk": self.nndr.memorization_risk,
-            } if self.nndr else None,
+            "distribution_divergence": self.distribution_divergence,
+            "distribution_divergence_columns": dict(self.distribution_divergence_columns),
+            "dcr": asdict(self.dcr) if self.dcr else None,
+            "nndr": asdict(self.nndr) if self.nndr else None,
             "hipaa": {
                 "passed": self.hipaa_audit.passed,
                 "identifiers_found": self.hipaa_audit.identifiers_found,
@@ -255,10 +291,10 @@ class PrivacyAuditReport:
                                 self.overall_privacy_status),
             "- **%s:** %s" % (t("privacy.report.guarantee"), self.privacy_guarantee),
         ]
-        if self.empirical_epsilon is not None:
+        if self.distribution_divergence is not None:
             lines.append("- **%s:** `%.3f` - %s"
-                         % (t("privacy.report.epsilon"), self.empirical_epsilon,
-                            t("privacy.report.epsilon_note")))
+                         % (t("privacy.report.divergence"), self.distribution_divergence,
+                            t("privacy.report.divergence_note")))
 
         lines += [
             "",
@@ -272,24 +308,29 @@ class PrivacyAuditReport:
                                    if self.table_name
                                    else t("privacy.report.no_reference")))
         else:
+            nndr = self.nndr or NNDRResult()
             lines += [
                 t("privacy.report.nn_intro"),
                 "",
                 t("privacy.report.metric_header"),
                 "|---|---|---|---|",
-                "| **Min DCR (Distance to Closest Record)** | `%.4f` | > 0.0000 | %s |"
-                % (self.dcr.min_dcr, self.dcr.risk_level),
+                "| **Min DCR (Distance to Closest Record)** | `%.4f` | %s | %s |"
+                % (self.dcr.min_dcr, _fmt(self.dcr.baseline_min_dcr, "`%.4f`"),
+                   self.dcr.risk_level),
                 "| **%s** | `%.4f` | %s | %s |"
                 % (t("privacy.report.dcr_p5"), self.dcr.percentile_5th,
-                   t("privacy.report.safe_distance"), self.dcr.risk_level),
-                "| **%s** | `%d` | 0 | %s |"
+                   _fmt(self.dcr.baseline_percentile_5th, "`%.4f`"), self.dcr.risk_level),
+                "| **%s** | `%d` (%.1f%%) | %s | %s |"
                 % (t("privacy.report.identical_matches"), self.dcr.identical_matches,
-                   t("history.verdict.pass") if self.dcr.identical_matches == 0
-                   else t("validation.verdict.violation")),
-                "| **%s ($d_1 / d_2$)** | `%.4f` | $\\ge 0.50$ | %s |"
-                % (t("privacy.report.mean_nndr"),
-                   self.nndr.mean_nndr if self.nndr else 1.0,
-                   self.nndr.memorization_risk if self.nndr else "LOW"),
+                   self.dcr.identical_rate * 100,
+                   _fmt(self.dcr.baseline_identical_rate, "%.1f%%", 100), self.dcr.risk_level),
+                "| **%s ($d_1 / d_2$)** | `%.4f` | %s | %s |"
+                % (t("privacy.report.mean_nndr"), nndr.mean_nndr,
+                   _fmt(nndr.baseline_mean_nndr, "`%.4f`"), nndr.memorization_risk),
+                "| **%s** | %.1f%% | %s | %s |"
+                % (t("privacy.report.low_nndr_share"), nndr.low_ratio_rate * 100,
+                   _fmt(nndr.baseline_low_ratio_rate, "%.1f%%", 100),
+                   nndr.memorization_risk),
                 "",
                 "> **%s** %s" % (t("privacy.report.nndr_note_label"),
                                  t("privacy.report.nndr_note")),
@@ -353,15 +394,20 @@ class PrivacyAuditor:
             dcr_res, nndr_res = self.compute_dcr_nndr(synth_df, seed_df)
             report.dcr = dcr_res
             report.nndr = nndr_res
-            report.empirical_epsilon = self.estimate_empirical_epsilon(synth_df, seed_df)
+            (report.distribution_divergence,
+             report.distribution_divergence_columns) = self.estimate_distribution_divergence(
+                synth_df, seed_df)
 
-            if report.dcr.identical_matches > 0 or report.nndr.memorization_risk == "HIGH":
+            if report.dcr.risk_level == "HIGH" or report.nndr.memorization_risk == "HIGH":
                 report.overall_privacy_status = "MEMORIZATION_DETECTED"
                 report.privacy_guarantee = t("privacy.assessment.copies_found")
             else:
                 report.overall_privacy_status = (
                     "NO_ISSUES_FOUND" if report.hipaa_audit.passed else "REVIEW_REQUIRED")
-                report.privacy_guarantee = t("privacy.assessment.no_copies")
+                # Ortak sayısal kolon ya da yeterli referans satırı yoksa ölçülemedi.
+                report.privacy_guarantee = t(
+                    "privacy.assessment.not_measured"
+                    if report.dcr.risk_level == "UNKNOWN" else "privacy.assessment.no_copies")
         else:
             # Referans yoksa ezberleme ölçülemez; "sızıntı yok" demek ölçülmemiş
             # bir şeyi garanti etmek olurdu.
@@ -374,7 +420,21 @@ class PrivacyAuditor:
 
     def compute_dcr_nndr(self, synth_df: pd.DataFrame,
                          seed_df: pd.DataFrame) -> Tuple[DCRResult, NNDRResult]:
-        """NumPy/sklearn ile En Yakın Komşu Mesafesi (DCR) ve Mesafe Oranı (NNDR) hesaplar."""
+        """DCR ve NNDR'yi referans->referans taban çizgisine göre değerlendirir.
+
+        Sabit eşikler boyuttan ve yoğunluktan bağımsız değildi: yerel olarak düzgün
+        yoğunlukta P(d1/d2 < 0.2) ~ 0.2^d olduğundan 1-2 sayısal kolonda hiç
+        kopyalanmamış veri de "HIGH" çıkıyordu (ölçüm: d=2, n=2000 -> %3,8 > %2).
+        Artık aynı metrikler referansın her satırı için, kendisi hariç, diğer
+        referans satırlarına karşı da ölçülür; bu, aynı dağılımdan gelen kopya
+        OLMAYAN verinin görünümüdür ve karar ona göre verilir:
+
+        * birebir eşleşme oranı ve NNDR < 0.2 payı taban çizgisini örnekleme
+          hatasının ötesinde aşarsa MEDIUM/HIGH; referansta hiç birebir tekrar
+          yoksa tek bir birebir kopya bile HIGH;
+        * DCR 5. yüzdeliği taban çizgisinin altına düşerse en fazla MEDIUM -
+          sentetik veri yoğun bölgelerde toplandığında kopya olmadan da düşer.
+        """
         from sklearn.neighbors import NearestNeighbors
         from sklearn.preprocessing import StandardScaler
 
@@ -408,54 +468,73 @@ class PrivacyAuditor:
         else:
             r_mat = r_df.values
 
-        if len(s_mat) == 0 or len(r_mat) < 2:
-            return DCRResult(), NNDRResult()
+        if len(s_mat) == 0 or len(r_mat) < 3:
+            # Taban çizgisi için referansta en az 3 satır gerekir (kendisi + 2 komşu).
+            return DCRResult(risk_level="UNKNOWN"), NNDRResult(memorization_risk="UNKNOWN")
 
         # Standartlaştırma (özelliklerin eşit ağırlıkta olması için)
         scaler = StandardScaler()
         r_scaled = scaler.fit_transform(r_mat)
         s_scaled = scaler.transform(s_mat)
 
-        # En yakın 2 gerçek komşuyu bul
-        nbrs = NearestNeighbors(n_neighbors=2, algorithm="auto", n_jobs=-1)
+        nbrs = NearestNeighbors(n_neighbors=3, algorithm="auto", n_jobs=-1)
         nbrs.fit(r_scaled)
-        distances, _ = nbrs.kneighbors(s_scaled)
+        synth_d, _ = nbrs.kneighbors(s_scaled, n_neighbors=2)
+        # Referans satırının ilk komşusu kendisidir (mesafe 0) - atlanır. Referansta
+        # birebir tekrar varsa kalan ilk komşu da 0 olur: bu doğal bir eşleşmedir ve
+        # taban çizgisine öyle girer.
+        ref_d, _ = nbrs.kneighbors(r_scaled, n_neighbors=3)
+        ref_d = ref_d[:, 1:]
 
-        d1 = distances[:, 0]  # En yakın gerçek kayda mesafe (DCR)
-        d2 = distances[:, 1]  # İkinci en yakın gerçek kayda mesafe
+        def summarise(d: np.ndarray) -> Dict[str, Any]:
+            d1, d2 = d[:, 0], d[:, 1]
+            ratio = np.clip(d1 / np.where(d2 == 0, 1e-9, d2), 0.0, 1.0)
+            return {
+                "d1": d1, "ratio": ratio,
+                "min": float(np.min(d1)), "p5": float(np.percentile(d1, 5)),
+                "identical": int(np.sum(d1 <= 1e-6)),
+                "identical_rate": float(np.mean(d1 <= 1e-6)),
+                "low_count": int(np.sum(ratio < 0.2)),
+                "low_rate": float(np.mean(ratio < 0.2)),
+            }
 
-        # DCR Sonuçları
-        min_d = float(np.min(d1))
-        mean_d = float(np.mean(d1))
-        p5_d = float(np.percentile(d1, 5))
-        identical = int(np.sum(d1 <= 1e-6))
+        syn, ref = summarise(synth_d), summarise(ref_d)
+        n_syn, n_ref = len(s_mat), len(r_mat)
 
-        dcr_risk = "HIGH" if (identical > 0 or p5_d < 0.05) else ("MEDIUM" if p5_d < 0.15 else "LOW")
+        # Birebir eşleşme: referansın kendi içinde hiç tekrarı yoksa (sürekli veri)
+        # tek bir birebir kopya bile gerçek bir kaydın sızmasıdır.
+        if ref["identical"] == 0:
+            identical_level = "HIGH" if syn["identical"] > 0 else "LOW"
+        else:
+            identical_level = _rate_excess_level(syn["identical_rate"], ref["identical_rate"],
+                                                 n_syn, n_ref, high_floor=0.01,
+                                                 medium_floor=0.005)
+        if ref["p5"] > 0:
+            p5_level = ("MEDIUM" if syn["p5"] < 0.8 * ref["p5"] else "LOW")
+        else:
+            p5_level = "LOW"
         dcr_res = DCRResult(
-            min_dcr=round(min_d, 4),
-            mean_dcr=round(mean_d, 4),
-            percentile_5th=round(p5_d, 4),
-            identical_matches=identical,
-            risk_level=dcr_risk,
+            min_dcr=round(syn["min"], 4),
+            mean_dcr=round(float(np.mean(syn["d1"])), 4),
+            percentile_5th=round(syn["p5"], 4),
+            identical_matches=syn["identical"],
+            risk_level=_worst(identical_level, p5_level),
+            identical_rate=round(syn["identical_rate"], 4),
+            baseline_min_dcr=round(ref["min"], 4),
+            baseline_percentile_5th=round(ref["p5"], 4),
+            baseline_identical_rate=round(ref["identical_rate"], 4),
         )
 
-        # NNDR Sonuçları (d1 / d2)
-        safe_d2 = np.where(d2 == 0, 1e-9, d2)
-        nndr_vals = np.clip(d1 / safe_d2, 0.0, 1.0)
-
-        mean_nndr = float(np.mean(nndr_vals))
-        med_nndr = float(np.median(nndr_vals))
-        p5_nndr = float(np.percentile(nndr_vals, 5))
-        low_ratio = int(np.sum(nndr_vals < 0.2))
-
-        nndr_risk = "HIGH" if (low_ratio > 0.02 * len(nndr_vals) or mean_nndr < 0.40) else ("MEDIUM" if mean_nndr < 0.60 else "LOW")
-
         nndr_res = NNDRResult(
-            mean_nndr=round(mean_nndr, 4),
-            median_nndr=round(med_nndr, 4),
-            percentile_5th=round(p5_nndr, 4),
-            low_ratio_count=low_ratio,
-            memorization_risk=nndr_risk,
+            mean_nndr=round(float(np.mean(syn["ratio"])), 4),
+            median_nndr=round(float(np.median(syn["ratio"])), 4),
+            percentile_5th=round(float(np.percentile(syn["ratio"], 5)), 4),
+            low_ratio_count=syn["low_count"],
+            memorization_risk=_rate_excess_level(syn["low_rate"], ref["low_rate"], n_syn, n_ref,
+                                                 high_floor=0.02, medium_floor=0.01),
+            low_ratio_rate=round(syn["low_rate"], 4),
+            baseline_mean_nndr=round(float(np.mean(ref["ratio"])), 4),
+            baseline_low_ratio_rate=round(ref["low_rate"], 4),
         )
 
         return dcr_res, nndr_res
@@ -470,51 +549,47 @@ class PrivacyAuditor:
         _, nndr_res = self.compute_dcr_nndr(synth_df, seed_df)
         return nndr_res
 
-    def estimate_empirical_epsilon(self, synth_df: pd.DataFrame, seed_df: pd.DataFrame) -> float:
-        """Sentetik ve referans dağılımları arasındaki farkı tek bir skora indirger.
+    def estimate_distribution_divergence(
+            self, synth_df: pd.DataFrame, seed_df: pd.DataFrame,
+    ) -> Tuple[Optional[float], Dict[str, float]]:
+        """Ortak sayısal kolonlarda sentetik ve referans histogramlarının benzerliği.
 
-        En fazla 5 ortak sayısal kolonun 20 kutulu histogramlarında
-        ``|log(p_sentetik / p_referans)|`` değerinin 95. yüzdeliği alınır ve
-        kolonlar üzerinden ortalanır. Düşük değer dağılımların yakın olduğunu
-        gösterir. Adındaki "epsilon" tarihsel: bu bir diferansiyel gizlilik
-        ölçümü DEĞİLDİR - DP bir üretim mekanizmasının özelliğidir, çıktı
-        histogramından kanıtlanamaz.
+        Kolon başına Jensen-Shannon mesafesi (log2 tabanı; 0 = aynı histogram,
+        1 = hiç örtüşme yok) ve bunların ortalaması döner. Kutular referansın
+        20'lik yüzdelik sınırlarıdır, uçlar iki verinin min/max'ına genişletilir.
+
+        Yerini aldığı "empirical epsilon" boş kutularda 1e-4 düzeltmesiyle log
+        oranını şişiriyordu (aynı dağılımdan 300'er satır -> 3,19) ve bir
+        diferansiyel gizlilik ölçümü gibi adlandırılmıştı. Bu da bir gizlilik
+        garantisi değildir; küçük örneklemde aynı dağılım için bile sıfırdan büyüktür.
         """
-        try:
-            common_cols = [
-                c for c in synth_df.columns
-                if c in seed_df.columns and pd.api.types.is_numeric_dtype(synth_df[c])
-            ]
-            if not common_cols:
-                return 1.0
+        from scipy.spatial.distance import jensenshannon
 
-            epsilons: List[float] = []
-            for col in common_cols[:5]:
-                s = synth_df[col].dropna().astype("float64")
-                r = seed_df[col].dropna().astype("float64")
-                if len(s) < 20 or len(r) < 20:
-                    continue
+        per_column: Dict[str, float] = {}
+        for col in synth_df.columns:
+            if col not in seed_df.columns:
+                continue
+            if not (pd.api.types.is_numeric_dtype(synth_df[col])
+                    and pd.api.types.is_numeric_dtype(seed_df[col])):
+                continue
+            s = synth_df[col].dropna().to_numpy(dtype="float64")
+            r = seed_df[col].dropna().to_numpy(dtype="float64")
+            if len(s) < 20 or len(r) < 20:
+                continue
+            low, high = min(s.min(), r.min()), max(s.max(), r.max())
+            if low == high:
+                per_column[str(col)] = 0.0
+                continue
+            edges = np.unique(np.quantile(r, np.linspace(0.0, 1.0, 21)))
+            edges = np.unique(np.concatenate(([low], edges[1:-1], [high])))
+            hist_s, _ = np.histogram(s, bins=edges)
+            hist_r, _ = np.histogram(r, bins=edges)
+            distance = float(jensenshannon(hist_s, hist_r, base=2))
+            per_column[str(col)] = round(0.0 if np.isnan(distance) else distance, 4)
 
-                # Ortak aralıkta 20 kutulu histogram
-                c_min = min(s.min(), r.min())
-                c_max = max(s.max(), r.max())
-                if c_min == c_max:
-                    continue
-                bins = np.linspace(c_min, c_max, 21)
-                hist_s, _ = np.histogram(s, bins=bins, density=True)
-                hist_r, _ = np.histogram(r, bins=bins, density=True)
-
-                # Laplace düzeltmesi (sıfıra bölme engelleme)
-                p_s = (hist_s + 1e-4) / (hist_s.sum() + 1e-4 * len(hist_s))
-                p_r = (hist_r + 1e-4) / (hist_r.sum() + 1e-4 * len(hist_r))
-
-                # Kutu başına mutlak log oranı; uç kutulara karşı 95. yüzdelik
-                ratio = np.abs(np.log(p_s / p_r))
-                epsilons.append(float(np.percentile(ratio, 95)))
-
-            return round(float(np.mean(epsilons)) if epsilons else 1.25, 3)
-        except Exception:
-            return 1.25
+        if not per_column:
+            return None, {}
+        return round(float(np.mean(list(per_column.values()))), 4), per_column
 
     def scan_hipaa_identifiers(self, df: pd.DataFrame) -> HIPAAAuditResult:
         """Kolon ADLARINI 18 HIPAA tanımlayıcı desenine, yaş kolonunu 89 kuralına karşı tarar.
