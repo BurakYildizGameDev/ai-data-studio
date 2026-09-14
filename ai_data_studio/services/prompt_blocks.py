@@ -21,6 +21,7 @@ __all__ = [
     "COLUMN_SHAPE",
     "BUSINESS_RULES_BLOCK",
     "COPULA_BLOCK",
+    "RUNTIME_LITERALS_BLOCK",
     "MONOTONICITY_BLOCK",
     "HEAVY_TAIL_BLOCK",
     "DATETIME_BLOCK",
@@ -49,13 +50,26 @@ Aim for 90-95% natural compliance so the downstream discriminator cleans up subt
 without discarding large swaths of valid data."""
 
 
+# Canli kosu (2026-09-14, qwen2.5-coder:1.5b): model `scipy.special.ndtr(...)` ornegini
+# `ndtr(z_corr)` diye kisaltti ve import etmedi -> NameError. Import satiri artik ornekte.
 COPULA_BLOCK = """CORRELATIONS & GAUSSIAN COPULA:
 Build the requested correlations into the data structurally. For multi-variable rank correlations or
 dependent variables with non-normal marginals, use a Gaussian Copula:
 - Generate independent normals: `z = rng.standard_normal((n_rows, k))`
 - Correlate via Cholesky decomposition: `z_corr = z @ np.linalg.cholesky(corr_matrix).T`
-- Map to uniform margins [0, 1]: `u = scipy.special.ndtr(z_corr)` (or empirical ranks)
+- Map to uniform margins [0, 1]: put `from scipy.special import ndtr` at the top of the file,
+  then `u = ndtr(z_corr)` (or use empirical ranks)
 - Invert $u$ to target marginal distributions using quantile functions."""
+
+
+# Canli kosu (2026-09-14, qwen2.5-coder:1.5b): model kodun icinde sozlesmeyi sozluk olarak
+# yeniden yazip `schema["churned"]["min"]` gibi okudu; bool kolonda min olmadigi icin
+# iki denemede KeyError ile dustu.
+RUNTIME_LITERALS_BLOCK = """THE CONTRACT IS NOT AVAILABLE AT RUNTIME:
+The function receives only `n_rows` and `seed` - the contract is shown to you, never to the
+code. Write every bound, category list and ratio as a literal inside the numpy call, e.g.
+`rng.integers(18, 61, n_rows)`. Do not rebuild the contract as a dict and look values up:
+`schema["churned"]["min"]` raises KeyError because a bool column has no min."""
 
 
 MONOTONICITY_BLOCK = """MONOTONICITY (CREDIT RISK & SCORECARDS):

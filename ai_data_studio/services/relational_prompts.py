@@ -17,6 +17,7 @@ from .prompt_blocks import (
     FAKER_BLOCK,
     HEAVY_TAIL_BLOCK,
     MONOTONICITY_BLOCK,
+    RUNTIME_LITERALS_BLOCK,
     escape_braces,
     numbered,
 )
@@ -74,8 +75,9 @@ Design rules:
 8. Put business rules, correlations and monotonicity rules on the table whose columns they
    reference. They may only reference columns WITHIN that same table - a rule can never
    span two tables, even through a foreign key.
-   `business_rules` are pandas `df.eval()` expressions that are TRUE for every valid row
-   (e.g. "shipping_cost <= basket_value"). Use only column names, numeric literals,
+   `business_rules` are pandas `df.eval()` expressions that are TRUE for every valid row,
+   written with that table's own column names (shape: "<col_a> <= <col_b>"); a rule naming
+   a column the table does not have is discarded. Use only column names, numeric literals,
    comparison operators and `and` / `or` / `not`. This is NOT SQL: `AND`, `OR`, `NOT`,
    `IS NULL`, `IS NOT NULL` and quoted SQL string comparisons are all rejected. Express
    "may be missing" with `nullable` on the column instead of a null-check rule, and drop
@@ -179,17 +181,19 @@ Hard requirements:
    (e.g. `end = start + positive_delta`, `child_amount = np.minimum(cap, candidate)`).
    Aim for 90-95% natural compliance so the downstream discriminator only trims edge cases.
 """
- + numbered(10, COPULA_BLOCK + _CROSS_TABLE_NOTE) + """
-11. Deliberately leave a small amount of realistic noise (a few percent of outliers or rule
+ + numbered(10, RUNTIME_LITERALS_BLOCK) + """
+"""
+ + numbered(11, COPULA_BLOCK + _CROSS_TABLE_NOTE) + """
+12. Deliberately leave a small amount of realistic noise (a few percent of outliers or rule
     violations). The discriminator cleans it. Do NOT emit perfectly sanitised data.
 """
- + numbered(12, MONOTONICITY_BLOCK) + """
+ + numbered(13, MONOTONICITY_BLOCK) + """
 """
- + numbered(13, HEAVY_TAIL_BLOCK) + """
+ + numbered(14, HEAVY_TAIL_BLOCK) + """
 """
- + numbered(14, DATETIME_BLOCK) + """
+ + numbered(15, DATETIME_BLOCK) + """
 """
- + numbered(15, FAKER_BLOCK))
+ + numbered(16, FAKER_BLOCK))
 
 
 DATASET_CODE_USER_TEMPLATE = """Dataset Contract:

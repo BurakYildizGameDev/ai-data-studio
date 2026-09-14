@@ -9,8 +9,11 @@ hem şema üretiminde hem self-healing geri besleme döngüsünde kullanılır.
 """
 from __future__ import annotations
 
+import ast
 import json
+import math
 import re
+from statistics import NormalDist
 
 from ..i18n import t
 from dataclasses import dataclass, field
@@ -65,7 +68,13 @@ def extract_json_block(text: str) -> Dict[str, Any]:
             parsed = json.loads(candidate)
         except json.JSONDecodeError as exc:
             last_error = exc
-            continue
+            # Yerel modeller gecerli bir sozlesmeyi siklikla JSON disi kucuk
+            # kusurlarla dondurur (// yorum, sondaki virgul, Python True/None).
+            # Sozlesmeyi bu yuzden reddetmek bir tam LLM turuna mal oluyordu.
+            try:
+                parsed = json.loads(repair_json(candidate))
+            except json.JSONDecodeError:
+                continue
         if isinstance(parsed, dict):
             return parsed
 
@@ -73,6 +82,83 @@ def extract_json_block(text: str) -> Dict[str, Any]:
         t("schema.error.no_json")
         + (" (%s)" % last_error if last_error else "")
     )
+
+
+_PY_LITERALS = {"True": "true", "False": "false", "None": "null"}
+
+
+def repair_json(text: str) -> str:
+    """LLM'lerin JSON'a kattigi sik kusurlari string-farkindalikli olarak temizler.
+
+    * ``//`` ve ``#`` satir yorumlari, ``/* ... */`` blok yorumlari
+    * ``}`` / ``]`` oncesindeki sondaki virgul
+    * Python sabitleri ``True`` / ``False`` / ``None``
+
+    String iceriklerine asla dokunmaz; gecerli JSON'u degistirmez.
+    """
+    out: List[str] = []
+    i, n = 0, len(text)
+    in_string = False
+    while i < n:
+        ch = text[i]
+        if in_string:
+            out.append(ch)
+            if ch == "\\" and i + 1 < n:
+                out.append(text[i + 1])
+                i += 2
+                continue
+            if ch == '"':
+                in_string = False
+            i += 1
+            continue
+        if ch == '"':
+            in_string = True
+            out.append(ch)
+            i += 1
+        elif text.startswith("//", i) or ch == "#":
+            end = text.find("\n", i)
+            i = n if end == -1 else end
+        elif text.startswith("/*", i):
+            end = text.find("*/", i + 2)
+            i = n if end == -1 else end + 2
+        elif ch.isalpha() or ch == "_":
+            j = i
+            while j < n and (text[j].isalnum() or text[j] == "_"):
+                j += 1
+            word = text[i:j]
+            out.append(_PY_LITERALS.get(word, word))
+            i = j
+        else:
+            out.append(ch)
+            i += 1
+    return _strip_trailing_commas("".join(out))
+
+
+def _strip_trailing_commas(text: str) -> str:
+    """String disindaki, ardindan yalnizca bosluk ve ``}``/``]`` gelen virgulleri siler."""
+    out: List[str] = []
+    in_string = False
+    escaped = False
+    for i, ch in enumerate(text):
+        if in_string:
+            out.append(ch)
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == ",":
+            j = i + 1
+            while j < len(text) and text[j].isspace():
+                j += 1
+            if j < len(text) and text[j] in "}]":
+                continue
+        out.append(ch)
+    return "".join(out)
 
 
 def _find_balanced_object(text: str) -> Optional[str]:
@@ -117,11 +203,129 @@ VALID_DISTRIBUTIONS = {
 }
 VALID_SIGNS = {"positive", "negative"}
 
-_IDENTIFIER_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
-# df.eval icinde kullanilan operator/anahtar kelimeler - kolon adi sanilmasinlar.
-_RULE_KEYWORDS = {
-    "and", "or", "not", "in", "True", "False", "None", "abs", "true", "false",
+# Modellerin gecerli dagilimlar icin kullandigi es anlamli adlar.
+_DISTRIBUTION_ALIASES = {
+    "gaussian": "normal", "norm": "normal",
+    "log_normal": "lognormal", "lognorm": "lognormal",
+    "exp": "exponential", "expon": "exponential",
+    "zeroinflated_poisson": "zip", "zip_poisson": "zip",
+    "generalized_pareto": "gpd", "generalised_pareto": "gpd", "genpareto": "gpd",
+    "compound_poisson_gamma": "tweedie",
+    "discrete_uniform": "uniform", "uniform_int": "uniform", "randint": "uniform",
+    "integer_uniform": "uniform",
+    "category": "categorical", "multinomial": "categorical", "choice": "categorical",
 }
+# bool kolonun dagilimi zaten target_ratio'lu Bernoulli'dir; bu adlar bilgi tasimaz.
+_BOOL_DISTRIBUTIONS = {"bernoulli", "binomial", "binary"}
+
+_IDENTIFIER_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+# df.eval icinde ad gibi gorunen ama kolon olmayan sozcukler - kolon adi sanilmasinlar.
+_RULE_KEYWORDS = {"abs", "true", "false"}
+
+_SQL_IS_NOT_NULL = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\s+is\s+not\s+null\b", re.I)
+_SQL_IS_NULL = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\s+is\s+null\b", re.I)
+# IN: canli kosu (14.09, 1.5b) `return_status IN (True, False)` yazdi.
+_SQL_KEYWORDS = re.compile(r"\b(AND|OR|NOT|IN)\b")
+_SQL_SINGLE_EQUALS = re.compile(r"(?<![<>=!])=(?!=)")
+
+
+def normalize_rule(rule: str) -> str:
+    """SQL aliskanligiyla yazilmis bir kurali ``df.eval`` diline cevirir.
+
+    Istemler SQL'i acikca yasakliyor, ama canli kosuda model yine
+    ``not is_returned and return_date is null`` yazdi ve kural sessizce atlandi.
+    Anlami tartismasiz donusumler: ``x IS NULL`` -> ``x != x`` (NaN kendine esit
+    degildir), ``x IS NOT NULL`` -> ``x == x``, ``AND/OR/NOT`` -> kucuk harf,
+    tek ``=`` -> ``==``.
+
+    Sozlesme dogrulamasi ve validator ayni donusumu kullanir; ayri kalsalardi
+    sozlesme, validator'in sorunsuz uyguladigi bir kural icin uyari basardi.
+    """
+    text = _SQL_IS_NOT_NULL.sub(r"(\1 == \1)", rule)
+    text = _SQL_IS_NULL.sub(r"(\1 != \1)", text)
+    text = _SQL_KEYWORDS.sub(lambda m: m.group(1).lower(), text)
+    return _SQL_SINGLE_EQUALS.sub("==", text)
+
+
+def _parse_rule(rule: str) -> Optional[ast.Expression]:
+    try:
+        return ast.parse(normalize_rule(rule).strip(), mode="eval")
+    except (SyntaxError, ValueError):
+        return None
+
+
+def rule_names(rule: str) -> Optional[set]:
+    """Kuralin atif yaptigi adlar; ifade olarak parse edilemiyorsa ``None``.
+
+    Duzenli ifadeyle ad toplamak tirnak icindeki degerleri de ad sayiyordu
+    (``status == 'active'`` -> ``active`` "tanimsiz ad"). AST yalnizca gercek
+    ad dugumlerini verir.
+    """
+    tree = _parse_rule(rule)
+    if tree is None:
+        return None
+    return {node.id for node in ast.walk(tree)
+            if isinstance(node, ast.Name)} - _RULE_KEYWORDS
+
+
+def conjuncts(node: ast.expr) -> List[ast.expr]:
+    """Üst düzey ``and`` zincirini parçalarına ayırır (``or`` bütün kalır)."""
+    if isinstance(node, ast.BoolOp) and isinstance(node.op, ast.And):
+        parts: List[ast.expr] = []
+        for value in node.values:
+            parts.extend(conjuncts(value))
+        return parts
+    return [node]
+
+
+def _pinned_bool_column(node: ast.expr, bool_columns: set) -> Optional[str]:
+    """Parça bir bool kolonu tek değere sabitliyorsa o kolonun adı.
+
+    ``col``, ``not col``, ``col == False``, ``col != 1``, ``col is True`` biçimleri.
+    """
+    if isinstance(node, ast.Name) and node.id in bool_columns:
+        return node.id
+    if (isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not)
+            and isinstance(node.operand, ast.Name) and node.operand.id in bool_columns):
+        return node.operand.id
+    if (isinstance(node, ast.Compare) and len(node.ops) == 1
+            and isinstance(node.ops[0], (ast.Eq, ast.NotEq, ast.Is, ast.IsNot))):
+        sides = (node.left, node.comparators[0])
+        for name, other in (sides, sides[::-1]):
+            if (isinstance(name, ast.Name) and name.id in bool_columns
+                    and isinstance(other, ast.Constant)
+                    and other.value in (True, False, 0, 1)):
+                return name.id
+    return None
+
+
+def _is_text_literal(node: ast.AST) -> bool:
+    if isinstance(node, ast.Constant):
+        return isinstance(node.value, str)
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+        return bool(node.elts) and all(_is_text_literal(e) for e in node.elts)
+    return False
+
+
+def rule_text_compared_columns(rule: str, non_text_columns: set) -> List[str]:
+    """Kuralda metin sabitiyle karsilastirilan sayisal/bool kolonlar.
+
+    Canli kosu (14.09, qwen2.5-coder:1.5b): ``churned in ['True', 'False']`` - bool
+    kolon hicbir zaman bir metne esit olmaz, kural her satirda yanlis ve validator
+    verinin %100'unu sildi.
+    """
+    tree = _parse_rule(rule)
+    if tree is None:
+        return []
+    found: List[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Compare):
+            continue
+        operands = [node.left] + list(node.comparators)
+        if any(_is_text_literal(o) for o in operands):
+            found.extend(o.id for o in operands
+                         if isinstance(o, ast.Name) and o.id in non_text_columns)
+    return sorted(set(found))
 
 
 @dataclass
@@ -146,12 +350,20 @@ class ColumnSpec:
     p_index: Optional[float] = None        # Tweedie güç parametresi (1 < p < 2, Compound Poisson-Gamma)
 
     @classmethod
-    def from_dict(cls, data: Any, index: int) -> "ColumnSpec":
+    def from_dict(cls, data: Any, index: int,
+                  notes: Optional[List[str]] = None) -> "ColumnSpec":
+        """Ham kolon nesnesini dogrular.
+
+        Args:
+            notes: verilirse, reddetmek yerine duzeltilen kusurlarin uyarilari
+                buraya eklenir (bkz. :func:`_normalize_column`).
+        """
         where = "columns[%d]" % index
         if not isinstance(data, dict):
             raise SchemaValidationError(
                 t("schema.error.must_be_object", where=where,
                   got=type(data).__name__))
+        data = _normalize_column(data, notes if notes is not None else [])
 
         name = data.get("name")
         if not isinstance(name, str) or not name.strip():
@@ -274,7 +486,8 @@ class CorrelationRule:
     def from_dict(cls, data: Any, index: int) -> "CorrelationRule":
         where = "correlations[%d]" % index
         if not isinstance(data, dict):
-            raise SchemaValidationError("%s bir nesne olmalı" % where)
+            raise SchemaValidationError(
+                t("schema.error.must_be_object", where=where, got=type(data).__name__))
         cols = data.get("columns")
         if not isinstance(cols, (list, tuple)) or len(cols) != 2:
             raise SchemaValidationError(t("schema.error.correlation_pair", where=where))
@@ -324,7 +537,8 @@ class MonotonicityRule:
     def from_dict(cls, data: Any, index: int) -> "MonotonicityRule":
         where = "monotonicity_rules[%d]" % index
         if not isinstance(data, dict):
-            raise SchemaValidationError("%s bir nesne olmalı" % where)
+            raise SchemaValidationError(
+                t("schema.error.must_be_object", where=where, got=type(data).__name__))
 
         col_x = data.get("column_x") or data.get("x")
         col_y = data.get("column_y") or data.get("y")
@@ -404,7 +618,7 @@ class SchemaContract:
 
         missing = [k for k in ("domain", "columns") if k not in data]
         if missing:
-            raise SchemaValidationError("Schema Contract'ta zorunlu alan(lar) eksik: %s" % missing)
+            raise SchemaValidationError(t("schema.error.missing_fields", fields=missing))
 
         domain = data.get("domain")
         if not isinstance(domain, str) or not domain.strip():
@@ -414,7 +628,8 @@ class SchemaContract:
         if not isinstance(raw_columns, list) or not raw_columns:
             raise SchemaValidationError(t("schema.error.columns_required"))
 
-        columns = [ColumnSpec.from_dict(c, i) for i, c in enumerate(raw_columns)]
+        notes: List[str] = []
+        columns = [ColumnSpec.from_dict(c, i, notes) for i, c in enumerate(raw_columns)]
         names = [c.name for c in columns]
         duplicates = sorted({n for n in names if names.count(n) > 1})
         if duplicates:
@@ -471,6 +686,7 @@ class SchemaContract:
                          if data.get("primary_key") else None),
             foreign_keys=[str(k).strip() for k in (data.get("foreign_keys") or [])
                           if str(k).strip()],
+            warnings=notes,
         )
         contract._validate_keys()
         contract._cross_validate()
@@ -522,6 +738,16 @@ class SchemaContract:
                     t("schema.warning.correlation_not_numeric", columns=bad)
                 )
                 continue
+            ceiling = self._binary_correlation_ceiling(rule)
+            if ceiling is not None and rule.min_r > ceiling:
+                # Tavanin %80'i: parametrik motor tek surucuyle tavanin ~%84'une
+                # ulasabiliyor (latent katsayi 0.95'te kirpiliyor, gurultu payi kaliyor;
+                # olcum: p=0.10, tavan 0.585, gerceklesen 0.494). %90 hedef kil payi kaciyordu.
+                lowered = math.floor(ceiling * 0.8 * 100) / 100
+                self.warnings.append(t("schema.warning.correlation_above_ceiling",
+                                       columns=rule.columns, requested="%g" % rule.min_r,
+                                       ceiling="%.2f" % ceiling, lowered="%.2f" % lowered))
+                rule.min_r = lowered
             valid_correlations.append(rule)
         self.correlations = valid_correlations
 
@@ -543,24 +769,95 @@ class SchemaContract:
             valid_monotonic.append(m_rule)
         self.monotonicity_rules = valid_monotonic
 
-        # Is kurallari serbest ifade oldugu icin sert hata yerine uyari uretilir;
-        # validator zaten parse edilemeyen kurali atlar (Bolum 6.4).
+        # Is kurallari serbest ifade oldugu icin sert hata yerine uyariyla DUSURULUR.
+        # Eskiden uyari basilip kural tutuluyordu: validator onu zaten atliyordu ama
+        # kod istemi modele var olmayan kolonlari "uygula" diyordu. Kucuk modeller
+        # istemdeki ornek kurali (`watch_time_s <= ad_duration_s`) baska bir domaine
+        # kopyaliyor, ya da `defaulted is boolean` gibi ifade olmayan bir cumle yaziyor.
+        valid_rules = []
+        non_text = {c.name for c in self.columns if c.type in ("int", "float", "bool")}
+        # Orani iki sinif da iceren bool kolonlar (target_ratio verilmemisse motor %50 kullanir).
+        two_class = {c.name for c in self.columns if c.type == "bool"
+                     and (c.target_ratio is None or 0.0 < c.target_ratio < 1.0)}
         for rule in self.business_rules:
-            referenced = {
-                token for token in _IDENTIFIER_RE.findall(rule)
-                if token not in _RULE_KEYWORDS
-            }
+            mismatched = rule_text_compared_columns(rule, non_text)
+            if mismatched:
+                self.warnings.append(t("schema.warning.rule_type_mismatch", rule=rule,
+                                       columns=mismatched))
+                continue
+            rule = self._without_pinned_bools(rule, two_class)
+            if rule is None:
+                continue
+            referenced = rule_names(rule)
+            if referenced is None:
+                self.warnings.append(t("schema.warning.rule_unparseable", rule=rule))
+                continue
             unknown = sorted(referenced - known)
             if unknown:
                 self.warnings.append(
                     t("schema.warning.rule_unknown_names", rule=rule, names=unknown)
                 )
+                continue
+            if not referenced:
+                self.warnings.append(t("schema.warning.rule_unparseable", rule=rule))
+                continue
+            valid_rules.append(rule)
+        self.business_rules = valid_rules
 
         if self.preserve_anomaly_column and self.preserve_anomaly_column not in known:
             self.warnings.append(
                 t("schema.warning.preserve_column_missing",
                   column=self.preserve_anomaly_column, known=sorted(known))
             )
+
+    def _binary_correlation_ceiling(self, rule: "CorrelationRule") -> Optional[float]:
+        """Bir bool kolonun bu kuralda ulaşabileceği en yüksek |r|; bool yoksa ``None``.
+
+        True oranı ``p`` olan ikili bir kolonun normal bir sürücüyle nokta-çift serili
+        korelasyonu en fazla ``phi(z) / sqrt(p(1-p))`` olabilir (``z = Phi^-1(1-p)``);
+        iki ikili kolon arasındaki phi katsayısı en fazla
+        ``sqrt(p1(1-p2) / (p2(1-p1)))`` (``p1 <= p2``). Canlı 1.5b şemalarında oranı %5-10
+        olan hedeflere 0.6-0.9 istendi (tavan ~0.47-0.58): hiçbir veri bunu sağlayamaz,
+        doğrulama her koşuda "geçmedi" diyordu.
+        """
+        ratios = []
+        for name in rule.columns:
+            col = self.column(name)
+            if col.type == "bool":
+                ratios.append(0.5 if col.target_ratio is None else col.target_ratio)
+        if not ratios:
+            return None
+        if any(not 0.0 < p < 1.0 for p in ratios):
+            return None     # tek sinifli kolonun korelasyonu zaten tanimsiz
+        if len(ratios) == 2:
+            low, high = sorted(ratios)
+            return math.sqrt(low * (1 - high) / (high * (1 - low)))
+        p = ratios[0]
+        z = NormalDist().inv_cdf(1 - p)
+        return NormalDist().pdf(z) / math.sqrt(p * (1 - p))
+
+    def _without_pinned_bools(self, rule: str, two_class: set) -> Optional[str]:
+        """İki sınıflı bir bool kolonu tek değere sabitleyen ``and`` parçalarını çıkarır.
+
+        Canlı koşular (2026-09-14, qwen2.5-coder:1.5b): ``loan_default == False`` ve
+        ``order_return_status = 0``. Validator bu kuralla pozitif sınıfın TAMAMINI
+        siliyordu (satırların %4,9 / %9,8'i) - veri seti etiketini kaybediyor ama
+        tutulan satır oranı iyi göründüğü için kimse fark etmiyordu. Kural geri kalan
+        parçalarıyla korunur; hiçbir parça kalmazsa ``None`` döner.
+        """
+        tree = _parse_rule(rule)
+        if tree is None or not two_class:
+            return rule
+        parts = conjuncts(tree.body)
+        pinned = [_pinned_bool_column(part, two_class) for part in parts]
+        if not any(pinned):
+            return rule
+        columns = sorted({name for name in pinned if name})
+        kept = [part for part, name in zip(parts, pinned) if not name]
+        self.warnings.append(t("schema.warning.rule_pins_bool", rule=rule, columns=columns))
+        if not kept:
+            return None
+        return " and ".join(ast.unparse(part) for part in kept)
 
     # -- erisim ----------------------------------------------------------- #
     @property
@@ -607,12 +904,100 @@ class SchemaContract:
         return json.dumps(self.to_dict(), ensure_ascii=False, indent=indent)
 
     def summary(self) -> str:
-        """Konsola/loga basmak için tek satirlik ozet."""
-        anom_str = (" | anomali koruma: %s" % self.preserve_anomaly_column) if self.preserve_anomaly_column else ""
-        mono_str = (" | %d monotonluk" % len(self.monotonicity_rules)) if self.monotonicity_rules else ""
-        return ("%s | %d kolon | hedef %s satır | seed %d | %d kural | %d korelasyon%s%s"
-                % (self.domain, len(self.columns), format(self.row_count_target, ","),
-                   self.random_seed, len(self.business_rules), len(self.correlations), mono_str, anom_str))
+        """Konsola basmak için tek satirlik ozet (arayuz dilinde)."""
+        text = t("schema.summary", domain=self.domain, columns=len(self.columns),
+                 rows=format(self.row_count_target, ","), seed=self.random_seed,
+                 rules=len(self.business_rules), correlations=len(self.correlations))
+        if self.monotonicity_rules:
+            text += t("schema.summary.monotonicity", count=len(self.monotonicity_rules))
+        if self.preserve_anomaly_column:
+            text += t("schema.summary.anomaly", column=self.preserve_anomaly_column)
+        return text
+
+
+def _is_number(value: Any) -> bool:
+    if isinstance(value, bool) or value is None or value == "":
+        return False
+    try:
+        float(value)
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
+def _normalize_column(data: Dict[str, Any], notes: List[str]) -> Dict[str, Any]:
+    """Modelin sik yaptigi, anlami belli kusurlari reddetmek yerine duzeltir.
+
+    Canli olcum (qwen2.5-coder:14b, 6 sema yaniti): altisi de ilk denemede reddedildi -
+    dordu datetime kolonuna ``min: "2022-01-01"`` yazdi, biri ``beta``, biri bool icin
+    ``bernoulli`` kullandi. Her ret 50-90 sn'lik bir LLM turuydu ve model duzeltme
+    turunda ayni hatayi tekrarladi. Anlami tartismasiz olan bu durumlarda sozlesme
+    duzeltilir ve uyari ``notes``'a yazilir; belirsiz olanlar yine reddedilir.
+    """
+    data = dict(data)
+    name = str(data.get("name") or "?")
+    ctype = str(data.get("type") or "").strip().lower()
+
+    raw = data.get("distribution")
+    if raw not in (None, ""):
+        key = re.sub(r"[\s\-]+", "_", raw.strip().lower()) if isinstance(raw, str) else ""
+        key = _DISTRIBUTION_ALIASES.get(key, key)
+        if key in VALID_DISTRIBUTIONS:
+            data["distribution"] = key
+        else:
+            data["distribution"] = None
+            if not (ctype == "bool" and key in _BOOL_DISTRIBUTIONS):
+                notes.append(t("schema.warning.distribution_dropped",
+                               column=name, distribution=raw))
+
+    if ctype == "datetime":
+        textual = {k: data[k] for k in ("min", "max")
+                   if data.get(k) not in (None, "") and not _is_number(data[k])}
+        if textual:
+            for k in textual:
+                data.pop(k)
+            low, high = textual.get("min"), textual.get("max")
+            if low is not None and high is not None:
+                span = "between %s and %s" % (low, high)
+            elif low is not None:
+                span = "from %s" % low
+            else:
+                span = "until %s" % high
+            # Aralik aciklamaya tasinir: kod istemi datetime araligini oradan okur
+            # (bkz. prompt_blocks.DATETIME_BLOCK). LLM'e gidecegi icin Ingilizce.
+            description = str(data.get("description") or "").strip()
+            data["description"] = ("%s (%s)" % (description, span)).strip()
+            notes.append(t("schema.warning.datetime_bounds_moved", column=name, range=span))
+
+    # Bool kolonun ortalamasi True oranidir. Canli kosu (14.09, qwen2.5-coder:1.5b):
+    # `"churned": {"type": "bool", "mean": 0.1}` yazdi; target_ratio bos kaldigi icin
+    # parametrik motor %50 churn uretti.
+    if (ctype == "bool" and data.get("target_ratio") in (None, "")
+            and _is_number(data.get("mean")) and 0.0 <= float(data["mean"]) <= 1.0):
+        data["target_ratio"] = float(data.pop("mean"))
+        notes.append(t("schema.warning.bool_mean_as_ratio", column=name,
+                       ratio="%g" % data["target_ratio"]))
+
+    # Istem eskiden `"p_index": <1..2>` diyordu, dogrulayici ise 1 < p < 2 istiyor.
+    # Canli kosu (14.09, qwen2.5-coder:1.5b): `p_index: 1.0` uc denemede de reddedildi ve
+    # pipeline FAILED oldu. Sinirin kendisi istemin davet ettigi deger - parametre
+    # dusurulur (motor kullanmiyor, kod istemi varsayilana doner). Sinir disi
+    # degerler (2.5 gibi) hala reddedilir.
+    if _is_number(data.get("p_index")) and float(data["p_index"]) in (1.0, 2.0):
+        notes.append(t("schema.warning.p_index_boundary_dropped", column=name,
+                       value="%g" % float(data.pop("p_index"))))
+
+    if data.get("distribution") == "normal" and not _is_number(data.get("mean")):
+        low, high = data.get("min"), data.get("max")
+        if _is_number(low) and _is_number(high):
+            data["mean"] = (float(low) + float(high)) / 2.0
+            notes.append(t("schema.warning.normal_mean_filled", column=name,
+                           mean="%g" % data["mean"]))
+        else:
+            data["distribution"] = None
+            notes.append(t("schema.warning.distribution_dropped",
+                           column=name, distribution="normal"))
+    return data
 
 
 def _as_number(value: Any, where: str, key: str) -> Optional[float]:

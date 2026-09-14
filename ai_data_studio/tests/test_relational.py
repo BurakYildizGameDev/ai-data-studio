@@ -18,6 +18,7 @@ from ai_data_studio.core.relational_validator import (
     repair_orphans,
     validate_relationships,
 )
+from ai_data_studio.i18n import t
 
 ID = {"type": "int", "min": 1, "max": 10 ** 9}
 
@@ -126,7 +127,7 @@ class TestMultiTableSandbox(unittest.TestCase):
                 "    return {'a': pd.DataFrame({'x': range(n_rows)}), 'b': 42}\n")
         res = execute_in_sandbox(code, n_rows=100, seed=1)
         self.assertFalse(res.success)
-        self.assertIn("DataFrame degil", res.traceback)
+        self.assertIn("not a pandas.DataFrame", res.traceback)
 
     def test_invalid_table_name_is_rejected(self):
         code = ("import pandas as pd\n"
@@ -134,7 +135,7 @@ class TestMultiTableSandbox(unittest.TestCase):
                 "    return {'2bad name': pd.DataFrame({'x': range(n_rows)})}\n")
         res = execute_in_sandbox(code, n_rows=100, seed=1)
         self.assertFalse(res.success)
-        self.assertIn("Gecersiz tablo adlari", res.traceback)
+        self.assertIn("Invalid table names", res.traceback)
 
     def test_empty_table_is_rejected(self):
         code = ("import pandas as pd\n"
@@ -143,7 +144,7 @@ class TestMultiTableSandbox(unittest.TestCase):
                 "            'b': pd.DataFrame({'y': []})}\n")
         res = execute_in_sandbox(code, n_rows=100, seed=1)
         self.assertFalse(res.success)
-        self.assertIn("bos", res.traceback.lower())
+        self.assertIn("empty (0 rows)", res.traceback.lower())
 
 
 class TestPrimaryKeyChecks(unittest.TestCase):
@@ -210,7 +211,8 @@ class TestCardinalityChecks(unittest.TestCase):
     def test_max_per_parent_violation_is_flagged(self):
         results = check_cardinality(_frames(), _contract(max_per_parent=2))
         self.assertFalse(results[0]["pass"])
-        self.assertTrue(any("ust sinir" in v for v in results[0]["violations"]))
+        self.assertIn(t("relational.violation.max", observed=results[0]["observed_max"], limit=2),
+                      results[0]["violations"])
 
 
 class TestOrphanRepair(unittest.TestCase):
@@ -480,6 +482,25 @@ class TestRelationalPromptContract(unittest.TestCase):
         self.assertIn("do not invent one", text)
         self.assertIn('"beta"', text)
 
+    def test_single_table_prompt_carries_the_same_guards(self):
+        """Tek tablolu sema istemi bu korumalari hic tasimiyordu.
+
+        Canli sonda (qwen2.5-coder:14b, 9 yanit): dokuzu da ilk denemede reddedildi -
+        dordu datetime'a tarih yazili min, uc 'beta', iki 'bernoulli'. Iliskisel istem
+        bunlari zaten yasakliyordu; tek tablolu istem geride kalmisti.
+        """
+        from ai_data_studio.services.llm_base import SCHEMA_SYSTEM_PROMPT as text
+
+        self.assertIn("NUMBERS", text)
+        self.assertIn("date string", text)
+        self.assertIn("Do not invent one", text)
+        for invented in ('"beta"', '"binomial"', '"bernoulli"'):
+            self.assertIn(invented, text)
+        self.assertIn("NOT SQL", text)
+        for sql_form in ("IS NULL", "IS NOT NULL"):
+            self.assertIn(sql_form, text)
+        self.assertIn("no comments, no trailing commas", text)
+
     def test_prompt_has_no_unresolved_placeholders(self):
         """Sablon degiskenleri render sonrasi metinde kalmamali.
 
@@ -518,8 +539,8 @@ class TestCodePromptParity(unittest.TestCase):
         from ai_data_studio.services import prompt_blocks
 
         single, relational = self._rendered()
-        shared = ("COPULA_BLOCK", "MONOTONICITY_BLOCK", "HEAVY_TAIL_BLOCK",
-                  "DATETIME_BLOCK", "FAKER_BLOCK")
+        shared = ("COPULA_BLOCK", "RUNTIME_LITERALS_BLOCK", "MONOTONICITY_BLOCK",
+                  "HEAVY_TAIL_BLOCK", "DATETIME_BLOCK", "FAKER_BLOCK")
         for name in shared:
             # Blogun ilk satiri (baslik) her iki istemde de bulunmali.
             title = getattr(prompt_blocks, name).split("\n")[0]

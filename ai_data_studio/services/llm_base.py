@@ -13,7 +13,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Callable, Dict, Optional
 
 from .. import config
-from ..i18n import t
+from ..i18n import language_override, t
 from .prompt_blocks import (
     BUSINESS_RULES_BLOCK,
     COPULA_BLOCK,
@@ -21,6 +21,7 @@ from .prompt_blocks import (
     FAKER_BLOCK,
     HEAVY_TAIL_BLOCK,
     MONOTONICITY_BLOCK,
+    RUNTIME_LITERALS_BLOCK,
     numbered,
 )
 from ..core.schema_contract import (
@@ -83,7 +84,7 @@ The JSON object MUST have exactly this shape:
       "shape": <number, optional - for gamma/pareto/gpd distributions>,
       "scale": <number, optional - for gamma/pareto/gpd distributions>,
       "zero_prob": <0..1, optional - for zero-inflated poisson>,
-      "p_index": <1..2, optional - for compound poisson-gamma tweedie>,
+      "p_index": <number strictly between 1 and 2 such as 1.5, optional - tweedie only>,
       "nullable": <bool, optional>,
       "description": "<short column description>"
     }
@@ -104,9 +105,20 @@ Hard constraints:
 - 12 to 20 columns. Include at least one target/outcome column when the domain implies one.
 - Provide a rich, enterprise-grade schema covering: identifiers, user demographics, financial balances/limits, transaction specifics, device/network telemetries, and outcome/risk labels.
 - Every name in business_rules, correlations, and monotonicity_rules MUST be a column defined in "columns".
-- business_rules are expressions that hold TRUE for valid rows (e.g. "watch_time_s <= ad_duration_s").
+- `min` and `max` are NUMBERS and apply to "int"/"float" columns only. A "datetime" column carries
+  no min/max - state its range in `description` instead (e.g. "signup timestamp between
+  2020-01-01 and 2024-12-31"). Never put a date string in `min` or `max`.
+- `distribution`, when present, MUST be exactly one of the values listed in the shape above.
+  Do not invent one (no "beta", no "binomial", no "bernoulli", no "weibull"): a column whose shape
+  is not on that list simply omits `distribution` and relies on min/max. A "bool" column never
+  has a distribution - its share of True values is `target_ratio`.
+- business_rules are expressions that hold TRUE for valid rows, written with the column names
+  YOU defined above - the shape is "<col_a> <= <col_b>" or "<col_a> >= 0". A rule that names a
+  column missing from "columns" is discarded, and so is anything that is not an expression.
   Use only column names, numeric literals, comparison operators and `and` / `or` / `not`.
-  Do NOT use Python function calls, method calls, or string methods.
+  Do NOT use Python function calls, method calls, or string methods. This is NOT SQL: `AND`, `OR`,
+  `IS NULL` and `IS NOT NULL` are rejected - express "may be missing" with `nullable` instead.
+- Output strict JSON: no comments, no trailing commas, `true`/`false`/`null` (not True/False/None).
 - `correlations.columns` must list EXACTLY TWO column names - never one, never three.
 - correlations may only reference int, float or bool columns
   (a bool target vs. a numeric driver is a valid point-biserial correlation).
@@ -186,17 +198,19 @@ Hard requirements:
 7. Respect every min/max bound, every requested distribution, and every bool target_ratio
    (within a couple of percent).
 """
- + numbered(8, BUSINESS_RULES_BLOCK) + """
+ + numbered(8, RUNTIME_LITERALS_BLOCK) + """
 """
- + numbered(9, COPULA_BLOCK) + """
+ + numbered(9, BUSINESS_RULES_BLOCK) + """
 """
- + numbered(10, MONOTONICITY_BLOCK) + """
+ + numbered(10, COPULA_BLOCK) + """
 """
- + numbered(11, HEAVY_TAIL_BLOCK) + """
+ + numbered(11, MONOTONICITY_BLOCK) + """
 """
- + numbered(12, FAKER_BLOCK) + """
+ + numbered(12, HEAVY_TAIL_BLOCK) + """
 """
- + numbered(13, DATETIME_BLOCK))
+ + numbered(13, FAKER_BLOCK) + """
+"""
+ + numbered(14, DATETIME_BLOCK))
 
 
 CODE_USER_TEMPLATE = """Schema Contract:
@@ -383,40 +397,17 @@ class BaseLLMClient(ABC):
             seed_block=seed_block,
         )
 
-        # Kod uretimindeki gibi self-healing: sema dogrulamasi patlarsa hatayi
-        # LLM'e geri besleyip duzelttiririz. Yerel/kucuk modeller ilk denemede
-        # siklikla sozlesmeyi tam tutturamaz; tek atista pes etmek pipeline'i
-        # gereksiz yere dusurur.
-        last_error: Optional[Exception] = None
-        last_raw = ""
-        for attempt in range(1, SCHEMA_MAX_RETRIES + 1):
-            prompt = user if attempt == 1 else SCHEMA_FIX_TEMPLATE.format(
-                original=user, previous=last_raw, error=str(last_error)
-            )
-            raw = self._complete(SCHEMA_SYSTEM_PROMPT, prompt,
-                                 max_tokens=8000, temperature=0.5)
-            last_raw = raw
-            try:
-                # Bolum 10.6: LLM JSON'u aciklamaya sarmis olabilir.
-                data = extract_json_block(raw)
-                # Kullanicinin GUI'de sectigi degerler LLM'in tahminini ezer.
-                data["row_count_target"] = row_count
-                data["random_seed"] = seed
-                data["faker_locale"] = locale
-                contract = SchemaContract.from_dict(data)
-            except SchemaValidationError as exc:
-                last_error = exc
-                log.warning("Şema doğrulanamadı (deneme %d/%d): %s",
-                            attempt, SCHEMA_MAX_RETRIES, exc)
-                continue
-            if attempt > 1:
-                log.info("Şema %d. denemede duzeltildi", attempt)
-            return contract
+        def parse(raw: str) -> SchemaContract:
+            # Bolum 10.6: LLM JSON'u aciklamaya sarmis olabilir.
+            data = extract_json_block(raw)
+            # Kullanicinin GUI'de sectigi degerler LLM'in tahminini ezer.
+            data["row_count_target"] = row_count
+            data["random_seed"] = seed
+            data["faker_locale"] = locale
+            return SchemaContract.from_dict(data)
 
-        raise SchemaValidationError(
-            t("service.error.schema_retries", attempts=SCHEMA_MAX_RETRIES,
-              error=last_error)
-        )
+        return self._generate_validated(SCHEMA_SYSTEM_PROMPT, user, 8000, parse,
+                                        "Şema", "service.error.schema_retries")
 
     def generate_dataset_schema(self, domain_prompt: str,
                                 row_count: int = config.DEFAULT_ROW_TARGET,
@@ -447,38 +438,21 @@ class BaseLLMClient(ABC):
             seed_block=seed_block,
         )
 
-        last_error = None
-        last_raw = ""
-        for attempt in range(1, SCHEMA_MAX_RETRIES + 1):
-            prompt = user if attempt == 1 else SCHEMA_FIX_TEMPLATE.format(
-                original=user, previous=last_raw, error=str(last_error)
-            )
-            raw = self._complete(system, prompt, max_tokens=12000, temperature=0.5)
-            last_raw = raw
-            try:
-                data = extract_json_block(raw)
-                data["random_seed"] = seed
-                contract = DatasetContract.from_dict(data)
-                # Kullanicinin sectigi satir sayisi KOK tabloya uygulanir;
-                # cocuk tablolar kardinaliteden turer.
-                root = contract.table(contract.root_table)
-                root.row_count_target = row_count
-                for table in contract.tables:
-                    table.faker_locale = locale
-                    table.random_seed = seed
-            except SchemaValidationError as exc:
-                last_error = exc
-                log.warning("Dataset Contract doğrulanamadı (deneme %d/%d): %s",
-                            attempt, SCHEMA_MAX_RETRIES, exc)
-                continue
-            if attempt > 1:
-                log.info("Dataset Contract %d. denemede duzeltildi", attempt)
+        def parse(raw: str):
+            data = extract_json_block(raw)
+            data["random_seed"] = seed
+            contract = DatasetContract.from_dict(data)
+            # Kullanicinin sectigi satir sayisi KOK tabloya uygulanir;
+            # cocuk tablolar kardinaliteden turer.
+            root = contract.table(contract.root_table)
+            root.row_count_target = row_count
+            for table in contract.tables:
+                table.faker_locale = locale
+                table.random_seed = seed
             return contract
 
-        raise SchemaValidationError(
-            t("service.error.contract_retries", attempts=SCHEMA_MAX_RETRIES,
-              error=last_error)
-        )
+        return self._generate_validated(system, user, 12000, parse, "Dataset Contract",
+                                        "service.error.contract_retries")
 
     def generate_project_plan(self, project_prompt: str,
                              row_count: int = config.DEFAULT_ROW_TARGET,
@@ -511,39 +485,57 @@ class BaseLLMClient(ABC):
             seed_block=seed_block,
         )
 
-        last_error = None
+        def parse(raw: str):
+            data = extract_json_block(raw)
+            dataset = data.get("dataset")
+            if isinstance(dataset, dict):
+                dataset["random_seed"] = seed
+            plan = ProjectPlan.from_dict(data, project=project_prompt)
+            # Satir sayisi KOK tabloya uygulanir; cocuklar kardinaliteden turer.
+            root = plan.contract.table(plan.contract.root_table)
+            root.row_count_target = row_count
+            for table in plan.contract.tables:
+                table.faker_locale = locale
+                table.random_seed = seed
+            return plan
+
+        return self._generate_validated(PROJECT_PLAN_SYSTEM_PROMPT, user, 12000, parse,
+                                        "Proje planı", "service.error.plan_retries")
+
+    def _generate_validated(self, system: str, user: str, max_tokens: int,
+                            parse: Callable[[str], Any], label: str, retries_key: str):
+        """Üret -> doğrula -> hatayı geri besle döngüsü (şema, sözleşme, proje planı).
+
+        Kod üretimindeki gibi self-healing: doğrulama patlarsa hata LLM'e geri beslenip
+        düzelttirilir. Yerel/küçük modeller ilk denemede sözleşmeyi sıklıkla tam
+        tutturamaz; tek atışta pes etmek pipeline'ı gereksiz yere düşürür.
+
+        Geri beslenen hata İNGİLİZCE üretilir (bkz. :func:`_english_error`); kullanıcıya
+        dönen son hata arayüz dilinde kalır.
+        """
+        last_error: Optional[Exception] = None
+        feedback = ""
         last_raw = ""
         for attempt in range(1, SCHEMA_MAX_RETRIES + 1):
             prompt = user if attempt == 1 else SCHEMA_FIX_TEMPLATE.format(
-                original=user, previous=last_raw, error=str(last_error)
+                original=user, previous=last_raw, error=feedback
             )
-            raw = self._complete(PROJECT_PLAN_SYSTEM_PROMPT, prompt,
-                                 max_tokens=12000, temperature=0.5)
+            raw = self._complete(system, prompt, max_tokens=max_tokens, temperature=0.5)
             last_raw = raw
             try:
-                data = extract_json_block(raw)
-                dataset = data.get("dataset")
-                if isinstance(dataset, dict):
-                    dataset["random_seed"] = seed
-                plan = ProjectPlan.from_dict(data, project=project_prompt)
-                # Satir sayisi KOK tabloya uygulanir; cocuklar kardinaliteden turer.
-                root = plan.contract.table(plan.contract.root_table)
-                root.row_count_target = row_count
-                for table in plan.contract.tables:
-                    table.faker_locale = locale
-                    table.random_seed = seed
+                result = parse(raw)
             except SchemaValidationError as exc:
                 last_error = exc
-                log.warning("Proje planı doğrulanamadı (deneme %d/%d): %s",
-                            attempt, SCHEMA_MAX_RETRIES, exc)
+                feedback = _english_error(parse, raw, exc)
+                log.warning("%s doğrulanamadı (deneme %d/%d): %s",
+                            label, attempt, SCHEMA_MAX_RETRIES, feedback)
                 continue
             if attempt > 1:
-                log.info("Proje planı %d. denemede duzeltildi", attempt)
-            return plan
+                log.info("%s %d. denemede duzeltildi", label, attempt)
+            return result
 
         raise SchemaValidationError(
-            t("service.error.plan_retries", attempts=SCHEMA_MAX_RETRIES,
-              error=last_error)
+            t(retries_key, attempts=SCHEMA_MAX_RETRIES, error=last_error)
         )
 
     def generate_dataset_code(self, contract) -> str:
@@ -608,6 +600,26 @@ class BaseLLMClient(ABC):
         return strip_code_fences(
             self._complete(CARD_SYSTEM_PROMPT, user, max_tokens=4000, temperature=0.4)
         )
+
+
+def _english_error(parse: Callable[[str], Any], raw: str, error: Exception) -> str:
+    """Doğrulama hatasının LLM'e geri beslenecek İngilizce metni.
+
+    Hata metinleri ``t()`` ile arayüz dilinde üretiliyor ve Türkçe arayüzde model
+    Türkçe düzeltme talimatı alıyordu ("LLM metni çeviri dışı" kuralına aykırı).
+    Ayrıştırma deterministik olduğu için aynı yanıt bu iş parçacığında İngilizce
+    katalogla bir kez daha doğrulanır - 60'tan fazla hata noktasını anahtar taşıyacak
+    biçime çevirmekten daha az kırılgan. Yeniden doğrulama beklenmedik biçimde geçerse
+    özgün metne düşülür.
+    """
+    with language_override("en"):
+        try:
+            parse(raw)
+        except SchemaValidationError as exc:
+            return str(exc)
+        except Exception:  # pragma: no cover - savunma amacli
+            pass
+    return str(error)
 
 
 def _build_seed_block(seed_df, max_rows: int = 8) -> str:
