@@ -288,7 +288,7 @@ Frequently used flags (`--help` lists all of them):
 | `--web-seed`, `--web-query`, `--hf-seed` | Reference data from a web search or URL, or from a Hugging Face dataset |
 | `--push-to-hub` | Uploads the clean data to a Hugging Face repository |
 | `--no-repair-orphans` | CI gate for relational runs: exit code 3 instead of deleting orphan foreign keys |
-| `--agentic` | Experimental: four LLM roles (domain analyst, statistician, critic, schema engineer) design the contract over several rounds. More LLM calls; not benchmarked yet |
+| `--agentic` | Experimental: four LLM roles (domain analyst, statistician, critic, schema engineer) design the contract over up to two review rounds. With `qwen2.5-coder:1.5b` it finished 3 of 3 runs but took 7 calls and ~40 s each, and wrote weaker contracts (no ranges, fewer correlations) than the default single call — not recommended for small models |
 | `--hardware`, `--check-auth` | Print the hardware tier or the credential status, then exit |
 
 ---
@@ -338,8 +338,8 @@ HIPAA or GDPR compliance certification.
 
 | Check | What it does | Limits |
 | --- | --- | --- |
-| **Memorisation (DCR / NNDR)** | Needs reference data (`--web-seed`, `--hf-seed`). On a sample of up to 2,000 rows, using the standardised numeric columns both datasets share, it measures each synthetic row's distance to the closest reference row (DCR) and the ratio of the closest to the second-closest distance (NNDR). Identical rows or low ratios are reported as possible copies | Numeric columns only. The thresholds are fixed: with one or two numeric columns even independent data is flagged — in two dimensions about 4% of rows fall below the NNDR cut-off by chance |
-| **Distribution divergence score** | The 95th percentile of the absolute log ratio between synthetic and reference histogram bins (20 bins, up to five shared numeric columns) | A similarity heuristic. The report field is still called `empirical_epsilon`; it is not a differential-privacy ε |
+| **Memorisation (DCR / NNDR)** | Needs reference data (`--web-seed`, `--hf-seed`). On a sample of up to 2,000 rows, using the standardised numeric columns both datasets share, it measures each synthetic row's distance to the closest reference row (DCR) and the ratio of the closest to the second-closest distance (NNDR). The same metrics are measured from every reference row to the *other* reference rows, which shows what uncopied data from that distribution looks like; identical rows or low ratios well above that baseline are reported as possible copies | Numeric columns only, on a sample. It finds copied and near-copied rows; it cannot tell whether a row that is merely *plausible* reveals something about a real person |
+| **Distribution divergence** | Mean Jensen–Shannon distance between synthetic and reference histograms of the shared numeric columns: 0 means identical histograms, 1 means no overlap | A similarity measure, not a privacy measure. Small samples give values above 0 even for identical distributions |
 | **Identifier column-name scan** | Matches column **names** against patterns for the 18 HIPAA Safe Harbor identifier categories and counts ages over 89 | Cell values are never inspected: an identifier stored under an unrelated name is missed, and a harmless name that contains a pattern (`mobile_sessions`) is flagged |
 
 Without reference data the memorisation check is reported as **not measured**. The helpers

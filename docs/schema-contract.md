@@ -77,7 +77,7 @@ data against it.
 | `columns` | Exactly two column names of type `int`, `float` or `bool` |
 | `expected_sign` | `positive` or `negative` |
 | `min_r` | Minimum correlation strength in the expected direction (`r >= min_r`, or `r <= -min_r` for `negative`) |
-| `method` | `pearson` (default) or `spearman`. `kendall` is accepted by the parser but is currently checked with Pearson |
+| `method` | `pearson` (default), `spearman` or `kendall`. The parametric engine calibrates to the same measure the validator checks (Kendall's tau-b is measured on a fixed 50,000-row sample for larger data). For a `bool` column the engine targets the point-biserial correlation, so prefer `pearson` there |
 
 ### Monotonicity rules
 

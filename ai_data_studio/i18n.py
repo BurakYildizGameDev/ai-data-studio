@@ -17,8 +17,10 @@ Kurallar
 * **Anahtarlar ASCII** ve ``modul.baglam.kisa_ad`` biçiminde. Karşılaştırmalar
   her zaman ANAHTAR üzerinden yapılır, çeviri metni üzerinden değil - aksi hâlde
   dil değişince mantık bozulur (bkz. ``gui/app_window.py`` içindeki ``_fold``).
-* **Varsayılan dil İngilizce**, Türkçe tam çeviri. Doğrulanamayan üçüncü bir dil
-  yayınlanmıyor: yarım çeviri temiz İngilizce'den daha özensiz görünür.
+* **Varsayılan dil İngilizce**, Türkçe tam çeviri; ikisi kodla birlikte bakılır.
+  Almanca, Fransızca, Rusça, Çince ve Japonca makine çevirisiyle başladı ve
+  kısmen gözden geçirildi (README bunu açıkça söyler); düzeltme katkısına açıktır.
+  Eksik anahtar yine de olmaz: katalog testleri her dilde bütün anahtarları ister.
 * Bir anahtarın seçili dilde karşılığı yoksa İngilizce'ye, o da yoksa anahtarın
   kendisine düşülür. Sessiz eksik çeviri olmasın diye
   ``tests/test_i18n.py`` bütün ``t("...")`` çağrılarını AST ile tarar.
