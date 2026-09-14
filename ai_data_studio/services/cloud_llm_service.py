@@ -54,7 +54,8 @@ class AnthropicClient(BaseLLMClient):
         self._anthropic = anthropic
 
         if api_key:
-            self.credential = config.Credential(config.KIND_API_KEY, api_key, "dogrudan verildi")
+            self.credential = config.Credential(config.KIND_API_KEY, api_key,
+                                                t("auth.source.direct"))
         else:
             self.credential = config.resolve_credential(config.PROVIDER_ANTHROPIC)
 
@@ -97,7 +98,19 @@ class AnthropicClient(BaseLLMClient):
 
     def _complete(self, system: str, user: str, max_tokens: int = 16000,
                   temperature: Optional[float] = None) -> str:
-        return self._call(system, user, max_tokens)
+        try:
+            return self._call(system, user, max_tokens)
+        except RetryableLLMError as exc:
+            if not isinstance(exc.__cause__, self._anthropic.RateLimitError):
+                raise
+            # Yeniden denemeler tukendi. Ham "Anthropic rate limit: ..." metni kullaniciya
+            # nedenini soylemiyordu. OAuth token'i Claude Code aboneligiyle AYNI kotayi
+            # kullanir; acik bir Claude Code oturumu varken 429 israrla devam eder
+            # (2026-09-06 olcumu: 17 cagrinin hicbiri gecmedi).
+            key = ("service.error.anthropic_rate_limit_oauth"
+                   if self.credential.kind == config.KIND_AUTH_TOKEN
+                   else "service.error.anthropic_rate_limit")
+            raise LLMError(t(key)) from exc
 
     @_retry_policy
     def _call(self, system: str, user: str, max_tokens: int) -> str:
@@ -133,10 +146,9 @@ class AnthropicClient(BaseLLMClient):
 
         if message.stop_reason == "refusal":
             detail = getattr(message, "stop_details", None)
-            raise LLMError(
-                "Model isteği reddetti%s"
-                % (" (%s)" % detail.category if detail is not None else "")
-            )
+            raise LLMError(t(
+                "service.error.refused",
+                detail=(" (%s)" % detail.category if detail is not None else "")))
 
         text = "".join(
             block.text for block in message.content if getattr(block, "type", "") == "text"
@@ -166,7 +178,8 @@ class GeminiClient(BaseLLMClient):
         self._types = genai_types
 
         if api_key:
-            self.credential = config.Credential(config.KIND_API_KEY, api_key, "dogrudan verildi")
+            self.credential = config.Credential(config.KIND_API_KEY, api_key,
+                                                t("auth.source.direct"))
         else:
             self.credential = config.resolve_credential(config.PROVIDER_GEMINI)
 

@@ -117,6 +117,17 @@ class TestOllamaREST(unittest.TestCase):
                                return_value=_Response(lines=lines)):
             self.assertFalse(ollama_service.pull_model("x", cancel_event=cancel))
 
+    def test_catalog_descriptions_are_translated(self):
+        """Onerilen model aciklamalari eskiden sabit Turkce metindi."""
+        from ai_data_studio.i18n import t
+
+        with mock.patch.object(ollama_service, "list_models", return_value=[]):
+            entries = ollama_service.catalog()
+        by_name = {e["name"]: e for e in entries}
+        self.assertEqual(by_name["qwen2.5-coder:7b"]["detail"], t("ollama.model.balanced"))
+        for entry in entries:
+            self.assertFalse(entry["detail"].startswith("ollama.model."), entry)
+
     def test_chat_completion_parses_response_and_logs_usage(self):
         payload = {"message": {"content": "merhaba"},
                    "prompt_eval_count": 120, "eval_count": 45}
@@ -143,6 +154,164 @@ class TestOllamaREST(unittest.TestCase):
         self.assertEqual(body["options"]["num_ctx"], config.OLLAMA_NUM_CTX)
         self.assertGreaterEqual(body["options"]["num_ctx"], 8192)
         self.assertEqual(logged, {"input_tokens": 120, "output_tokens": 45, "purpose": "chat"})
+
+
+class TestSmallModelDetection(unittest.TestCase):
+    def test_parameter_size_from_ollama_details_wins(self):
+        self.assertEqual(ollama_service.parameter_billions("custom:latest", "1.5B"), 1.5)
+
+    def test_parameter_size_from_name(self):
+        cases = {
+            "qwen2.5-coder:1.5b": 1.5,
+            "qwen2.5-coder:14b": 14.0,
+            "deepseek-r1:8b": 8.0,
+            "llama3.2:3b": 3.0,
+            "dagbs/dolphin-2.9.2-qwen2-7b:latest": 7.0,
+        }
+        for name, size in cases.items():
+            self.assertEqual(ollama_service.parameter_billions(name), size, name)
+        self.assertIsNone(ollama_service.parameter_billions("phi3:mini"))
+
+    def test_small_model_threshold(self):
+        self.assertTrue(ollama_service.is_small_model("qwen2.5-coder:1.5b"))
+        self.assertTrue(ollama_service.is_small_model("llama3.2:3b"))
+        self.assertFalse(ollama_service.is_small_model("qwen2.5-coder:7b"))
+        self.assertFalse(ollama_service.is_small_model("phi3:mini"))   # bilinmiyor -> dokunma
+
+
+class TestOllamaReasoningModels(unittest.TestCase):
+    """Dusunen modeller (deepseek-r1) cikti butcesini dusunmeye harciyor.
+
+    Canli olcum (2026-09-14, deepseek-r1:8b, num_predict=8000): bir kosuda 7138 token
+    ile gecerli sozlesme, ayni istemin sonraki kosusunda done_reason=length ve yarida
+    kesik JSON, pipeline icinde de tamamen bos cevap.
+    """
+
+    def _client(self):
+        with mock.patch.object(ollama_service, "is_available", return_value=True):
+            return ollama_service.OllamaClient("deepseek-r1:8b")
+
+    @staticmethod
+    def _router(capabilities, chats):
+        """/api/show ve /api/chat'i ayiran sahte requests.post; chat govdelerini kaydeder."""
+        sent = []
+
+        def fake_post(url, json=None, timeout=None):
+            if url.endswith("/api/show"):
+                return _Response({"capabilities": capabilities})
+            sent.append(json)
+            return _Response(chats[len(sent) - 1])
+        return fake_post, sent
+
+    @staticmethod
+    def _chat(content="", thinking="", done_reason="stop"):
+        return {"message": {"content": content, "thinking": thinking},
+                "done_reason": done_reason, "prompt_eval_count": 10, "eval_count": 20}
+
+    def test_thinking_model_gets_extra_budget_up_front(self):
+        client = self._client()
+        post, sent = self._router(["completion", "thinking"], [self._chat("{}", "hmm")])
+        with mock.patch.object(ollama_service.requests, "post", side_effect=post):
+            self.assertEqual(client._complete("s", "u", max_tokens=8000), "{}")
+        self.assertEqual(sent[0]["options"]["num_predict"],
+                         8000 + ollama_service.THINKING_EXTRA_TOKENS)
+
+    def test_plain_model_budget_is_unchanged(self):
+        client = self._client()
+        post, sent = self._router(["completion", "tools"], [self._chat("{}")])
+        with mock.patch.object(ollama_service.requests, "post", side_effect=post):
+            client._complete("s", "u", max_tokens=8000)
+        self.assertEqual(sent[0]["options"]["num_predict"], 8000)
+
+    def test_capabilities_are_queried_once_per_client(self):
+        client = self._client()
+        shows = []
+
+        def post(url, json=None, timeout=None):
+            if url.endswith("/api/show"):
+                shows.append(url)
+                return _Response({"capabilities": []})
+            return _Response(self._chat("ok"))
+        with mock.patch.object(ollama_service.requests, "post", side_effect=post):
+            client._complete("s", "u")
+            client._complete("s", "u")
+        self.assertEqual(len(shows), 1)
+
+    def test_show_failure_is_not_fatal(self):
+        import requests
+
+        client = self._client()
+
+        def post(url, json=None, timeout=None):
+            if url.endswith("/api/show"):
+                raise requests.ConnectionError("yok")
+            return _Response(self._chat("ok"))
+        with mock.patch.object(ollama_service.requests, "post", side_effect=post):
+            self.assertEqual(client._complete("s", "u"), "ok")
+
+    def test_truncated_by_thinking_is_retried_with_more_budget(self):
+        client = self._client()
+        seen = []
+        client.progress_cb = seen.append
+        post, sent = self._router([], [
+            self._chat('{"domain": "x", "col', "uzun dusunme", done_reason="length"),
+            self._chat('{"domain": "x"}', "dusunme"),
+        ])
+        with mock.patch.object(ollama_service.requests, "post", side_effect=post):
+            text = client._complete("s", "u", max_tokens=8000)
+        self.assertEqual(text, '{"domain": "x"}')
+        self.assertEqual([b["options"]["num_predict"] for b in sent],
+                         [8000, 8000 + ollama_service.THINKING_EXTRA_TOKENS])
+        self.assertTrue(client.supports_thinking())   # ogrenildi, sonraki cagri bastan pay alir
+        self.assertEqual(len(seen), 1)
+
+    def test_thinking_that_never_answers_raises_a_clear_error(self):
+        from ai_data_studio.i18n import t
+
+        client = self._client()
+        post, sent = self._router(["thinking"], [
+            self._chat("", "dusunme", done_reason="length"),
+            self._chat("", "daha fazla dusunme", done_reason="length"),
+        ])
+        with mock.patch.object(ollama_service.requests, "post", side_effect=post):
+            with self.assertRaises(LLMError) as ctx:
+                client._complete("s", "u", max_tokens=8000)
+        self.assertEqual(len(sent), 2)   # tek yeniden deneme, sonsuz dongu yok
+        budget = 8000 + 2 * ollama_service.THINKING_EXTRA_TOKENS
+        self.assertEqual(str(ctx.exception),
+                         t("service.error.ollama_thinking_exhausted",
+                           model="deepseek-r1:8b", tokens=budget))
+
+    def test_empty_answer_is_retried_once(self):
+        client = self._client()
+        post, sent = self._router([], [self._chat(""), self._chat("kod")])
+        with mock.patch.object(ollama_service.requests, "post", side_effect=post):
+            self.assertEqual(client._complete("s", "u"), "kod")
+        self.assertEqual(sent[0]["options"]["num_predict"], sent[1]["options"]["num_predict"])
+
+    def test_plain_model_hitting_the_limit_is_not_retried(self):
+        """Dusunmesiz modelin sinira carpmasi (sonsuz tekrar) ikinci kez ayni butceyi yakmasin."""
+        client = self._client()
+        post, sent = self._router([], [self._chat("def generate_data(", done_reason="length")])
+        with mock.patch.object(ollama_service.requests, "post", side_effect=post):
+            self.assertEqual(client._complete("s", "u"), "def generate_data(")
+        self.assertEqual(len(sent), 1)
+
+    def test_inline_think_tags_are_stripped(self):
+        client = self._client()
+        post, _ = self._router([], [self._chat("<think>plan...</think>\n{\"a\": 1}")])
+        with mock.patch.object(ollama_service.requests, "post", side_effect=post):
+            self.assertEqual(client._complete("s", "u"), '{"a": 1}')
+
+    def test_unclosed_inline_think_counts_as_no_answer(self):
+        client = self._client()
+        post, sent = self._router([], [
+            self._chat("<think>plan plan plan", done_reason="length"),
+            self._chat("<think>kisa</think>{}"),
+        ])
+        with mock.patch.object(ollama_service.requests, "post", side_effect=post):
+            self.assertEqual(client._complete("s", "u"), "{}")
+        self.assertEqual(len(sent), 2)
 
 
 class TestDatasetCard(unittest.TestCase):

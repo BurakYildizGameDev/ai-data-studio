@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import threading
 from typing import Any, Callable, Dict, List, Optional
 
@@ -24,18 +25,57 @@ log = logging.getLogger(__name__)
 DEFAULT_TIMEOUT = 15          # kisa metadata cagrilari
 COMPLETION_TIMEOUT = 900      # yerel model uretimi yavas olabilir
 
+# Dusunen (reasoning) modeller - deepseek-r1, qwen3 - cevaptan once uzun bir `thinking`
+# metni uretir ve Ollama onu CEVAPLA AYNI num_predict butcesinden harcar. Olcum
+# (2026-09-14, deepseek-r1:8b, sema cagrisi, num_predict=8000): dusunme ~25 bin karakter,
+# 7138/8000 token; ayni istem bir sonraki kosuda 8000'e carpip JSON'u yarida kesti,
+# canli pipeline'da da cevap tamamen bos geldi. `"think": false` bu modelde dusunmeyi
+# KAPATMADI (ayni olcumde yine 25 bin karakter), bu yuzden cozum butceyi buyutmek.
+THINKING_EXTRA_TOKENS = 8000
+
+_THINK_TAG_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
+
 # Kod uretimine uygun, kurulu olmasa da secilip indirilebilecek modeller.
-# (ad, yaklasik boyut, kisa aciklama)
+# (ad, yaklasik boyut, aciklamanin ceviri anahtari)
 RECOMMENDED_MODELS = [
-    ("qwen2.5-coder:7b", "4.7 GB", "Kod üretimi için dengeli - onerilen"),
-    ("qwen2.5-coder:14b", "9.0 GB", "Daha iyi kod, daha fazla RAM"),
-    ("qwen2.5-coder:32b", "20 GB", "En iyi kod kalitesi, 32 GB+ RAM"),
-    ("deepseek-coder-v2:16b", "8.9 GB", "Guclu kod modeli"),
-    ("llama3.1:8b", "4.9 GB", "Genel amacli"),
-    ("gemma2:9b", "5.4 GB", "Genel amacli, hızlı"),
-    ("mistral:7b", "4.1 GB", "Hafif, hızlı"),
-    ("phi4:14b", "9.1 GB", "Guclu akil yurutme"),
+    ("qwen2.5-coder:7b", "4.7 GB", "ollama.model.balanced"),
+    ("qwen2.5-coder:14b", "9.0 GB", "ollama.model.better_code"),
+    ("qwen2.5-coder:32b", "20 GB", "ollama.model.best_code"),
+    ("deepseek-coder-v2:16b", "8.9 GB", "ollama.model.strong_code"),
+    ("llama3.1:8b", "4.9 GB", "ollama.model.general"),
+    ("gemma2:9b", "5.4 GB", "ollama.model.general_fast"),
+    ("mistral:7b", "4.1 GB", "ollama.model.light_fast"),
+    ("phi4:14b", "9.1 GB", "ollama.model.reasoning"),
 ]
+
+
+# Bu boyutun altindaki modeller LLM kod uretiminde neredeyse hep dusuyor. Canli olcum
+# (2026-09-14, qwen2.5-coder:1.5b, 20.000 satir): `--engine llm` 3 promptun 3'unde
+# FAILED, ayni model `auto` ve `parametric` motorla hepsinde basarili.
+SMALL_MODEL_MAX_BILLIONS = 3.0
+
+_PARAMETER_SIZE_RE = re.compile(r"(?<![\d.])(\d+(?:\.\d+)?)\s*b\b", re.IGNORECASE)
+
+
+def parameter_billions(name: str, parameter_size: str = "") -> Optional[float]:
+    """Model boyutu (milyar parametre); bilinmiyorsa ``None``.
+
+    Once Ollama'nin bildirdigi ``parameter_size`` ("1.5B", "7.6B"), yoksa model adi
+    ("qwen2.5-coder:1.5b", "dolphin-2.9.2-qwen2-7b") okunur. Etiket hic boyut
+    tasimiyorsa ("phi3:mini") tahmin yurutulmez.
+    """
+    tag = name.rsplit(":", 1)[1] if ":" in (name or "") else ""
+    for text in (parameter_size, tag, name):
+        match = _PARAMETER_SIZE_RE.search(text or "")
+        if match:
+            return float(match.group(1))
+    return None
+
+
+def is_small_model(name: str, parameter_size: str = "") -> bool:
+    """Model, LLM kod uretiminin guvenilir olmadigi kadar kucuk mu?"""
+    size = parameter_billions(name, parameter_size)
+    return size is not None and size <= SMALL_MODEL_MAX_BILLIONS
 
 
 class OllamaUnavailableError(LLMNotConfiguredError):
@@ -195,10 +235,11 @@ def catalog(host: Optional[str] = None) -> List[Dict[str, Any]]:
             "size": "%.1f GB" % model["size_gb"] if model["size_gb"] else "",
             "detail": detail or model["family"],
         })
-    for name, size, detail in RECOMMENDED_MODELS:
+    for name, size, detail_key in RECOMMENDED_MODELS:
         if name in installed_names or name.split(":")[0] in installed_bases:
             continue
-        entries.append({"name": name, "installed": False, "size": size, "detail": detail})
+        entries.append({"name": name, "installed": False, "size": size,
+                        "detail": t(detail_key)})
     return entries
 
 
@@ -214,6 +255,8 @@ class OllamaClient(BaseLLMClient):
                  auto_pull: bool = False, **kwargs):
         super().__init__(model or config.DEFAULT_MODELS[config.PROVIDER_OLLAMA], **kwargs)
         self.host = host or config.OLLAMA_HOST
+        # Model dusunen (reasoning) bir model mi? Ilk cagrida /api/show'dan ogrenilir.
+        self._thinks: Optional[bool] = None
         if not is_available(self.host):
             raise OllamaUnavailableError(
                 t("service.error.ollama_down", host=self.host)
@@ -236,8 +279,59 @@ class OllamaClient(BaseLLMClient):
             return False
         return True
 
+    def supports_thinking(self) -> bool:
+        """Model cevaptan once dusunme metni uretiyor mu (``/api/show`` capabilities)?
+
+        Sonuc istemci basina bir kez sorulur. Sorgu basarisizsa ``False`` kabul edilir;
+        o durumda bile :meth:`_complete` kesilen yanitta dusunmeyi gorup telafi eder.
+        """
+        if self._thinks is None:
+            try:
+                response = requests.post(_url("/api/show", self.host),
+                                         json={"model": self.model},
+                                         timeout=DEFAULT_TIMEOUT)
+                response.raise_for_status()
+                capabilities = response.json().get("capabilities") or []
+                self._thinks = "thinking" in capabilities
+            except (requests.RequestException, ValueError, AttributeError, TypeError):
+                self._thinks = False
+        return self._thinks
+
     def _complete(self, system: str, user: str, max_tokens: int = 16000,
                   temperature: Optional[float] = None) -> str:
+        budget = max_tokens + (THINKING_EXTRA_TOKENS if self.supports_thinking() else 0)
+        text, thinking, done_reason = self._chat(system, user, budget, temperature)
+
+        # Tek bir telafi denemesi. Dusunme butceyi yiyip cevabi kestiyse ya da bos
+        # biraktiysa pay eklenerek; dusunmesiz bos yanitta ayni butceyle. Dusunmesiz
+        # bir modelin sinira carpmasi (sonsuz tekrar) yeniden denenmez - ayni
+        # butceyi bir kez daha yakmaktan baska bir sey yapmaz.
+        exhausted = done_reason == "length" and bool(thinking)
+        if exhausted or not text:
+            if exhausted:
+                self._thinks = True
+                budget += THINKING_EXTRA_TOKENS
+                log.warning("Ollama %s: düşünme çıktı bütçesini tüketti, %d token ile "
+                            "yeniden deneniyor", self.model, budget)
+                self._report_progress(t("service.ollama.thinking_retry",
+                                        model=self.model, tokens=budget))
+            else:
+                log.warning("Ollama %s boş yanıt döndürdü, yeniden deneniyor", self.model)
+                self._report_progress(t("service.ollama.empty_retry", model=self.model))
+            text, thinking, done_reason = self._chat(system, user, budget, temperature)
+
+        if not text:
+            if thinking:
+                raise LLMError(t("service.error.ollama_thinking_exhausted",
+                                 model=self.model, tokens=budget))
+            raise LLMError(t("service.error.ollama_empty"))
+        if done_reason == "length":
+            log.warning("Ollama %s yanıtı %d token sınırında kesildi", self.model, budget)
+        return text
+
+    def _chat(self, system: str, user: str, num_predict: int,
+              temperature: Optional[float]):
+        """Tek ``/api/chat`` cagrisi -> (cevap, dusunme metni, done_reason)."""
         payload = {
             "model": self.model,
             "messages": [
@@ -247,7 +341,7 @@ class OllamaClient(BaseLLMClient):
             "stream": False,
             "options": {
                 "temperature": self.temperature if temperature is None else temperature,
-                "num_predict": max_tokens,
+                "num_predict": num_predict,
                 # Verilmezse Ollama 4096'da kalir ve uzun prompt'un basini sessizce keser.
                 "num_ctx": config.OLLAMA_NUM_CTX,
             },
@@ -274,7 +368,16 @@ class OllamaClient(BaseLLMClient):
                         data.get("eval_count", 0) or 0,
                         purpose="chat")
 
-        text = ((data.get("message") or {}).get("content") or "").strip()
-        if not text:
-            raise LLMError(t("service.error.ollama_empty"))
-        return text
+        message = data.get("message") or {}
+        thinking = message.get("thinking") or ""
+        text = message.get("content") or ""
+        # Eski Ollama surumleri/sablonlari dusunmeyi ayri alana degil cevabin icine
+        # <think>...</think> olarak koyar; JSON/kod ayiklayicisi onu cevap sanmasin.
+        inline = _THINK_TAG_RE.findall(text)
+        if inline:
+            thinking = thinking or "".join(inline)
+            text = _THINK_TAG_RE.sub("", text)
+        elif text.lstrip().lower().startswith("<think>"):
+            # Kapanmamis etiket: sinira dusunurken carpti, cevap hic baslamadi.
+            thinking, text = thinking or text, ""
+        return text.strip(), thinking, data.get("done_reason") or ""

@@ -2,7 +2,9 @@
 
 Gerçek ag çağrısı yapilmaz; SDK istemcileri taklit edilir.
 """
+import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from ai_data_studio import config
@@ -223,7 +225,8 @@ class TestClientWiring(unittest.TestCase):
              mock.patch.object(genai, "Client") as ctor:
             client = GeminiClient()
         self.assertEqual(ctor.call_args[1]["api_key"], "g-123")
-        self.assertEqual(client.credential.source, "GOOGLE_API_KEY ortam değişkeni")
+        from ai_data_studio.i18n import t
+        self.assertEqual(client.credential.source, t("auth.source.env_var", var="GOOGLE_API_KEY"))
 
     def test_gemini_error_message_lists_sources(self):
         from ai_data_studio.services.cloud_llm_service import GeminiClient
@@ -233,6 +236,41 @@ class TestClientWiring(unittest.TestCase):
                 GeminiClient()
         self.assertIn("GOOGLE_API_KEY", str(ctx.exception))
         self.assertIn("aistudio.google.com", str(ctx.exception))
+
+    def _rate_limited_client(self, **env):
+        import anthropic
+        from ai_data_studio.services import cloud_llm_service
+
+        response = mock.MagicMock(status_code=429, headers={})
+        error = anthropic.RateLimitError("rate_limit_error", response=response, body=None)
+        with clean_env(**env), mock.patch.object(anthropic, "Anthropic") as ctor:
+            client = cloud_llm_service.AnthropicClient()
+        ctor.return_value.messages.stream.side_effect = error
+        client._client = ctor.return_value
+        return client
+
+    def _exhausted_message(self, client):
+        from ai_data_studio.services.cloud_llm_service import AnthropicClient
+        from ai_data_studio.services.llm_base import LLMError
+
+        with mock.patch.object(AnthropicClient._call.retry, "sleep", lambda _s: None):
+            with self.assertRaises(LLMError) as ctx:
+                client._complete("s", "u")
+        return str(ctx.exception)
+
+    def test_rate_limit_with_claude_code_session_explains_the_shared_quota(self):
+        """OAuth token'i Claude Code aboneligiyle ayni kotayi kullanir (2026-09-06: 17/17 x 429)."""
+        from ai_data_studio.i18n import t
+
+        client = self._rate_limited_client(ANTHROPIC_AUTH_TOKEN="sk-ant-oat01-x")
+        self.assertEqual(self._exhausted_message(client),
+                         t("service.error.anthropic_rate_limit_oauth"))
+
+    def test_rate_limit_with_api_key_has_plain_message(self):
+        from ai_data_studio.i18n import t
+
+        client = self._rate_limited_client(ANTHROPIC_API_KEY="sk-ant-api03-x")
+        self.assertEqual(self._exhausted_message(client), t("service.error.anthropic_rate_limit"))
 
     def test_explicit_api_key_argument_overrides_environment(self):
         import anthropic
@@ -375,6 +413,21 @@ class TestOAuthDetection(unittest.TestCase):
                 config, "load_settings", return_value=dict(config.DEFAULT_SETTINGS)):
             self.assertEqual(config.gemini_backend(), config.GEMINI_BACKEND_AISTUDIO)
 
+    def test_cli_backend_choice_persists_on_a_clean_install(self):
+        """settings.json yokken GUI'den secilen agy yolu, pipeline baslatilinca da kalmali.
+
+        14.09 canli testinde izole veri klasorunde settings.json olmadigi icin uygulama
+        aistudio'ya dustu; secimin kalicilastigi burada kod uzerinden dogrulanir.
+        """
+        with tempfile.TemporaryDirectory() as tmp, clean_env(), \
+                mock.patch.object(config, "SETTINGS_PATH", Path(tmp) / "settings.json"):
+            self.assertFalse((Path(tmp) / "settings.json").exists())
+            config.set_gemini_backend(config.GEMINI_BACKEND_CLI)       # AuthDialog
+            config.save_settings({"provider": config.PROVIDER_GEMINI,    # AppWindow._start
+                                  "model": "gemini-3.8-flash-low", "engine": "auto"})
+            self.assertEqual(config.gemini_backend(), config.GEMINI_BACKEND_CLI)
+            self.assertEqual(config.load_settings()["provider"], config.PROVIDER_GEMINI)
+
     def test_cli_backend_makes_credential_sdk_default(self):
         """CLI seçili ve `agy` kuruluysa kimlik 'değeri olmayan' SDK kimliğidir."""
         settings = dict(config.DEFAULT_SETTINGS)
@@ -474,7 +527,8 @@ class TestGeminiClientWiring(unittest.TestCase):
         with clean_env(), mock.patch.object(genai, "Client") as ctor:
             client = GeminiClient(api_key="direct-key")
         self.assertEqual(ctor.call_args[1]["api_key"], "direct-key")
-        self.assertEqual(client.credential.source, "dogrudan verildi")
+        from ai_data_studio.i18n import t
+        self.assertEqual(client.credential.source, t("auth.source.direct"))
 
     def test_gemini_without_credentials_raises(self):
         from ai_data_studio.services.cloud_llm_service import GeminiClient
