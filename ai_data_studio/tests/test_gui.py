@@ -204,6 +204,28 @@ class TestAppWindow(unittest.TestCase):
         self.assertNotIn(t("result.section.plan"), text)
         self.assertIn(t("result.section.stages"), text)
 
+    def test_result_tab_text_follows_ui_language(self):
+        """Ingilizce arayuzde 'beklenen' ve '%90.0' gorunuyordu; olculemeyen r cokertmemeli."""
+        from ai_data_studio.i18n import t
+
+        result = _fake_result(with_plan=False)
+        result.report["correlations"] = [
+            {"pair": ["tenure_months", "churned"], "expected_sign": "negative", "min_r": 0.3,
+             "actual_r": -0.41, "pass": True},
+            {"pair": ["tenure_months", "fee"], "expected_sign": "positive", "min_r": 0.2,
+             "actual_r": None, "pass": False, "reason": t("validation.corr_skip.constant")},
+        ]
+        view = self.app.pipeline_view
+        view.show_result(result)
+        text = view.result_box.get("1.0", "end-1c")
+
+        self.assertIn(t("common.percent", value="90.0"), text)
+        self.assertIn(t("result.correlation_expected", sign="negative", min_r=0.3), text)
+        self.assertIn("r=-  ", text)
+        if t("common.percent", value="1") == "1%":
+            self.assertNotIn("beklenen", text)
+            self.assertNotIn("%90.0", text)
+
     def test_start_is_blocked_with_actionable_message_when_no_credential(self):
         """Kullanicinin en çok takildigi yer: kimlik yokken 'Başlat' ne diyor?"""
         from unittest import mock
@@ -487,6 +509,57 @@ class TestEngineControls(unittest.TestCase):
         self.view.engine_menu.set(_engine_label(ENGINE_PARAMETRIC))
         self.view._on_engine_change(self.view.engine_menu.get())
         self.assertEqual(self.view.engine_hint.cget("text"), ENGINE_HINTS[ENGINE_PARAMETRIC])
+
+    def _select_ollama_model(self, name, parameter_size=""):
+        from ai_data_studio import config
+
+        selector = self.view.model_selector
+        selector._provider = config.PROVIDER_OLLAMA
+        selector._parameter_sizes = {name: parameter_size}
+        selector._apply_models([name], name)      # on_change -> PipelineView
+
+    def test_small_local_model_switches_engine_to_parametric_once(self):
+        """Canli 1.5b: llm 0/3; parametric 9/9 (~14 sn); auto ayni veri ama 29-242 sn."""
+        from ai_data_studio.core.orchestrator import ENGINE_AUTO, ENGINE_LLM, ENGINE_PARAMETRIC
+        from ai_data_studio.gui.views.pipeline_view import _engine_label
+        from ai_data_studio.i18n import t
+
+        self.assertEqual(self.view.engine, ENGINE_LLM)
+        self._select_ollama_model("qwen2.5-coder:1.5b", "1.5B")
+        self.assertEqual(self.view.engine, ENGINE_PARAMETRIC)
+        self.assertEqual(self.view.engine_hint.cget("text"),
+                         t("pipeline.engine.small_model_switched", model="qwen2.5-coder:1.5b"))
+
+        # Kullanici bilerek geri alirsa uyarilir ama tekrar dayatilmaz.
+        for engine in (ENGINE_LLM, ENGINE_AUTO):
+            self.view.engine_menu.set(_engine_label(engine))
+            self.view._on_engine_change(self.view.engine_menu.get())
+            self.view._on_model_selected("ollama", "qwen2.5-coder:1.5b")
+            self.assertEqual(self.view.engine, engine)
+            self.assertEqual(self.view.engine_hint.cget("text"),
+                             t("pipeline.engine.small_model_warning",
+                               model="qwen2.5-coder:1.5b"))
+
+    def test_auto_engine_is_also_switched_for_a_small_model(self):
+        from ai_data_studio.core.orchestrator import ENGINE_AUTO, ENGINE_PARAMETRIC
+        from ai_data_studio.gui.views.pipeline_view import _engine_label
+
+        self.view.engine_menu.set(_engine_label(ENGINE_AUTO))
+        self._select_ollama_model("llama3.2:1b", "1.2B")
+        self.assertEqual(self.view.engine, ENGINE_PARAMETRIC)
+
+        # Ollama llama3.2:3b'yi "3.2B" bildiriyor: esigin (3B) ustu, secime dokunulmaz.
+        self.view.engine_menu.set(_engine_label(ENGINE_AUTO))
+        self._select_ollama_model("llama3.2:3b", "3.2B")
+        self.assertEqual(self.view.engine, ENGINE_AUTO)
+
+    def test_large_local_model_keeps_the_chosen_engine(self):
+        from ai_data_studio.core.orchestrator import ENGINE_LLM
+        from ai_data_studio.gui.views.pipeline_view import ENGINE_HINTS
+
+        self._select_ollama_model("qwen2.5-coder:14b", "14.8B")
+        self.assertEqual(self.view.engine, ENGINE_LLM)
+        self.assertEqual(self.view.engine_hint.cget("text"), ENGINE_HINTS[ENGINE_LLM])
 
     def test_dirty_rate_is_percentage(self):
         self.view.dirty_var.set(True)

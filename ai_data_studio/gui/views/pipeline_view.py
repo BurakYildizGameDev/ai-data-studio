@@ -19,7 +19,7 @@ from ..components.chart_panel import ChartPanel
 from ..components.console_log import ConsoleLog
 from ..components.model_selector import ModelSelector
 from ..components.progress_panel import ProgressPanel
-from ..ui_utils import COLOR_MUTED, left_align_tabs
+from ..ui_utils import COLOR_MUTED, COLOR_WARN, left_align_tabs
 
 FAKER_LOCALES = [
     "tr_TR", "en_US", "en_GB", "de_DE", "fr_FR", "es_ES", "it_IT",
@@ -281,9 +281,12 @@ class PipelineView(ctk.CTkFrame):
         row += 1
 
         # --- model secici ------------------------------------------------ #
+        # Kucuk model icin motor bir kez otomatik degistirildiyse hangi model icin
+        # yapildigi; kullanici geri alirsa ayni model icin tekrar dayatilmaz.
+        self._engine_switched_for = ""
         self.model_selector = ModelSelector(
             left, provider=settings.get("provider", config.PROVIDER_ANTHROPIC),
-            model=settings.get("model"),
+            model=settings.get("model"), on_change=self._on_model_selected,
         )
         self.model_selector.grid(row=row, column=0, sticky="ew", padx=6, pady=(0, 8))
         row += 1
@@ -370,6 +373,9 @@ class PipelineView(ctk.CTkFrame):
             text_color=COLOR_MUTED, wraplength=430, justify="left")
         self.engine_hint.grid(row=1, column=0, columnspan=2, sticky="w",
                               padx=10, pady=(0, 6))
+        # Model listesi motor menusunden once yuklenmis olabilir (bulut saglayicilar
+        # senkron dolar); kucuk model kontrolunu simdi bir kez calistir.
+        self._on_model_selected(self.model_selector.provider, self.model_selector.model)
 
         self.time_series_var = ctk.BooleanVar(value=settings.get("time_series", False))
         ctk.CTkCheckBox(engines_frame,
@@ -508,7 +514,36 @@ class PipelineView(ctk.CTkFrame):
         self.repair_orphans_check.configure(state=state)
 
     def _on_engine_change(self, _label: str) -> None:
-        self.engine_hint.configure(text=ENGINE_HINTS.get(self.engine, ""))
+        self._refresh_engine_hint()
+
+    def _on_model_selected(self, _provider: str, model: str) -> None:
+        """Küçük bir yerel model seçilince motoru bir kez Parametrik'e alır.
+
+        Canlı ölçüm (2026-09-14, qwen2.5-coder:1.5b, 20.000 satır): LLM motoru 3 koşunun
+        3'ünde düştü; Parametrik 9/9 bitti (~14 sn). Otomatik de aynı veriyi üretti ama
+        önce başarısız olacak üç kod turu harcadı (29-242 sn). Varsayılan motor CLI ile
+        aynı kalır (llm); değişiklik yalnız bu modelde ve görünür bir açıklamayla yapılır,
+        kullanıcı geri alırsa aynı model için tekrar dayatılmaz.
+        """
+        if not hasattr(self, "engine_hint"):
+            return      # ModelSelector kurulurken, motor menüsünden önce çağrıldı
+        if (self.model_selector.is_small_local_model()
+                and self.engine in (ENGINE_LLM, ENGINE_AUTO)
+                and model != self._engine_switched_for):
+            self.engine_menu.set(_engine_label(ENGINE_PARAMETRIC))
+            self._engine_switched_for = model
+        self._refresh_engine_hint()
+
+    def _refresh_engine_hint(self) -> None:
+        engine = self.engine
+        text, color = ENGINE_HINTS.get(engine, ""), COLOR_MUTED
+        if self.model_selector.is_small_local_model():
+            model = self.model_selector.model
+            if engine in (ENGINE_LLM, ENGINE_AUTO):
+                text, color = t("pipeline.engine.small_model_warning", model=model), COLOR_WARN
+            elif engine == ENGINE_PARAMETRIC and model == self._engine_switched_for:
+                text = t("pipeline.engine.small_model_switched", model=model)
+        self.engine_hint.configure(text=text, text_color=color)
 
     @property
     def engine(self) -> str:
@@ -629,7 +664,8 @@ class PipelineView(ctk.CTkFrame):
             "",
             _field("result.rows_raw", format(report["rows_in"], ",")),
             _field("result.rows_validated", format(report["rows_out"], ",")),
-            _field("result.retention", "%%%.1f" % report["retention_pct"]),
+            _field("result.retention",
+                   t("common.percent", value="%.1f" % report["retention_pct"])),
             _field("result.attempts", result.generation_meta.get("attempts", 1)),
             _field("result.sandbox_seconds",
                    "%.1f" % result.generation_meta.get("duration_s", 0)),
@@ -666,9 +702,11 @@ class PipelineView(ctk.CTkFrame):
         if corrs:
             lines += ["", t("result.section.correlations"), "-" * 62]
             for corr in corrs:
-                lines.append("  %-28s r=%-7s beklenen %s>=%s  [%s]"
-                             % ("/".join(corr["pair"]), corr.get("actual_r"),
-                                corr.get("expected_sign"), corr.get("min_r"),
+                actual = corr.get("actual_r")
+                lines.append("  %-28s r=%-7s %s  [%s]"
+                             % ("/".join(corr["pair"]), "-" if actual is None else actual,
+                                t("result.correlation_expected",
+                                  sign=corr.get("expected_sign"), min_r=corr.get("min_r")),
                                 t("history.verdict.pass") if corr.get("pass")
                                 else t("history.verdict.fail")))
 

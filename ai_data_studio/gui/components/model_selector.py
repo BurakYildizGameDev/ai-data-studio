@@ -56,6 +56,8 @@ class ModelSelector(ctk.CTkFrame):
         self._ready_reason = ""
         # Ollama listesi yuklenirken arka planda doldurulur; None = henuz bilinmiyor.
         self._hardware = None
+        # Ollama'nin bildirdigi parametre boyutlari ("1.5B"); kucuk model tespiti icin.
+        self._parameter_sizes: Dict[str, str] = {}
         self.grid_columnconfigure(1, weight=1)
 
         # --- saglayici ---------------------------------------------------- #
@@ -111,6 +113,13 @@ class ModelSelector(ctk.CTkFrame):
     def is_ready(self) -> bool:
         """Pipeline başlatılabilir mi?"""
         return self._ready
+
+    def is_small_local_model(self) -> bool:
+        """Seçili model, LLM kod üretiminin güvenilmez olduğu küçük bir Ollama modeli mi?"""
+        if self._provider != config.PROVIDER_OLLAMA or not self.model:
+            return False
+        return ollama_service.is_small_model(self.model,
+                                             self._parameter_sizes.get(self.model, ""))
 
     def readiness_message(self) -> str:
         return self._ready_reason
@@ -263,6 +272,7 @@ class ModelSelector(ctk.CTkFrame):
             return
 
         names = [m["name"] for m in models]
+        self._parameter_sizes = {m["name"]: m.get("parameter_size", "") for m in models}
         # Kullanicinin secimi her zaman once gelir; yoksa donanima uygun model
         # kuruluysa o secilir. Yanlis boyutta bir model secmek bu projede en sik
         # gorulen basarisizlik nedeni (bkz. hardware_profiler).
