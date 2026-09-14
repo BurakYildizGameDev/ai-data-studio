@@ -1,13 +1,14 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=77.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "ai-data-studio"
 version = "2.0.0"
-description = "AI-driven synthetic data generation and multi-stage statistical validation studio."
+description = "Describe a dataset in plain language; a local LLM writes the contract, the engine generates rows and a validator checks them."
 readme = "README.md"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.10"
 authors = [
     { name = "AI Data Studio Contributors" }
@@ -18,6 +19,7 @@ keywords = [
     "validation",
     "machine-learning",
     "llm",
+    "ollama",
     "copula",
     "isolation-forest",
     "data-science"
@@ -26,7 +28,6 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -74,6 +75,8 @@ Documentation = "https://github.com/BurakYildizGameDev/ai-data-studio#readme"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["ai_data_studio*"]
+# Test paketi kurulum paketine girmez; testler kaynaktan (git clone) koşulur.
+exclude = ["ai_data_studio.tests", "ai_data_studio.tests.*"]
 
 [tool.setuptools.package-data]
 # PEP 561: tip stub'lari ve "bu paket tiplenmis" isareti wheel'e girsin.

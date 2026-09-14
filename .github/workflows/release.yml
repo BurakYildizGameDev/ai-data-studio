@@ -1,0 +1,114 @@
+name: Release
+
+# Pushing a tag such as v2.0.0 builds the package, publishes it to PyPI through
+# trusted publishing (no API token is stored anywhere) and creates the GitHub release.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - name: Tag must match the package version
+        run: |
+          version=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+          if [ "v${version}" != "${GITHUB_REF_NAME}" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match pyproject version ${version}" >&2
+            exit 1
+          fi
+
+      - name: Absolute links in the README for the PyPI page
+        run: python .github/scripts/pypi_readme.py "${GITHUB_REF_NAME}"
+
+      - name: Build sdist and wheel
+        run: |
+          python -m pip install --upgrade pip build twine
+          python -m build
+          twine check --strict dist/*
+
+      - name: Smoke test the wheel in a clean environment
+        run: |
+          python -m venv /tmp/smoke
+          /tmp/smoke/bin/pip install dist/*.whl
+          cd /tmp
+          /tmp/smoke/bin/python - <<'EOF'
+          import ai_data_studio
+          from ai_data_studio import compile_schema, validate
+          contract = {"domain": "smoke", "columns": [
+              {"name": "x", "type": "float", "min": 0, "max": 10, "distribution": "uniform"},
+              {"name": "y", "type": "float", "min": 0, "max": 10, "distribution": "uniform"}],
+              "correlations": [{"columns": ["x", "y"], "expected_sign": "positive", "min_r": 0.5}]}
+          df = compile_schema(contract, rows=5000, seed=1)
+          clean, report = validate(df, contract)
+          assert report["correlations"][0]["pass"], report["correlations"]
+          print("ai_data_studio", ai_data_studio.__version__, "rows", len(clean))
+          EOF
+          /tmp/smoke/bin/python -m ai_data_studio.core.orchestrator --help > /dev/null
+
+      - name: Upload distributions
+        uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - name: Download distributions
+        uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+  github-release:
+    name: GitHub release
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Download distributions
+        uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+
+      - name: Release notes from CHANGELOG.md
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v v="$version" '
+            $0 ~ "^## \\[" v "\\]" {found=1; next}
+            found && /^## \[/ {exit}
+            found && /^\[[^]]+\]: / {next}
+            found {print}
+          ' CHANGELOG.md > notes.md
+          test -s notes.md
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" dist/* --title "${GITHUB_REF_NAME}" --notes-file notes.md --verify-tag
