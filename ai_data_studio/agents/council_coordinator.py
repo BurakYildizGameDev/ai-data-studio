@@ -147,6 +147,7 @@ class CouncilCoordinator:
             seed=seed,
             locale=locale,
             relational=relational,
+            domain_prompt=domain_prompt,
         )
         self.transcript.extend(self.engineer.outbox)
         self._notify("SchemaEngineer", "Sözleşme başarıyla derlendi ve onaylandı.", "success")

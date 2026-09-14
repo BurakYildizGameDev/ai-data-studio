@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any, Dict, List, Optional, Union
 
 from ..core.dataset_contract import DatasetContract
@@ -38,6 +39,16 @@ CRITICAL SPECIFICATION REQUIREMENTS:
 Return ONLY valid JSON. No prose, no markdown fences."""
 
 
+def _domain_slug(*candidates: Any) -> str:
+    """Modelin unuttuğu ``domain`` için ASCII snake_case bir ad (dosya adlarında kullanılır)."""
+    for candidate in candidates:
+        if isinstance(candidate, str):
+            slug = re.sub(r"[^a-z0-9]+", "_", candidate.lower()).strip("_")[:40].rstrip("_")
+            if slug:
+                return slug
+    return "synthetic_data"
+
+
 class SchemaEngineerAgent(BaseAgent):
     """Konsensüsü resmi SchemaContract/DatasetContract nesnesine derleyen uzman ajan."""
 
@@ -59,8 +70,15 @@ class SchemaEngineerAgent(BaseAgent):
         seed: int = 42,
         locale: str = "en_US",
         relational: bool = False,
+        domain_prompt: str = "",
     ) -> Union[DatasetContract, SchemaContract]:
-        """Ajanların üzerinde anlaştığı verileri resmi sözleşmeye dönüştürür."""
+        """Ajanların üzerinde anlaştığı verileri resmi sözleşmeye dönüştürür.
+
+        Ana şema yolu ile aynı üret -> doğrula -> hatayı geri besle döngüsünü
+        (``BaseLLMClient._generate_validated``) kullanır. Önceden tek atışta
+        ``from_dict`` çağrılıyordu: ``qwen2.5-coder:1.5b`` ile 3 koşunun 3'ü
+        modelin ``domain`` alanını unutması yüzünden bu adımda düştü.
+        """
         user_prompt = (
             f"Mode: {'Relational (DatasetContract)' if relational else 'Single Table (SchemaContract)'}\n"
             f"Row Count: {row_count}, Seed: {seed}, Locale: {locale}\n\n"
@@ -69,27 +87,47 @@ class SchemaEngineerAgent(BaseAgent):
             f"3. Critic Audit (Approved):\n{json.dumps(audit_report, indent=2)}\n\n"
             f"Compile this approved consensus into the strict Contract JSON now."
         )
-        raw = self.call_llm(user_prompt)
-        data = extract_json_block(raw)
+        # Alan bizde zaten belli; yalnızca onu unuttu diye bir LLM turu harcanmaz.
+        fallback_domain = _domain_slug(domain_proposal.get("domain")
+                                       if isinstance(domain_proposal, dict) else None,
+                                       domain_prompt)
 
-        if relational:
-            data["random_seed"] = seed
-            contract = DatasetContract.from_dict(data)
-            root = contract.table(contract.root_table)
-            root.row_count_target = row_count
-            for table in contract.tables:
-                table.faker_locale = locale
-                table.random_seed = seed
-            self.send("Council", f"Compiled DatasetContract with {len(contract.tables)} tables", MessageType.APPROVAL)
-            return contract
-        else:
-            # Tek tablo
-            if "columns" not in data and "tables" in data and len(data["tables"]) > 0:
-                # Eger LLM tek tabloda da tables dizisi vermisse ilkini al
-                data = data["tables"][0]
+        def parse(raw: str) -> Union[DatasetContract, SchemaContract]:
+            data = extract_json_block(raw)
+            if relational:
+                data.setdefault("domain", fallback_domain)
+                data["random_seed"] = seed
+                contract = DatasetContract.from_dict(data)
+                root = contract.table(contract.root_table)
+                root.row_count_target = row_count
+                for table in contract.tables:
+                    table.faker_locale = locale
+                    table.random_seed = seed
+                return contract
+            if "columns" not in data and isinstance(data.get("tables"), list) and data["tables"]:
+                # Model tek tabloda da tables dizisi verdiyse ilkini al.
+                table = dict(data["tables"][0])
+                table.setdefault("domain", data.get("domain"))
+                data = table
+            if not isinstance(data.get("domain"), str) or not data["domain"].strip():
+                data["domain"] = fallback_domain
             data["row_count_target"] = row_count
             data["random_seed"] = seed
             data["faker_locale"] = locale
-            schema = SchemaContract.from_dict(data)
-            self.send("Council", f"Compiled SchemaContract with {len(schema.columns)} columns", MessageType.APPROVAL)
-            return schema
+            return SchemaContract.from_dict(data)
+
+        system = self.system_prompt
+        if self.llm_client is None:
+            raise RuntimeError(f"Agent '{self.name}' için LLM istemcisi tanımlanmamış.")
+        result = self.llm_client._generate_validated(
+            system, user_prompt, 8000, parse,
+            "Dataset Contract" if relational else "Şema",
+            "service.error.contract_retries" if relational else "service.error.schema_retries")
+
+        if isinstance(result, DatasetContract):
+            self.send("Council", f"Compiled DatasetContract with {len(result.tables)} tables",
+                      MessageType.APPROVAL)
+        else:
+            self.send("Council", f"Compiled SchemaContract with {len(result.columns)} columns",
+                      MessageType.APPROVAL)
+        return result

@@ -223,6 +223,34 @@ def test_schema_engineer_compiles_valid_schema():
     assert contract.row_count_target == 1000
 
 
+def test_schema_engineer_fills_a_forgotten_domain_from_the_prompt():
+    """Canlı 1.5b: 3 koşunun 3'ü modelin `domain` alanını unutması yüzünden düşüyordu."""
+    without_domain = {
+        "columns": [{"name": "income", "type": "float", "min": 0, "max": 1000}],
+    }
+    client = MockAgentLLM([json.dumps(without_domain)])
+    contract = SchemaEngineerAgent(llm_client=client).compile(
+        domain_proposal={}, statistical_proposal={}, audit_report={"approved": True},
+        row_count=100, domain_prompt="Loan applications, with income!")
+
+    assert contract.domain == "loan_applications_with_income"
+    assert len(client.calls) == 1
+
+
+def test_schema_engineer_feeds_validation_errors_back_to_the_model():
+    """Ana şema yoluyla aynı döngü: geçersiz sözleşme tek atışta pipeline'ı düşürmez."""
+    invalid = {"domain": "loans", "columns": [{"name": "income", "type": "money"}]}
+    valid = {"domain": "loans", "columns": [{"name": "income", "type": "float"}]}
+    client = MockAgentLLM([json.dumps(invalid), json.dumps(valid)])
+
+    contract = SchemaEngineerAgent(llm_client=client).compile(
+        domain_proposal={}, statistical_proposal={}, audit_report={"approved": True})
+
+    assert [c.type for c in contract.columns] == ["float"]
+    assert len(client.calls) == 2
+    assert "money" in client.calls[1]["user"]
+
+
 def test_council_coordinator_deliberation_workflow():
     """Tüm konseyin (Domain -> Stat -> Critic [red] -> Revize -> Critic [onay] -> Engineer) akışını test eder."""
     domain_p1 = {"domain": "hospital_admissions", "summary": "Patient records", "tables": []}
