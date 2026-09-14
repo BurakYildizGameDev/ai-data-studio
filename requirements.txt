@@ -20,7 +20,8 @@ psutil>=5.9
 keyring>=24.0
 tenacity>=8.2
 
-# Visualization & Packaging
+# Visualization
 matplotlib>=3.8
 pillow>=10.0
-pyinstaller>=6.0
+
+# Tests and the Windows build: requirements-dev.txt

@@ -1,0 +1,6 @@
+-r requirements.txt
+
+pytest>=7.0
+ruff
+# build_exe.py
+pyinstaller>=6.0
