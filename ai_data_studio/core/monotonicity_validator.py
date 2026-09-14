@@ -119,14 +119,14 @@ class MonotonicityReport:
             status = ("✅ " + t("history.verdict.pass") if r.passed
                       else "❌ " + t("validation.verdict.violation"))
             lines.append(
-                "| `%s` | `%s` | %s | `%.3f` | %%%.1f | %%%.1f | %s |"
+                "| `%s` | `%s` | %s | `%.3f` | %s | %s | %s |"
                 % (
                     r.column_x,
                     r.column_y,
                     r.direction,
                     r.spearman_r,
-                    r.binned_compliance_ratio * 100,
-                    r.pairwise_compliance_ratio * 100,
+                    t("common.percent", value="%.1f" % (r.binned_compliance_ratio * 100)),
+                    t("common.percent", value="%.1f" % (r.pairwise_compliance_ratio * 100)),
                     status,
                 )
             )

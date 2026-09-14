@@ -88,6 +88,33 @@ class TestBusinessRules(unittest.TestCase):
         self.assertEqual(detail["rules"][0]["status"], "skipped")
         self.assertEqual(len(kept), 3)
 
+    def test_sql_style_null_checks_are_applied(self):
+        """Canli kosu: 'not is_returned and return_date is null' atlaniyordu."""
+        df = pd.DataFrame({"is_returned": [True, False, False],
+                           "return_date": [1.0, np.nan, 5.0]})
+        kept, detail = validator.apply_business_rules(
+            df, ["is_returned or return_date is null"])
+        self.assertEqual(detail["rules"][0]["status"], "applied")
+        self.assertEqual(len(kept), 2)       # returned + (not returned, no date)
+        self.assertEqual(detail["rules"][0]["rule"], "is_returned or return_date is null")
+
+    def test_rule_violated_by_every_row_is_skipped_not_applied(self):
+        """Uygulansaydi cikti bos kalirdi (canli 1.5b P2: tutulan satir %0)."""
+        df = pd.DataFrame({"a": [1, 2, 3], "b": [5, 5, 5]})
+        kept, detail = validator.apply_business_rules(df, ["a > 10", "a <= b"])
+        self.assertEqual(len(kept), 3)
+        self.assertEqual(detail["rules"][0]["status"], "skipped")
+        self.assertTrue(detail["rules"][0]["suspicious"])
+        self.assertEqual(detail["rules"][1]["status"], "applied")
+
+    def test_normalize_rule_sql_forms(self):
+        norm = validator.normalize_rule
+        self.assertEqual(norm("a IS NOT NULL AND b = 3"), "(a == a) and b == 3")
+        self.assertEqual(norm("x is null OR NOT y"), "(x != x) or not y")
+        # Zaten gecerli ifadeler degismez; <=, >=, !=, == bozulmaz.
+        for rule in ("a <= b", "a >= b", "a != b", "a == b", "not (a < 1 and b > 2)"):
+            self.assertEqual(norm(rule), rule)
+
 
 class TestOutlierRemoval(unittest.TestCase):
     def test_z_score_removes_extremes(self):
@@ -139,7 +166,8 @@ class TestCorrelationAndDistribution(unittest.TestCase):
     def test_ks_skipped_without_seed_data(self):
         report = validator.validate_distributions(pd.DataFrame({"age": [1, 2]}), None, self.schema)
         self.assertTrue(report["skipped"])
-        self.assertEqual(report["reason"], "seed_data_yok")
+        from ai_data_studio.i18n import t
+        self.assertEqual(report["reason"], t("validation.dist_skip.no_seed"))
 
     def test_ks_passes_for_same_distribution(self):
         # p-degeri ayni dagilimda bile %5 olasilikla 0.05'in altina duser, bu yuzden
@@ -208,6 +236,39 @@ class TestFullPipeline(unittest.TestCase):
         cancel.set()
         with self.assertRaises(validator.ValidationCancelled):
             validator.run_validation(self.raw, self.schema, cancel_event=cancel)
+
+    def test_unmeasurable_correlation_does_not_crash_the_run(self):
+        """Canli kosu: sabit kolonlu korelasyonda "%.3f" % None tum pipeline'i dusurdu."""
+        raw = self.raw.copy()
+        raw["income"] = 1000.0                       # sabit -> r hesaplanamaz
+        messages = []
+        _, report = validator.run_validation(
+            raw, self.schema, on_progress=lambda m, *a, **k: messages.append(m))
+        corr = report["correlations"][0]
+        self.assertIsNone(corr["actual_r"])
+        self.assertFalse(corr["pass"])
+        from ai_data_studio.i18n import t
+        prefix = t("validation.correlation_skipped", pair="age - income", reason="")
+        self.assertTrue(any(prefix.rstrip() in m for m in messages), messages[-5:])
+
+    def test_rule_removing_most_rows_is_flagged_but_still_applied(self):
+        """Canli kosularda tek kural veriyi %4.5'e indirdi; kullanici nedenini gormeli."""
+        from ai_data_studio import config
+        from ai_data_studio.i18n import t
+
+        raw = self.raw.copy()
+        raw["watch_time_s"] = raw["ad_duration_s"] + 1.0        # hepsi kurali ihlal eder
+        raw.loc[raw.index[:1000], "watch_time_s"] = 0.0
+        events = []
+        clean, report = validator.run_validation(
+            raw, self.schema, on_progress=lambda m, *a, **k: events.append((m, a)))
+        rule = report["business_rules"][0]
+        self.assertTrue(rule["suspicious"])
+        self.assertLessEqual(len(clean), 1000)                  # kural yine uygulandi
+        expected = t("validation.rule_suspicious", rule=rule["rule"],
+                     pct="%.1f" % rule["violation_pct"])
+        self.assertIn((expected.join(["    -> ", ""]), (config.PROGRESS_WARNING,)),
+                      [(m, a[:1]) for m, a in events])
 
     def test_column_order_normalised_to_schema(self):
         shuffled = self.raw[["clicked", "income", "age", "watch_time_s", "ad_duration_s"]]

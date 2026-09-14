@@ -29,7 +29,7 @@ import pandas as pd
 
 from .. import config
 from ..i18n import t
-from .schema_contract import SchemaContract
+from .schema_contract import SchemaContract, normalize_rule
 
 log = logging.getLogger(__name__)
 
@@ -51,6 +51,8 @@ DEFAULT_Z_THRESHOLD = 3.0
 # secer. Acmak icin --contamination 0.05 gibi acik bir deger verin.
 DEFAULT_CONTAMINATION = 0.0
 MAX_ISOLATION_FOREST_SAMPLE = 50_000   # fit icin alt orneklem - 100k+ satirda hiz icin
+# Tek basina satirlarin bu yuzdesinden fazlasini silen kural "suphelidir" (bkz. run_validation).
+SUSPICIOUS_RULE_PCT = 50.0
 
 # Z-Score yalnizca yaklasik simetrik dagilimlar icin anlamlidir. Agir kuyruklu
 # ve sifir-sisirilmis sayim dagilimlarinda ortalama+std tahmini kuyruk tarafindan
@@ -114,6 +116,10 @@ def apply_schema_bounds(df: pd.DataFrame, schema: SchemaContract) -> Tuple[pd.Da
 # --------------------------------------------------------------------------- #
 # 2. Is kurallari - guvenli degerlendirme (eval() degil, df.eval())
 # --------------------------------------------------------------------------- #
+# normalize_rule schema_contract'ta tanimli; burada da erisilebilir kalsin diye
+# import ediliyor (sozlesme ve validator ayni donusumu kullanmali).
+
+
 def apply_business_rules(df: pd.DataFrame, rules: List[str]) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     """Her kuralın TRUE olması gereken satırları tutar.
 
@@ -125,7 +131,7 @@ def apply_business_rules(df: pd.DataFrame, rules: List[str]) -> Tuple[pd.DataFra
 
     for rule in rules:
         try:
-            result = df.eval(rule)
+            result = df.eval(normalize_rule(rule))
         except Exception as exc:
             log.warning("Kural parse edilemedi, atlaniyor: '%s' -> %s", rule, exc)
             details.append({"rule": rule, "status": "skipped", "reason": str(exc), "violations": 0})
@@ -134,13 +140,22 @@ def apply_business_rules(df: pd.DataFrame, rules: List[str]) -> Tuple[pd.DataFra
         if not isinstance(result, pd.Series):
             details.append({
                 "rule": rule, "status": "skipped",
-                "reason": "İfade satır bazli bir boolean seri döndürmedi",
+                "reason": "expression did not return a row-wise boolean series",
                 "violations": 0,
             })
             continue
 
         rule_mask = result.fillna(False).astype(bool)
         violations = int((~rule_mask).sum())
+        if len(df) and violations == len(df):
+            # Hicbir satirin saglamadigi kural, uretilen veri icin bir kisit degil bir
+            # celiskidir (metinle karsilastirilan bool kolon, kolon araligiyla celisen
+            # sinir). Uygulamak ciktiyi bosaltir; canli kosuda tutulan satir %0 oldu.
+            log.warning("Kural her satırda ihlal edildi, uygulanmadı: '%s'", rule)
+            details.append({"rule": rule, "status": "skipped", "reason": "violated by every row",
+                            "violations": violations, "violation_pct": 100.0,
+                            "suspicious": True})
+            continue
         details.append({
             "rule": rule,
             "status": "applied",
@@ -295,17 +310,19 @@ def remove_isolation_forest_outliers(df: pd.DataFrame, columns: List[str],
     Isolation Forest tarafından outlier (-1) olarak tespit edilse bile silinmez.
     """
     if not isinstance(contamination, str) and contamination <= 0:
-        return df, {"skipped": True, "reason": "devre disi (contamination=0)",
+        return df, {"skipped": True, "reason": "disabled (contamination=0)",
                     "removed": 0, "preserved_anomalies": 0}
 
     usable = [c for c in columns if c in df.columns and pd.api.types.is_numeric_dtype(df[c])]
     if len(usable) < 2 or len(df) < 50:
-        return df, {"skipped": True, "reason": "yetersiz sayısal kolon veya satır", "removed": 0, "preserved_anomalies": 0}
+        return df, {"skipped": True, "reason": "not enough numeric columns or rows",
+                    "removed": 0, "preserved_anomalies": 0}
 
     try:
         from sklearn.ensemble import IsolationForest
     except ImportError:  # pragma: no cover
-        return df, {"skipped": True, "reason": "scikit-learn kurulu değil", "removed": 0, "preserved_anomalies": 0}
+        return df, {"skipped": True, "reason": "scikit-learn is not installed",
+                    "removed": 0, "preserved_anomalies": 0}
 
     features = df[usable].astype("float64")
     finite = features.replace([np.inf, -np.inf], np.nan).dropna()
@@ -401,12 +418,12 @@ def validate_distributions(synth_df: pd.DataFrame, seed_df: Optional[pd.DataFram
                            schema: SchemaContract) -> Dict[str, Any]:
     """Seed data varsa KS testiyle dağılım kiyasi; yoksa atlanir."""
     if seed_df is None or len(seed_df) == 0:
-        return {"skipped": True, "reason": "seed_data_yok"}
+        return {"skipped": True, "reason": t("validation.dist_skip.no_seed")}
 
     try:
         from scipy.stats import ks_2samp
     except ImportError:  # pragma: no cover
-        return {"skipped": True, "reason": "scipy kurulu değil"}
+        return {"skipped": True, "reason": t("validation.dist_skip.no_scipy")}
 
     report: Dict[str, Any] = {"skipped": False, "columns": {}}
     for col in schema.columns:
@@ -424,7 +441,7 @@ def validate_distributions(synth_df: pd.DataFrame, seed_df: Optional[pd.DataFram
             "pass": bool(p_value > 0.05),
         }
     if not report["columns"]:
-        return {"skipped": True, "reason": "ortak sayısal kolon bulunamadı"}
+        return {"skipped": True, "reason": t("validation.dist_skip.no_common_numeric")}
     passed = sum(1 for v in report["columns"].values() if v["pass"])
     report["passed"] = passed
     report["total"] = len(report["columns"])
@@ -497,7 +514,8 @@ def run_validation(
         if extra:
             entry.update(extra)
         report["stages"].append(entry)
-        pct_str = " (%%%.1f)" % entry["removed_pct"] if before else ""
+        pct_str = (" (%s)" % t("common.percent", value="%.1f" % entry["removed_pct"])
+                   if before else "")
         emit("  %-24s %s -> %s (-%s%s)" % (stage, format(before, ","), format(after, ","),
                                            format(before - after, ","), pct_str))
 
@@ -531,11 +549,24 @@ def run_validation(
     record(t("validation.stage.rules"), before, len(df), {"detail": rules_detail["rules"]})
     report["business_rules"] = rules_detail["rules"]
     for r_info in rules_detail.get("rules", []):
+        if r_info.get("status") == "skipped" and r_info.get("suspicious"):
+            emit("    -> " + t("validation.rule_skipped_every_row", rule=r_info["rule"]),
+                 config.PROGRESS_WARNING)
+            continue
         if r_info.get("violations", 0) > 0:
             emit("    -> " + t("validation.rule_violation",
                                 rule=r_info["rule"],
                                 rows=format(r_info["violations"], ","),
                                 pct="%.1f" % r_info.get("violation_pct", 0.0)))
+        # Canli kosularda tek bir kural verinin %90'ini sildi (tutulan %4.5 / %9.9):
+        # kural kolon araliklariyla celisiyor ya da uretici onu hic uygulamamis.
+        # Kural yine uygulanir - sessizce gevsetmek ilan edilmis kisiti yok saymak
+        # olurdu - ama kullanici nedenini konsolda ve raporda gorur.
+        if r_info.get("violation_pct", 0.0) >= SUSPICIOUS_RULE_PCT:
+            r_info["suspicious"] = True
+            emit("    -> " + t("validation.rule_suspicious", rule=r_info["rule"],
+                                pct="%.1f" % r_info["violation_pct"]),
+                 config.PROGRESS_WARNING)
 
     # -- 4. Z-Score ------------------------------------------------------- #
     _check_cancel(cancel_event)
@@ -657,6 +688,13 @@ def run_validation(
                           rows=tot_preserved, column=target_preserve_col))
 
     for c in report["correlations"]:
+        if c.get("actual_r") is None:
+            # Sabit ya da sayisal olmayan kolon: r hesaplanamaz. Eskiden burada
+            # "%.3f" % None patlayip veri uretildikten SONRA tum pipeline dusuyordu.
+            emit("  -> " + t("validation.correlation_skipped",
+                             pair=" - ".join(c["pair"]), reason=c.get("reason", "")),
+                 level=config.PROGRESS_WARNING)
+            continue
         corr_status = (t("validation.verdict.ok") if c["pass"]
                        else t("validation.verdict.below"))
         emit("  -> " + t("validation.correlation_line",
@@ -670,7 +708,8 @@ def run_validation(
                           passed=dist_rep.get("passed", 0),
                           total=dist_rep.get("total", 0)))
 
-    failed_corr = [c for c in report["correlations"] if not c["pass"]]
+    failed_corr = [c for c in report["correlations"]
+                   if not c["pass"] and c.get("actual_r") is not None]
     if failed_corr:
         emit(t("validation.correlations_unmet",
                count=len(failed_corr),

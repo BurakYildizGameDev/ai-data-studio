@@ -87,6 +87,14 @@ class TestActuarialDistributionsSchema(unittest.TestCase):
                 "p_index": 2.5,
             }, 0)
 
+        # Sinirin kendisi (1 veya 2) reddedilmez: eski istem "<1..2>" diyerek onu davet
+        # ediyordu (canli 1.5b: p_index 1.0 uc denemede reddedildi, pipeline FAILED).
+        notes = []
+        spec = ColumnSpec.from_dict({"name": "applicant_age", "type": "int",
+                                     "distribution": "tweedie", "p_index": 1.0}, 0, notes)
+        self.assertIsNone(spec.p_index)
+        self.assertEqual(len(notes), 1)
+
         # shape <= 0
         with self.assertRaises(SchemaValidationError):
             ColumnSpec.from_dict({
@@ -197,6 +205,18 @@ class TestMonotonicityValidator(unittest.TestCase):
         self.assertTrue(result.passed)
         self.assertEqual(result.direction, "decreasing")
         self.assertAlmostEqual(result.spearman_r, -1.0, places=2)
+
+    def test_markdown_row_has_one_cell_per_header_column(self):
+        """Satir bicimi 6 yer tutucuya 7 deger veriyordu -> to_markdown() TypeError (pyflakes)."""
+        rule = MonotonicityRule(column_x="credit_score", column_y="approved_limit",
+                                direction="increasing")
+        result = MonotonicityValidator().validate_rule(self.increasing_df, rule)
+        report = MonotonicityReport(results=[result], all_passed=True,
+                                    total_rules=1, passed_rules=1)
+        lines = report.to_markdown().split("\n")
+        header_cells = lines[1].count("|")
+        self.assertEqual(lines[2].count("|"), header_cells)
+        self.assertEqual(lines[3].count("|"), header_cells)
 
 
 class TestWoEAndInformationValue(unittest.TestCase):

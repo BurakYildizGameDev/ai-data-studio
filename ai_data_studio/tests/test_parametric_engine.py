@@ -132,6 +132,295 @@ def test_numeric_correlation_still_applies():
     assert df["monthly_income"].corr(df["credit_limit"]) >= 0.40
 
 
+def _shared_column_schema():
+    """Canli demo sozlesmesinin (qwen2.5-coder:14b) ozu: basket_value uc kuralda."""
+    return SchemaContract(
+        domain="ecommerce_orders", description="test", row_count_target=20000, random_seed=42,
+        columns=[
+            ColumnSpec(name="basket_value", type="float", min=0, max=1000,
+                       distribution="lognormal", mean=100, std=20),
+            ColumnSpec(name="item_count", type="int", min=1, max=100,
+                       distribution="poisson", mean=5),
+            ColumnSpec(name="shipping_cost", type="float", min=0, max=200,
+                       distribution="normal", mean=10, std=5),
+            ColumnSpec(name="is_returned", type="bool", target_ratio=0.05),
+        ],
+        correlations=[
+            CorrelationRule(columns=["basket_value", "item_count"], expected_sign="positive", min_r=0.70),
+            CorrelationRule(columns=["shipping_cost", "basket_value"], expected_sign="positive", min_r=0.50),
+            CorrelationRule(columns=["is_returned", "basket_value"], expected_sign="positive", min_r=0.40),
+        ],
+    )
+
+
+def test_column_shared_by_several_rules_keeps_every_correlation():
+    """Eski blend yolunda son kural ilkini eziyordu: hedef 0.70, olculen r=-0.004."""
+    df = compile_schema_to_dataframe(_shared_column_schema(), n_rows=20000, seed=42)
+    assert df["basket_value"].corr(df["item_count"].astype(float)) >= 0.70
+    assert df["shipping_cost"].corr(df["basket_value"]) >= 0.50
+    assert df["basket_value"].corr(df["is_returned"].astype(float)) >= 0.40
+
+
+def test_correlation_keeps_marginals_bounds_and_dtypes():
+    """Eski blend yolu lognormal kolonu negatife, int kolonu ondaliga ceviriyordu."""
+    schema = _shared_column_schema()
+    rng_free = ParametricEngine(seed=42)
+    import copy
+    independent = copy.deepcopy(schema)
+    independent.correlations = []
+    before = rng_free.compile(independent, n_rows=20000, seed=42)
+    after = compile_schema_to_dataframe(schema, n_rows=20000, seed=42)
+
+    for name in ("basket_value", "item_count", "shipping_cost"):
+        # Kopula yalnizca satir eslesmesini degistirir: deger kumesi birebir ayni.
+        assert np.array_equal(np.sort(before[name].to_numpy()), np.sort(after[name].to_numpy())), name
+    assert after["basket_value"].between(0, 1000).all()
+    assert after["item_count"].between(1, 100).all()
+    assert pd.api.types.is_integer_dtype(after["item_count"])
+    assert abs(after["is_returned"].mean() - 0.05) < 0.01
+
+
+def test_contradictory_numeric_targets_do_not_crash():
+    """Pozitif tanimli olmayan hedef matris en yakin gecerli matrise cekilmeli."""
+    schema = SchemaContract(
+        domain="contradiction", description="test", row_count_target=3000, random_seed=1,
+        columns=[ColumnSpec(name=n, type="float", min=0, max=1, distribution="uniform")
+                 for n in ("a", "b", "c")],
+        correlations=[
+            CorrelationRule(columns=["a", "b"], expected_sign="positive", min_r=0.9),
+            CorrelationRule(columns=["b", "c"], expected_sign="positive", min_r=0.9),
+            CorrelationRule(columns=["a", "c"], expected_sign="negative", min_r=0.9),
+        ],
+    )
+    df = compile_schema_to_dataframe(schema, n_rows=3000, seed=1)
+    assert len(df) == 3000 and df[["a", "b", "c"]].notna().all().all()
+
+
+def test_correlation_chain_is_not_weakened_by_unstated_pairs():
+    """a~b ve b~c guclu iken belirtilmemis a~c=0 sayilinca ozdeger kirpmasi zinciri eziyordu.
+
+    Olcum (yas->kidem->gelir->kredi, hedef 0.88): gerceklesen 0.61-0.73.
+    """
+    names = ("a", "b", "c", "d")
+    schema = SchemaContract(
+        domain="chain", description="test", row_count_target=10000, random_seed=5,
+        columns=[ColumnSpec(name=n, type="float", min=0, max=1, distribution="uniform")
+                 for n in names],
+        correlations=[CorrelationRule(columns=[x, y], expected_sign="positive", min_r=0.8,
+                                      method="spearman")
+                      for x, y in zip(names, names[1:])],
+    )
+    df = compile_schema_to_dataframe(schema, n_rows=10000, seed=5)
+    for x, y in zip(names, names[1:]):
+        assert df[x].corr(df[y], method="spearman") >= 0.80, (x, y)
+
+
+def _monotonic_schema():
+    """Canli 1.5b kosularinda parametrik motor monotonluk kurallarini hic uygulamiyordu (0/N)."""
+    return SchemaContract.from_dict({
+        "domain": "loans", "row_count_target": 20000, "random_seed": 42,
+        "columns": [
+            {"name": "age", "type": "int", "min": 18, "max": 75, "distribution": "normal",
+             "mean": 40, "std": 12},
+            {"name": "income", "type": "float", "min": 5000, "max": 400000,
+             "distribution": "lognormal", "mean": 60000, "std": 30000},
+            {"name": "credit_score", "type": "int", "min": 300, "max": 850,
+             "distribution": "normal", "mean": 650, "std": 80},
+            {"name": "loan_amount", "type": "float", "min": 1000, "max": 200000,
+             "distribution": "gamma", "shape": 2, "scale": 15000},
+            {"name": "years_employed", "type": "int", "min": 0, "max": 40,
+             "distribution": "poisson", "mean": 6},
+            {"name": "late_payments", "type": "int", "min": 0, "max": 20, "distribution": "zip",
+             "mean": 2, "zero_prob": 0.6},
+            {"name": "defaulted", "type": "bool", "target_ratio": 0.1},
+        ],
+        "correlations": [
+            {"columns": ["income", "loan_amount"], "expected_sign": "positive", "min_r": 0.4},
+        ],
+        "monotonicity_rules": [
+            {"column_x": "credit_score", "column_y": "defaulted", "direction": "decreasing"},
+            {"column_x": "income", "column_y": "loan_amount", "direction": "increasing"},
+            {"column_x": "years_employed", "column_y": "income", "direction": "increasing"},
+            {"column_x": "late_payments", "column_y": "credit_score", "direction": "decreasing"},
+            {"column_x": "age", "column_y": "years_employed", "direction": "increasing"},
+        ],
+    })
+
+
+def test_monotonicity_rules_pass_the_validator():
+    from ai_data_studio.core.monotonicity_validator import MonotonicityValidator
+
+    schema = _monotonic_schema()
+    df = compile_schema_to_dataframe(schema, n_rows=20000, seed=42)
+    report = MonotonicityValidator().validate_all(df, schema.monotonicity_rules)
+    failed = [(r.column_x, r.column_y, r.reason) for r in report.results if not r.passed]
+    assert report.passed_rules == report.total_rules, failed
+    # Siralama marjinalleri bozmaz, sinif orani korunur.
+    assert df["income"].between(5000, 400000).all()
+    assert abs(df["defaulted"].mean() - 0.10) < 0.01
+
+
+def _rules_schema(rules):
+    """Canli sema yanitlarindaki kural bicimleri (14b, 1.5b, deepseek-r1, Claude, agy)."""
+    return SchemaContract.from_dict({
+        "domain": "rules", "row_count_target": 20000, "random_seed": 7,
+        "columns": [
+            {"name": "sessions_per_week", "type": "int", "min": 0, "max": 200,
+             "distribution": "uniform"},
+            {"name": "customer_age", "type": "int", "min": 18, "max": 80,
+             "distribution": "normal", "mean": 40, "std": 12},
+            {"name": "annual_income", "type": "float", "min": 10000, "max": 300000,
+             "distribution": "lognormal", "mean": 60000, "std": 25000},
+            {"name": "loan_amount", "type": "float", "min": 1000, "max": 250000,
+             "distribution": "uniform"},
+            {"name": "loan_to_income", "type": "float", "min": 0, "max": 25,
+             "distribution": "uniform"},
+            {"name": "basket_value", "type": "float", "min": 0, "max": 1000,
+             "distribution": "gamma", "shape": 2, "scale": 60},
+            {"name": "shipping_cost", "type": "float", "min": 0, "max": 50,
+             "distribution": "uniform"},
+            {"name": "total_order_value", "type": "float", "min": 0, "max": 1200,
+             "distribution": "uniform"},
+            {"name": "item_count", "type": "int", "min": 1, "max": 30, "distribution": "poisson",
+             "mean": 4},
+            {"name": "signup_date", "type": "datetime"},
+        ],
+        "business_rules": rules,
+    })
+
+
+LIVE_RULE_FORMS = [
+    "sessions_per_week <= 7",                                   # sinirdan siki sabit
+    "customer_age > 18",                                        # kesin esitsizlik, int
+    "loan_amount <= annual_income * 0.5",                       # olcekli taraf
+    "loan_to_income == loan_amount / annual_income",            # turetilmis kolon
+    "total_order_value >= basket_value + shipping_cost",        # toplamli taraf
+    "shipping_cost >= 0 and shipping_cost <= 25",               # and ile birlesik
+    "item_count * 10 <= basket_value",                          # ifade solda, kolon sagda
+]
+
+
+def test_parametric_engine_repairs_live_rule_forms():
+    """Eskiden yalniz `a <= b` onariliyordu; bu kurallar veriyi validator'da eritiyordu."""
+    from ai_data_studio.core.validator import apply_business_rules
+
+    schema = _rules_schema(LIVE_RULE_FORMS)
+    assert schema.business_rules == LIVE_RULE_FORMS
+    df = compile_schema_to_dataframe(schema, n_rows=20000, seed=7)
+
+    kept, detail = apply_business_rules(df, schema.business_rules)
+    per_rule = {d["rule"]: d.get("violation_pct") for d in detail["rules"]}
+    assert all(d["status"] == "applied" for d in detail["rules"]), detail
+    assert len(kept) / len(df) >= 0.99, per_rule
+
+    # Onarim sinirlari, tipleri ve dagilimin genisligini korur (sinirda yigilma yok).
+    assert df["sessions_per_week"].between(0, 7).all()
+    assert pd.api.types.is_integer_dtype(df["sessions_per_week"])
+    assert df["sessions_per_week"].nunique() == 8
+    assert df["loan_amount"].between(1000, 250000).all()
+    assert (df["shipping_cost"] == 25).mean() < 0.01
+
+
+def test_rule_that_contradicts_column_bounds_does_not_crash():
+    """`x <= 5` iken min=18: ikisi birden saglanamaz, satir validator'a birakilir."""
+    schema = _rules_schema(["customer_age <= 5", "signup_date >= '2020-01-01'",
+                            "customer_age > 30 or basket_value > 0"])
+    df = compile_schema_to_dataframe(schema, n_rows=2000, seed=7)
+    assert len(df) == 2000
+    assert df["customer_age"].between(18, 80).all()
+    # Canli 1.5b: `loan_amount <= credit_score` (loan min 2000 > score max 850) onarimi
+    # her satiri alt sinira kirpip kolonu sabite ceviriyordu.
+    assert df["customer_age"].nunique() > 30
+
+
+def test_datetime_column_uses_the_range_in_its_description():
+    """Sozlesme tarih araligini aciklamada tasir; motor sabit 2026 penceresi kullaniyordu."""
+    from ai_data_studio.core.parametric_engine import _datetime_window
+
+    assert _datetime_window("signup timestamp (between 2020-01-01 and 2023-12-31)") == (
+        pd.Timestamp("2020-01-01"), pd.Timestamp("2023-12-31"))
+    assert _datetime_window("orders until 2022-06-30")[1] == pd.Timestamp("2022-06-30")
+    assert _datetime_window("orders from 2021-03-01")[0] == pd.Timestamp("2021-03-01")
+    assert _datetime_window("no range here")[0] == pd.Timestamp("2026-01-01")
+
+    schema = SchemaContract.from_dict({
+        "domain": "orders", "row_count_target": 5000,
+        "columns": [{"name": "order_date", "type": "datetime",
+                     "min": "2020-01-01", "max": "2023-12-31"}],    # normalizasyon aciklamaya tasir
+        "business_rules": ["order_date <= '2023-12-31'"],
+    })
+    df = compile_schema_to_dataframe(schema, n_rows=5000, seed=3)
+    assert df["order_date"].between("2020-01-01", "2023-12-31").all()
+
+
+def test_datetime_ordering_rule_is_repaired():
+    """Canli deepseek-r1: `last_session_date >= signup_date` satirlarin yarisini sildirdi."""
+    from ai_data_studio.core.validator import apply_business_rules
+
+    schema = SchemaContract.from_dict({
+        "domain": "players", "row_count_target": 10000,
+        "columns": [
+            {"name": "signup_date", "type": "datetime",
+             "description": "between 2022-01-01 and 2024-12-31"},
+            {"name": "last_session_date", "type": "datetime",
+             "description": "between 2022-01-01 and 2024-12-31"},
+        ],
+        "business_rules": ["last_session_date >= signup_date",
+                           "signup_date < '2024-06-30'"],
+    })
+    df = compile_schema_to_dataframe(schema, n_rows=10000, seed=11)
+    kept, detail = apply_business_rules(df, schema.business_rules)
+    assert len(kept) / len(df) >= 0.99, detail
+    assert pd.api.types.is_datetime64_any_dtype(df["signup_date"])
+    assert df["signup_date"].dt.date.nunique() > 300           # sinirda yigilma yok
+
+
+def test_constant_bound_repair_does_not_erase_correlations():
+    """Canli 1.5b: `sessions_per_week >= 10` (ortalama 10) kopuladan SONRA onarilinca
+    satirlarin yarisini aynaladi; hedef 0.5 olan korelasyon -0.008 olculdu."""
+    from ai_data_studio.core.validator import apply_business_rules
+
+    schema = SchemaContract.from_dict({
+        "domain": "players", "row_count_target": 20000,
+        "columns": [
+            {"name": "age", "type": "int", "min": 18, "max": 60},
+            {"name": "sessions_per_week", "type": "float", "min": 0, "max": 30,
+             "distribution": "normal", "mean": 10, "std": 2},
+            {"name": "average_session_minutes", "type": "float", "min": 0, "max": 300,
+             "distribution": "normal", "mean": 15, "std": 5},
+        ],
+        "business_rules": ["sessions_per_week >= 10", "average_session_minutes >= 15"],
+        "correlations": [
+            {"columns": ["age", "sessions_per_week"], "expected_sign": "positive", "min_r": 0.5},
+            {"columns": ["sessions_per_week", "average_session_minutes"],
+             "expected_sign": "positive", "min_r": 0.5},
+        ],
+    })
+    df = compile_schema_to_dataframe(schema, n_rows=20000, seed=42)
+    kept, _ = apply_business_rules(df, schema.business_rules)
+    assert len(kept) == len(df)
+    assert df["age"].corr(df["sessions_per_week"]) >= 0.5
+    assert df["sessions_per_week"].corr(df["average_session_minutes"]) >= 0.5
+
+
+def test_contradicting_two_column_rule_leaves_the_column_intact():
+    schema = _rules_schema(["loan_amount <= customer_age"])      # 1000+ vs <= 80
+    independent = _rules_schema([])
+    before = compile_schema_to_dataframe(independent, n_rows=3000, seed=7)
+    after = compile_schema_to_dataframe(schema, n_rows=3000, seed=7)
+    assert np.array_equal(before["loan_amount"].to_numpy(), after["loan_amount"].to_numpy())
+
+
+def test_monotonicity_never_overrides_an_opposite_correlation():
+    """Ayni ciftte zit yonlu acik korelasyon kurali varsa o kazanir."""
+    engine = ParametricEngine()
+    schema = _monotonic_schema()
+    schema.monotonicity_rules[1].direction = "decreasing"     # income -> loan_amount
+    targets = engine._with_monotonicity_targets(schema)
+    pair = [t for t in targets if set(t.columns) == {"income", "loan_amount"}]
+    assert len(pair) == 1 and pair[0].expected_sign == "positive"
+
+
 def test_compile_relational_generates_tables_with_zero_orphans():
     """compile_relational multi-tablolu semalarda sifir yetim yabanci anahtar garantisi vermelidir."""
     from ai_data_studio.core.dataset_contract import DatasetContract
