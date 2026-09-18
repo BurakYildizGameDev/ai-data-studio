@@ -103,6 +103,48 @@ class LicenseInfo:
 
 
 LICENSE_FILE_PATH = Path(config.APP_DATA_DIR) / ".license"
+# Gordugumuz en ileri tarih. Sadece ileri gider; saat bunun gerisine dusmusse
+# expires_at denetimi guvenilmez demektir.
+LICENSE_SEEN_PATH = Path(config.APP_DATA_DIR) / ".license_seen"
+
+# Mesru saat sapmasi (seyahat, NTP duzeltmesi, sanal makine uykusu) icin pay.
+CLOCK_SKEW_TOLERANCE = datetime.timedelta(hours=24)
+# Onbellek omru: calisirken dolan bir lisans sonsuza kadar gecerli kalmasin.
+CACHE_TTL = datetime.timedelta(minutes=15)
+
+
+def _clock_is_sane(now: datetime.datetime) -> bool:
+    """Sistem saatinin geriye alinmadigini dogrular.
+
+    ``expires_at`` denetimi yalnizca duvar saatine bakiyordu, dolayisiyla
+    saati geri almak suresi dolmus bir lisansi yeniden gecerli kiliyordu.
+    Burada gordugumuz en ileri tarihi saklayip saatin belirgin sekilde
+    gerisine dusup dusmedigine bakiyoruz.
+
+    Damga dosyasi kullanicinin yazabildigi bir konumda durur; bu, atlatmayi
+    imkansiz KILMAZ, yalnizca maliyetini yukseltir. Kesin cozum sunucu
+    tarafinda periyodik dogrulamadir.
+    """
+    seen: Optional[datetime.datetime] = None
+    try:
+        seen = datetime.datetime.fromisoformat(
+            config.read_text(LICENSE_SEEN_PATH).strip())
+    except Exception:
+        seen = None
+
+    if seen is not None and seen.tzinfo is None:
+        seen = seen.replace(tzinfo=datetime.timezone.utc)
+
+    if seen is not None and now < seen - CLOCK_SKEW_TOLERANCE:
+        return False
+
+    if seen is None or now > seen:
+        try:
+            config.write_text(LICENSE_SEEN_PATH, now.isoformat())
+        except Exception as exc:  # pragma: no cover - salt okunur disk
+            log.warning("Could not update license clock stamp: %s", exc)
+    return True
+
 
 
 class LicenseManager:
@@ -117,6 +159,7 @@ class LicenseManager:
         self._pubkey_b64 = public_key_b64 or DEFAULT_PUBLIC_KEY
         self._public_key = self._load_public_key(self._pubkey_b64)
         self._cached_license: Optional[LicenseInfo] = None
+        self._cached_at: Optional[datetime.datetime] = None
 
     @staticmethod
     def _load_public_key(key_b64: str) -> ed25519.Ed25519PublicKey:
@@ -189,27 +232,55 @@ class LicenseManager:
         features = list(data.get("features", []))
         issued_at = data.get("issued_at")
         expires_at = data.get("expires_at")
-        seats = int(data.get("seats", 1))
+        try:
+            seats = int(data.get("seats", 1))
+        except (TypeError, ValueError):
+            # Sayisal olmayan seats eskiden verify_token'dan disari kacip
+            # acilista GUI'yi dusuruyordu.
+            seats = 1
 
-        # Check expiration date
-        if expires_at and expires_at != "lifetime":
+        def _fail(status: LicenseStatus, message: str) -> LicenseInfo:
+            return LicenseInfo(
+                key=key,
+                email=email,
+                tier=tier,
+                features=features,
+                issued_at=issued_at,
+                expires_at=expires_at,
+                status=status,
+                status_message=message,
+                seats=seats,
+            )
+
+        # Sadece ACIK "suresiz" gosterimleri sonsuz sayilir. Onceki kosul
+        # falsy olan her seyi (bos liste, 0, False) suresiz kabul ediyordu;
+        # bunlar bozuk veridir, sonsuz lisans degil.
+        perpetual = (
+            expires_at is None
+            or (isinstance(expires_at, str)
+                and expires_at.strip().lower() in ("", "lifetime"))
+        )
+        if not perpetual:
+            now = datetime.datetime.now(datetime.timezone.utc)
+
+            if not _clock_is_sane(now):
+                return _fail(LicenseStatus.INVALID,
+                             t("license.status.clock_tampered"))
+
             try:
-                exp = datetime.datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
-                now = datetime.datetime.now(datetime.timezone.utc)
-                if now > exp:
-                    return LicenseInfo(
-                        key=key,
-                        email=email,
-                        tier=tier,
-                        features=features,
-                        issued_at=issued_at,
-                        expires_at=expires_at,
-                        status=LicenseStatus.EXPIRED,
-                        status_message=t("license.status.expired", date=expires_at),
-                        seats=seats,
-                    )
-            except Exception:
-                pass
+                exp = datetime.datetime.fromisoformat(
+                    str(expires_at).replace("Z", "+00:00"))
+            except (TypeError, ValueError, AttributeError):
+                # Ayrıştırılamayan bir sure gecerli SAYILMAZ. Eskiden buradaki
+                # `except: pass` bozuk her expires_at'i omurluk yapiyordu.
+                return _fail(LicenseStatus.INVALID,
+                             t("license.status.bad_expiry"))
+
+            if exp.tzinfo is None:
+                exp = exp.replace(tzinfo=datetime.timezone.utc)
+            if now > exp:
+                return _fail(LicenseStatus.EXPIRED,
+                             t("license.status.expired", date=expires_at))
 
         return LicenseInfo(
             key=key,
@@ -246,6 +317,7 @@ class LicenseManager:
                 log.warning("Could not write license file: %s", exc)
 
         self._cached_license = info
+        self._cached_at = datetime.datetime.now(datetime.timezone.utc)
         return info
 
     def remove_license(self) -> None:
@@ -264,11 +336,16 @@ class LicenseManager:
             pass
 
         self._cached_license = None
+        self._cached_at = None
 
     def get_active_license(self, force_reload: bool = False) -> LicenseInfo:
         """Retrieve and verify currently stored license."""
-        if self._cached_license is not None and not force_reload:
+        now = datetime.datetime.now(datetime.timezone.utc)
+        fresh = (self._cached_at is not None
+                 and datetime.timedelta(0) <= now - self._cached_at < CACHE_TTL)
+        if self._cached_license is not None and fresh and not force_reload:
             return self._cached_license
+        self._cached_at = now
 
         token = None
         kr = config._keyring()

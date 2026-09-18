@@ -897,6 +897,8 @@ MESSAGES = {
     "license.status.invalid_encoding": "ライセンスのエンコードが不正です",
     "license.status.signature_failed": "無効な暗号署名です",
     "license.status.invalid_payload": "ライセンスデータが破損しています",
+    "license.status.clock_tampered": "ライセンスの時刻チェックに失敗しました: システム時刻が記録済みの日付より前です。システム時刻を修正して再起動してください。",
+    "license.status.bad_expiry": "ライセンスの有効期限を読み取れませんでした",
     "license.status.expired": "ライセンスは {date} に期限切れとなりました",
     "license.status.valid": "アクティブで検証済み",
     "license.tier.community": "コミュニティ版",

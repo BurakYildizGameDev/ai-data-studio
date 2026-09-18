@@ -13,9 +13,12 @@ from __future__ import annotations
 
 import datetime
 import os
+import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
+from ai_data_studio.licensing import manager
 from ai_data_studio.licensing.manager import (
     LicenseManager,
     LicenseStatus,
@@ -188,6 +191,101 @@ class TestLicensingEngine(unittest.TestCase):
             self.mgr.remove_license()
             removed = self.mgr.get_active_license(force_reload=True)
             self.assertEqual(removed.status, LicenseStatus.MISSING)
+
+
+
+class TestExpiryAndClock(unittest.TestCase):
+    """Sure denetiminin fail-closed oldugunu ve saatin geri alinamadigini dogrular."""
+
+    def setUp(self):
+        self.mgr, self.private_key = ephemeral_manager()
+        self.tmp = tempfile.TemporaryDirectory()
+        # Saat damgasini teste ozel bir yola al: gercek kullanici damgasina
+        # dokunmadan ve testler arasi sizinti olmadan calissin.
+        self._old_seen = manager.LICENSE_SEEN_PATH
+        manager.LICENSE_SEEN_PATH = Path(self.tmp.name) / ".license_seen"
+        self.now = datetime.datetime.now(datetime.timezone.utc)
+
+    def tearDown(self):
+        manager.LICENSE_SEEN_PATH = self._old_seen
+        self.tmp.cleanup()
+
+    def _token(self, expires_at):
+        return generate_signed_license(
+            {"key": "K", "email": "e@x", "tier": "pro", "features": ["pdf"],
+             "seats": 1, "expires_at": expires_at},
+            self.private_key)
+
+    def _at(self, when):
+        """Sistem saatini *when* gosterecek sekilde sahteler."""
+        patcher = mock.patch.object(manager.datetime, "datetime",
+                                    wraps=datetime.datetime)
+        fake = patcher.start()
+        fake.now.return_value = when
+        self.addCleanup(patcher.stop)
+        return fake
+
+    def test_unparseable_expiry_fails_closed(self):
+        """Ayrıştırılamayan bir sure omurluk lisans anlamina gelmemeli."""
+        for bad in ("tomorrow-ish", "2027-13-45", 1, 3.5, []):
+            with self.subTest(expires_at=bad):
+                info = self.mgr.verify_token(self._token(bad))
+                self.assertEqual(info.status, LicenseStatus.INVALID)
+                self.assertFalse(info.is_active)
+
+    def test_valid_and_expired_dates_still_work(self):
+        future = (self.now + datetime.timedelta(days=30)).isoformat()
+        self.assertEqual(self.mgr.verify_token(self._token(future)).status,
+                         LicenseStatus.VALID)
+        past = (self.now - datetime.timedelta(days=1)).isoformat()
+        self.assertEqual(self.mgr.verify_token(self._token(past)).status,
+                         LicenseStatus.EXPIRED)
+
+    def test_lifetime_licence_skips_the_clock_check(self):
+        info = self.mgr.verify_token(self._token("lifetime"))
+        self.assertEqual(info.status, LicenseStatus.VALID)
+        self.assertFalse(manager.LICENSE_SEEN_PATH.exists())
+
+    def test_non_numeric_seats_does_not_escape(self):
+        """Sayisal olmayan seats eskiden verify_token'dan disari kaciyordu."""
+        token = generate_signed_license(
+            {"key": "K", "tier": "pro", "expires_at": "lifetime", "seats": "many"},
+            self.private_key)
+        info = self.mgr.verify_token(token)
+        self.assertEqual(info.status, LicenseStatus.VALID)
+        self.assertEqual(info.seats, 1)
+
+    def test_rolling_the_clock_back_invalidates_the_licence(self):
+        token = self._token((self.now + datetime.timedelta(days=30)).isoformat())
+        self.assertEqual(self.mgr.verify_token(token).status, LicenseStatus.VALID)
+        self.assertTrue(manager.LICENSE_SEEN_PATH.exists())
+
+        self._at(self.now - datetime.timedelta(days=500))
+        rolled = self.mgr.verify_token(token)
+        self.assertEqual(rolled.status, LicenseStatus.INVALID)
+        self.assertFalse(rolled.is_active)
+
+    def test_small_clock_skew_is_tolerated(self):
+        """NTP duzeltmesi ya da seyahat mesru lisansi dusurmemeli."""
+        token = self._token((self.now + datetime.timedelta(days=30)).isoformat())
+        self.assertEqual(self.mgr.verify_token(token).status, LicenseStatus.VALID)
+
+        self._at(self.now - datetime.timedelta(hours=2))
+        self.assertEqual(self.mgr.verify_token(token).status, LicenseStatus.VALID)
+
+    def test_cached_licence_is_revalidated_after_ttl(self):
+        """Calisirken dolan bir lisans sonsuza kadar gecerli kalmamali."""
+        soon = self.now + datetime.timedelta(minutes=5)
+        token = self._token(soon.isoformat())
+        with mock.patch("ai_data_studio.config._keyring", return_value=None):
+            self.assertEqual(self.mgr.install_license(token).status,
+                             LicenseStatus.VALID)
+            self.assertTrue(self.mgr.get_active_license().is_active)
+
+            # TTL'in otesine, lisansin bitisinden sonrasina sic
+            self._at(self.now + manager.CACHE_TTL + datetime.timedelta(minutes=10))
+            self.assertFalse(self.mgr.get_active_license().is_active)
+            self.mgr.remove_license()
 
 
 class TestWebhooks(unittest.TestCase):

@@ -897,6 +897,8 @@ MESSAGES = {
     "license.status.invalid_encoding": "Fehlerhafte Lizenzkodierung",
     "license.status.signature_failed": "Ungültige kryptografische Signatur",
     "license.status.invalid_payload": "Beschädigte Lizenzdaten",
+    "license.status.clock_tampered": "Lizenz-Zeitprüfung fehlgeschlagen: Die Systemuhr liegt vor einem zuvor aufgezeichneten Datum. Korrigieren Sie die Systemzeit und starten Sie neu.",
+    "license.status.bad_expiry": "Ablaufdatum der Lizenz konnte nicht gelesen werden",
     "license.status.expired": "Lizenz ist am {date} abgelaufen",
     "license.status.valid": "Aktiv und verifiziert",
     "license.tier.community": "Community Edition",

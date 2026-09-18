@@ -897,6 +897,8 @@ MESSAGES = {
     "license.status.invalid_encoding": "许可证编码格式错误",
     "license.status.signature_failed": "加密签名无效",
     "license.status.invalid_payload": "许可证数据损坏",
+    "license.status.clock_tampered": "许可证时钟校验失败：系统时钟早于此前记录的日期。请更正系统时间后重新启动。",
+    "license.status.bad_expiry": "无法读取许可证到期日期",
     "license.status.expired": "许可证已于 {date} 到期",
     "license.status.valid": "已激活并验证",
     "license.tier.community": "社区版",

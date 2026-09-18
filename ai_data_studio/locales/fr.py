@@ -897,6 +897,8 @@ MESSAGES = {
     "license.status.invalid_encoding": "Encodage de licence malformé",
     "license.status.signature_failed": "Signature cryptographique non valide",
     "license.status.invalid_payload": "Données de licence corrompues",
+    "license.status.clock_tampered": "Échec de la vérification de l'horloge : l'horloge système est antérieure à une date déjà enregistrée. Corrigez l'heure et redémarrez.",
+    "license.status.bad_expiry": "Impossible de lire la date d'expiration de la licence",
     "license.status.expired": "Licence expirée le {date}",
     "license.status.valid": "Actif et vérifié",
     "license.tier.community": "Édition Communautaire",

@@ -1258,6 +1258,8 @@ MESSAGES = {
     "license.status.invalid_encoding": "Malformed license encoding",
     "license.status.signature_failed": "Invalid cryptographic signature",
     "license.status.invalid_payload": "Corrupted license data",
+    "license.status.clock_tampered": "License clock check failed: the system clock is behind a previously recorded date. Correct the system time and restart.",
+    "license.status.bad_expiry": "License expiry date could not be read",
     "license.status.expired": "License expired on {date}",
     "license.status.valid": "Active and verified",
     "license.tier.community": "Community Edition",

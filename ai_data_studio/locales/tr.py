@@ -1265,6 +1265,8 @@ MESSAGES = {
     "license.status.invalid_encoding": "Hatalı lisans kodlaması",
     "license.status.signature_failed": "Geçersiz kriptografik imza",
     "license.status.invalid_payload": "Bozuk lisans verisi",
+    "license.status.clock_tampered": "Lisans saat denetimi başarısız: sistem saati daha önce kaydedilen tarihin gerisinde. Sistem saatini düzeltip yeniden başlatın.",
+    "license.status.bad_expiry": "Lisans bitiş tarihi okunamadı",
     "license.status.expired": "Lisans süresi {date} tarihinde doldu",
     "license.status.valid": "Aktif ve doğrulandı",
     "license.tier.community": "Topluluk Sürümü",
