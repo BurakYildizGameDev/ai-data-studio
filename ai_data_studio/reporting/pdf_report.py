@@ -151,10 +151,21 @@ class NumberedCanvas(canvas.Canvas):
 
 
 def _render_correlation_heatmap(df: pd.DataFrame) -> Optional[io.BytesIO]:
-    """Render correlation heatmap of numeric columns using headless Matplotlib."""
-    import matplotlib
-    matplotlib.use("Agg")  # Non-interactive, thread-safe backend
-    import matplotlib.pyplot as plt
+    """Render correlation heatmap of numeric columns using headless Matplotlib.
+
+    pyplot KULLANILMAZ. pyplot global bir figure yoneticisi (Gcf) tutar ve
+    thread-safe degildir; bu fonksiyon hem PipelineWorker thread'inden
+    (run_pipeline -> _write_outputs) hem de "Export PDF" dugmesiyle Tk ana
+    thread'inden cagriliyor. plt.title/plt.tight_layout "gecerli figure"e
+    etki ettigi icin iki kosu cakistiginda basliklar birbirine karisabilir.
+    Figure/FigureCanvas nesneleri yereldir, o yuzden yaris kosulu olusmaz.
+
+    Ayrica matplotlib.use("Agg") calisma aninda cagrilmaz: surecin backend'ini
+    worker thread'den degistirmek GUI tarafini etkileyebiliyordu. Agg burada
+    dogrudan FigureCanvasAgg ile secilir.
+    """
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    from matplotlib.figure import Figure
 
     numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
     if len(numeric_cols) < 2:
@@ -164,7 +175,9 @@ def _render_correlation_heatmap(df: pd.DataFrame) -> Optional[io.BytesIO]:
     cols = numeric_cols[:10]
     corr = df[cols].corr().fillna(0.0).values
 
-    fig, ax = plt.subplots(figsize=(6.5, 3.8), dpi=200)
+    fig = Figure(figsize=(6.5, 3.8), dpi=200)
+    FigureCanvasAgg(fig)
+    ax = fig.add_subplot(111)
     cax = ax.matshow(corr, cmap="Blues", vmin=-1, vmax=1)
     fig.colorbar(cax, ax=ax, fraction=0.046, pad=0.04)
 
@@ -179,12 +192,17 @@ def _render_correlation_heatmap(df: pd.DataFrame) -> Optional[io.BytesIO]:
             color = "white" if abs(val) > 0.6 else "black"
             ax.text(j, i, f"{val:.2f}", ha="center", va="center", color=color, fontsize=6.5)
 
-    plt.title("Correlation Matrix Heatmap", pad=20, fontsize=9, fontweight="bold", color="#1e293b")
-    plt.tight_layout()
+    ax.set_title("Correlation Matrix Heatmap", pad=20, fontsize=9,
+                 fontweight="bold", color="#1e293b")
+    fig.tight_layout()
 
     buf = io.BytesIO()
-    plt.savefig(buf, format="png", bbox_inches="tight")
-    plt.close(fig)
+    try:
+        fig.savefig(buf, format="png", bbox_inches="tight")
+    finally:
+        # savefig patlarsa figure sizmasin: eski surumde plt.close(fig)
+        # hata yolunda hic calismiyordu.
+        fig.clf()
     buf.seek(0)
     return buf
 

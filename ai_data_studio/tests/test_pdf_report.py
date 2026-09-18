@@ -338,5 +338,92 @@ class TestPDFReportTruthfulness(unittest.TestCase):
         self.assertNotIn("Provenance Certified", text)
         self.assertIn("Provenance Declaration", text)
 
+
+class TestHeatmapRendering(unittest.TestCase):
+    """Isi haritasinin pyplot global durumuna dokunmadigini dogrular.
+
+    _render_correlation_heatmap hem PipelineWorker thread'inden hem de
+    "Export PDF" dugmesiyle Tk ana thread'inden cagriliyor. pyplot'in figure
+    yoneticisi (Gcf) thread-safe degil; plt.title/tight_layout "gecerli
+    figure"e etki ettigi icin iki kosu cakisabiliyordu.
+    """
+
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.tmp = Path(self.temp_dir.name)
+        n = 60
+        self.df = pd.DataFrame({
+            "a": np.random.random(n),
+            "b": np.random.random(n),
+            "c": np.random.random(n),
+        })
+        self.schema = SchemaContract(
+            domain="probe", row_count_target=n,
+            columns=[ColumnSpec(name=c, type="float") for c in ("a", "b", "c")])
+        self.report = {"rows_in": n, "rows_out": n}
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def test_rendering_leaves_no_pyplot_figures(self):
+        import matplotlib.pyplot as plt
+        from ai_data_studio.reporting.pdf_report import _render_correlation_heatmap
+
+        plt.close("all")
+        before = len(plt.get_fignums())
+        for _ in range(10):
+            self.assertIsNotNone(_render_correlation_heatmap(self.df))
+        self.assertEqual(len(plt.get_fignums()), before)
+
+    def test_failed_savefig_does_not_leak_a_figure(self):
+        import matplotlib.figure
+        import matplotlib.pyplot as plt
+        from ai_data_studio.reporting.pdf_report import _render_correlation_heatmap
+
+        plt.close("all")
+        before = len(plt.get_fignums())
+        with mock.patch.object(matplotlib.figure.Figure, "savefig",
+                               side_effect=RuntimeError("disk full")):
+            with self.assertRaises(RuntimeError):
+                _render_correlation_heatmap(self.df)
+        self.assertEqual(len(plt.get_fignums()), before)
+
+    def test_single_numeric_column_skips_the_heatmap(self):
+        from ai_data_studio.reporting.pdf_report import _render_correlation_heatmap
+
+        one = pd.DataFrame({"a": np.arange(10.0), "label": ["x"] * 10})
+        self.assertIsNone(_render_correlation_heatmap(one))
+
+    def test_concurrent_report_generation_succeeds(self):
+        """Iki thread ayni anda rapor yazabilmeli."""
+        import threading
+
+        errors = []
+        produced = []
+        lock = threading.Lock()
+
+        def worker(idx):
+            try:
+                out = self.tmp / ("concurrent_%d.pdf" % idx)
+                generate_pdf_report(
+                    dataframe=self.df, schema=self.schema, report=self.report,
+                    output_path=out, job_id=idx, domain="job-%d" % idx,
+                    enforce_pro=False)
+                with lock:
+                    produced.append(out.stat().st_size)
+            except Exception as exc:
+                with lock:
+                    errors.append("%s: %s" % (type(exc).__name__, exc))
+
+        threads = [threading.Thread(target=worker, args=(i,)) for i in range(6)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        self.assertEqual(errors, [])
+        self.assertEqual(len(produced), 6)
+        self.assertTrue(all(size > 0 for size in produced))
+
 if __name__ == "__main__":
     unittest.main()
