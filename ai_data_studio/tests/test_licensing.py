@@ -11,7 +11,10 @@ Tests:
 """
 from __future__ import annotations
 
+import base64
 import datetime
+import hashlib
+import hmac
 import os
 import tempfile
 import unittest
@@ -288,6 +291,7 @@ class TestExpiryAndClock(unittest.TestCase):
             self.mgr.remove_license()
 
 
+
 class TestLicenseFilePermissions(unittest.TestCase):
     """Keyring yokken token'in dosyaya nasil yazildigini dogrular."""
 
@@ -334,29 +338,110 @@ class TestLicenseFilePermissions(unittest.TestCase):
             self.assertIn("restart", info.status_message.lower())
 
 class TestWebhooks(unittest.TestCase):
-    """LemonSqueezy and Polar.sh webhook signature verification tests."""
+    """LemonSqueezy ve Polar.sh webhook imza dogrulama testleri."""
 
-    def test_lemonsqueezy_webhook_signature(self):
+    @staticmethod
+    def _now() -> int:
+        return int(datetime.datetime.now(datetime.timezone.utc).timestamp())
+
+    # -- LemonSqueezy: govdenin ham HMAC-SHA256 hexdigest'i ----------------- #
+
+    def test_lemonsqueezy_accepts_a_correct_signature(self):
         secret = "secret_ls_12345"
         payload = b'{"event_name":"order_created","data":{"id":"1"}}'
-        import hashlib
-        import hmac
         sig = hmac.new(secret.encode("utf-8"), payload, hashlib.sha256).hexdigest()
 
         self.assertTrue(verify_lemonsqueezy_webhook(payload, sig, secret))
         self.assertFalse(verify_lemonsqueezy_webhook(payload, "bad_sig", secret))
         self.assertFalse(verify_lemonsqueezy_webhook(payload, sig, "wrong_secret"))
+        self.assertFalse(verify_lemonsqueezy_webhook(payload, "", secret))
 
-    def test_polar_webhook_signature(self):
-        secret = "polar_whsec_xyz"
-        payload = b'{"type":"subscription.created"}'
-        import hashlib
-        import hmac
+    def test_lemonsqueezy_rejects_a_stale_timestamp(self):
+        secret = "secret_ls_12345"
+        payload = b'{"event_name":"order_created"}'
         sig = hmac.new(secret.encode("utf-8"), payload, hashlib.sha256).hexdigest()
 
-        self.assertTrue(verify_polar_webhook(payload, sig, secret))
-        self.assertTrue(verify_polar_webhook(payload, f"v1,{sig}", secret))
-        self.assertFalse(verify_polar_webhook(payload, "invalid_sig", secret))
+        self.assertTrue(verify_lemonsqueezy_webhook(
+            payload, sig, secret, timestamp=self._now()))
+        self.assertFalse(verify_lemonsqueezy_webhook(
+            payload, sig, secret, timestamp=self._now() - 3600))
+
+    # -- Polar / Svix: base64 HMAC over "{id}.{timestamp}.{body}" ----------- #
+
+    @staticmethod
+    def _svix(secret_b64: str, msg_id: str, timestamp: int, payload: bytes) -> str:
+        key = base64.b64decode(secret_b64)
+        signed = b".".join((msg_id.encode(), str(timestamp).encode(), payload))
+        digest = hmac.new(key, signed, hashlib.sha256).digest()
+        return base64.b64encode(digest).decode("ascii")
+
+    def setUp(self):
+        self.secret_raw = base64.b64encode(b"polar-signing-key-0123456789").decode()
+        self.secret = "whsec_" + self.secret_raw
+        self.msg_id = "msg_2abc"
+        self.payload = b'{"type":"subscription.created"}'
+
+    def test_polar_accepts_a_real_svix_signature(self):
+        ts = self._now()
+        sig = self._svix(self.secret_raw, self.msg_id, ts, self.payload)
+        self.assertTrue(verify_polar_webhook(
+            self.payload, "v1," + sig, self.secret,
+            msg_id=self.msg_id, timestamp=ts))
+
+    def test_polar_accepts_the_secret_without_the_whsec_prefix(self):
+        ts = self._now()
+        sig = self._svix(self.secret_raw, self.msg_id, ts, self.payload)
+        self.assertTrue(verify_polar_webhook(
+            self.payload, "v1," + sig, self.secret_raw,
+            msg_id=self.msg_id, timestamp=ts))
+
+    def test_polar_accepts_one_of_several_rotated_signatures(self):
+        """Svix anahtar rotasyonunda baslik bosluk ayracli birden cok imza tasir."""
+        ts = self._now()
+        good = self._svix(self.secret_raw, self.msg_id, ts, self.payload)
+        other = base64.b64encode(b"x" * 32).decode("ascii")
+        header = "v1,%s v1,%s" % (other, good)
+        self.assertTrue(verify_polar_webhook(
+            self.payload, header, self.secret,
+            msg_id=self.msg_id, timestamp=ts))
+
+    def test_polar_rejects_a_tampered_body(self):
+        ts = self._now()
+        sig = self._svix(self.secret_raw, self.msg_id, ts, self.payload)
+        self.assertFalse(verify_polar_webhook(
+            b'{"type":"subscription.deleted"}', "v1," + sig, self.secret,
+            msg_id=self.msg_id, timestamp=ts))
+
+    def test_polar_rejects_a_signature_bound_to_another_message(self):
+        """Imza msg_id ve timestamp'e baglidir; baska bir olaya tasinamaz."""
+        ts = self._now()
+        sig = self._svix(self.secret_raw, self.msg_id, ts, self.payload)
+        self.assertFalse(verify_polar_webhook(
+            self.payload, "v1," + sig, self.secret,
+            msg_id="msg_other", timestamp=ts))
+
+    def test_polar_rejects_a_replayed_request(self):
+        """Yakalanan bir istek sonsuza kadar yeniden gonderilememeli."""
+        stale = self._now() - 3600
+        sig = self._svix(self.secret_raw, self.msg_id, stale, self.payload)
+        self.assertFalse(verify_polar_webhook(
+            self.payload, "v1," + sig, self.secret,
+            msg_id=self.msg_id, timestamp=stale))
+
+    def test_polar_rejects_malformed_input(self):
+        ts = self._now()
+        sig = self._svix(self.secret_raw, self.msg_id, ts, self.payload)
+        for header in ("", "invalid_sig", sig, "v2," + sig):
+            with self.subTest(header=header):
+                self.assertFalse(verify_polar_webhook(
+                    self.payload, header, self.secret,
+                    msg_id=self.msg_id, timestamp=ts))
+        self.assertFalse(verify_polar_webhook(
+            self.payload, "v1," + sig, self.secret,
+            msg_id="", timestamp=ts))
+        self.assertFalse(verify_polar_webhook(
+            self.payload, "v1," + sig, self.secret,
+            msg_id=self.msg_id, timestamp="not-a-number"))
 
 
 if __name__ == "__main__":

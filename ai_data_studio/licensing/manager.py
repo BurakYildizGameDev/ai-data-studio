@@ -441,23 +441,97 @@ def generate_signed_license(payload: Dict[str, Any], private_key_b64: str) -> st
     return f"ADS-{p_b64}.{s_b64}"
 
 
-def verify_lemonsqueezy_webhook(payload_bytes: bytes, signature_header: str, webhook_secret: str) -> bool:
-    """Verify LemonSqueezy webhook HMAC-SHA256 signature."""
-    if not signature_header or not webhook_secret:
-        return False
-    mac = hmac.new(webhook_secret.encode("utf-8"), msg=payload_bytes, digestmod=hashlib.sha256)
-    expected = mac.hexdigest()
-    return hmac.compare_digest(expected, signature_header)
+WEBHOOK_TOLERANCE_S = 300
 
 
-def verify_polar_webhook(payload_bytes: bytes, signature_header: str, webhook_secret: str) -> bool:
-    """Verify Polar.sh webhook signature (Svix/HMAC-SHA256 style)."""
+def _within_replay_window(timestamp: Any, tolerance_s: int) -> bool:
+    """Webhook zaman damgasinin tekrar oynatma penceresinde oldugunu dogrular.
+
+    Zaman damgasi denetlenmedigi surece yakalanan bir istek sonsuza kadar
+    yeniden gonderilebilir; her seferinde yeni bir lisans uretilir.
+    """
+    try:
+        sent = int(timestamp)
+    except (TypeError, ValueError):
+        return False
+    now = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
+    return abs(now - sent) <= tolerance_s
+
+
+def verify_lemonsqueezy_webhook(
+    payload_bytes: bytes,
+    signature_header: str,
+    webhook_secret: str,
+    *,
+    timestamp: Optional[Any] = None,
+    tolerance_s: int = WEBHOOK_TOLERANCE_S,
+) -> bool:
+    """LemonSqueezy webhook HMAC-SHA256 imzasini dogrular.
+
+    *timestamp* verilirse (X-Event-Timestamp gibi bir basliktan) tekrar
+    oynatma penceresi de denetlenir. Imza dogru olsa bile bir isteği
+    yalnizca bir kez islemek cagiranin sorumlulugundadir: event id'yi
+    kalici bir "islendi" tablosunda tutun.
+    """
     if not signature_header or not webhook_secret:
         return False
-    # Standard HMAC-SHA256 check
-    mac = hmac.new(webhook_secret.encode("utf-8"), msg=payload_bytes, digestmod=hashlib.sha256)
-    expected = mac.hexdigest()
-    return hmac.compare_digest(expected, signature_header.replace("v1,", ""))
+    if timestamp is not None and not _within_replay_window(timestamp, tolerance_s):
+        return False
+
+    mac = hmac.new(webhook_secret.encode("utf-8"), msg=payload_bytes,
+                   digestmod=hashlib.sha256)
+    return hmac.compare_digest(mac.hexdigest(), signature_header)
+
+
+def verify_polar_webhook(
+    payload_bytes: bytes,
+    signature_header: str,
+    webhook_secret: str,
+    *,
+    msg_id: str,
+    timestamp: Any,
+    tolerance_s: int = WEBHOOK_TOLERANCE_S,
+) -> bool:
+    """Polar.sh (Svix) webhook imzasini dogrular.
+
+    Svix ``{id}.{timestamp}.{body}`` uzerini imzalar, sonucu base64 olarak
+    verir ve anahtar rotasyonu sirasinda baslikta bosluk ayracli birden cok
+    imza tasiyabilir (``v1,aaa v1,bbb``).
+
+    Onceki surum govdenin hexdigest'ini alip basliktan ``"v1,"`` dizisini
+    cikariyordu: bu sema Svix'in imzaladigi seyle ortusmedigi icin gercek bir
+    Polar webhook'unu hicbir zaman dogrulayamazdi - ve "calismiyor" diye
+    gevsetilmeye en acik koddu.
+    """
+    if not signature_header or not webhook_secret or not msg_id:
+        return False
+    if not _within_replay_window(timestamp, tolerance_s):
+        return False
+
+    secret = webhook_secret
+    if secret.startswith("whsec_"):
+        secret = secret[len("whsec_"):]
+    try:
+        key = base64.b64decode(secret)
+    except Exception:
+        return False
+    if not key:
+        return False
+
+    signed = b".".join((str(msg_id).encode("utf-8"),
+                        str(timestamp).encode("utf-8"),
+                        payload_bytes))
+    expected = base64.b64encode(
+        hmac.new(key, msg=signed, digestmod=hashlib.sha256).digest()
+    ).decode("ascii")
+
+    matched = False
+    for candidate in signature_header.split():
+        version, _, value = candidate.partition(",")
+        if version == "v1" and hmac.compare_digest(expected, value):
+            # break yok: sabit zamanli kalmak icin tum adaylar taranir.
+            matched = True
+    return matched
 
 
 # Singleton instance
