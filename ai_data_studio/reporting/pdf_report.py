@@ -15,12 +15,24 @@ import datetime
 import io
 import logging
 from pathlib import Path
+from xml.sax.saxutils import escape as _xml_escape
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
 
 try:
+    from reportlab import rl_config
+    # Sema bazli dis kaynak cozumunu kapatir (varsayilan: 'file', 'rml',
+    # 'data', 'https', 'http', 'ftp' ve trustedHosts=None).
+    # DIKKAT: bu tek basina yeterli DEGIL - olculdu, cipla bir yerel dosya
+    # yolu ('<img src="C:/x.png"/>') bu ayardan bagimsiz olarak hala PDF'e
+    # gomuluyor. Enjeksiyona karsi asil kontrol _rl() kacislamasidir; bu ayar
+    # yalnizca yuzeyi daraltir. Isi haritasi BytesIO'dan geldigi icin mesru
+    # cizim etkilenmez.
+    rl_config.trustedSchemes = []
+    rl_config.trustedHosts = []
+
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import letter
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
@@ -45,6 +57,17 @@ from ..i18n import t
 from ..licensing import get_license_manager
 
 log = logging.getLogger(__name__)
+
+
+def _rl(text: Any) -> str:
+    """Paragraph'a basilacak her serbest metin buradan gecer.
+
+    ReportLab'in Paragraph'i mini bir XML agzi ayristirir. Kacislanmayan
+    metin iki sekilde zarar veriyordu: ``<img src="...">`` yerel bir dosyayi
+    PDF'e gomuyor ya da disari istek attiriyor, dengesiz bir etiket ise
+    (``<b>`` gibi) rapor uretimini ValueError ile dusuruyordu.
+    """
+    return _xml_escape(str(text))
 
 
 def is_pdf_available() -> bool:
@@ -248,7 +271,8 @@ def generate_pdf_report(
     story.append(Spacer(1, 4))
     story.append(
         Paragraph(
-            f"<b>Domain:</b> {domain} &nbsp;•&nbsp; <b>Job ID:</b> #{job_id} &nbsp;•&nbsp; <b>Generated:</b> {now_str}",
+            f"<b>Domain:</b> {_rl(domain)} &nbsp;•&nbsp; <b>Job ID:</b> #{_rl(job_id)}"
+            f" &nbsp;•&nbsp; <b>Generated:</b> {_rl(now_str)}",
             subtitle_style,
         )
     )
@@ -348,13 +372,13 @@ def generate_pdf_report(
         [
             Paragraph("Categorical Domain Check", table_cell),
             Paragraph("Discrete Value Set", table_cell),
-            Paragraph(f"{cat_failures} invalid", table_cell),
+            Paragraph(f"{_rl(cat_failures)} invalid", table_cell),
             Paragraph("<font color='#059669'>PASSED</font>", table_cell),
         ],
         [
             Paragraph("Business Rule & Monotonicity", table_cell),
             Paragraph("Deterministic Invariants", table_cell),
-            Paragraph(f"{rule_failures} violations", table_cell),
+            Paragraph(f"{_rl(rule_failures)} violations", table_cell),
             Paragraph("<font color='#059669'>PASSED</font>", table_cell),
         ],
     ]
@@ -450,10 +474,10 @@ def generate_pdf_report(
             f"{len(col.categories)} cats" if col.categories else "-"
         )
         dict_rows.append([
-            Paragraph(col.name, table_cell),
-            Paragraph(col.type, table_cell),
-            Paragraph(dist, table_cell),
-            Paragraph(str(bounds), table_cell),
+            Paragraph(_rl(col.name), table_cell),
+            Paragraph(_rl(col.type), table_cell),
+            Paragraph(_rl(dist), table_cell),
+            Paragraph(_rl(bounds), table_cell),
         ])
 
     dict_table = Table(dict_rows, colWidths=[150, 90, 110, 154])

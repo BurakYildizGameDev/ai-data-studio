@@ -124,5 +124,84 @@ class TestPDFReportGeneration(unittest.TestCase):
             self.assertGreater(pdf_path.stat().st_size, 5000)
 
 
+
+class TestPDFParagraphInjection(unittest.TestCase):
+    """Serbest metnin ReportLab isaretlemesi olarak yorumlanmadigini dogrular.
+
+    ``domain`` LLM yanitindan veya paylasilan bir sema JSON'undan gelir ve
+    dogrudan bir Paragraph'a basiliyordu. Kacislanmadan:
+      * ``<img src="...">`` yerel bir dosyayi PDF'e gomuyordu,
+      * dengesiz bir etiket rapor uretimini ValueError ile dusuruyordu.
+    """
+
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.tmp = Path(self.temp_dir.name)
+        self.out_pdf = self.tmp / "report.pdf"
+
+        self.secret = self.tmp / "secret.png"
+        try:
+            from PIL import Image as PILImage
+            PILImage.new("RGB", (400, 400), (0, 255, 0)).save(self.secret)
+            self.have_pillow = True
+        except Exception:
+            self.have_pillow = False
+
+        # Tek sayisal kolon: korelasyon isi haritasi cizilmez
+        # (_render_correlation_heatmap en az iki sayisal kolon ister), boylece
+        # PDF'te gorulen her /XObject enjeksiyondan gelmis demektir.
+        n = 30
+        self.df = pd.DataFrame({
+            "value_a": np.arange(n, dtype=float),
+            "label": ["row-%d" % i for i in range(n)],
+        })
+        self.schema = SchemaContract(
+            domain="placeholder",
+            row_count_target=n,
+            columns=[
+                ColumnSpec(name="value_a", type="float"),
+                ColumnSpec(name="label", type="string"),
+            ],
+        )
+        self.report = {"raw_rows": n, "validation": {"rows_after_validation": n}}
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def _build(self, domain: str) -> bytes:
+        generate_pdf_report(
+            dataframe=self.df, schema=self.schema, report=self.report,
+            output_path=self.out_pdf, job_id=1, domain=domain,
+            enforce_pro=False,
+        )
+        return self.out_pdf.read_bytes()
+
+    def test_img_tag_in_domain_does_not_embed_local_file(self):
+        """Gomulen gorsel PDF'e bir /XObject ekler; kacislanmis metin eklememeli."""
+        if not self.have_pillow:
+            self.skipTest("Pillow yok")
+        baseline = self._build("Quarterly Sales")
+        self.assertNotIn(b"/XObject", baseline)
+
+        hostile = 'Sales <img src="%s" width="200" height="200"/>' % (
+            str(self.secret).replace("\\", "/"))
+        produced = self._build(hostile)
+        self.assertNotIn(b"/XObject", produced)
+
+    def test_unbalanced_markup_in_domain_does_not_crash(self):
+        for hostile in ("Sales <b>Q4", "Sales </para><para>", "Sales <font color='red'>"):
+            with self.subTest(domain=hostile):
+                self.assertTrue(self._build(hostile).startswith(b"%PDF"))
+
+    def test_bare_angle_brackets_and_ampersand_survive(self):
+        self.assertTrue(self._build("revenue < 500 & profit > 0").startswith(b"%PDF"))
+
+    def test_remote_url_in_domain_is_not_fetched(self):
+        """Disari istek denemesi rapor uretimini dusurmemeli."""
+        produced = self._build(
+            'Sales <img src="http://attacker.invalid/beacon.png" width="9" height="9"/>')
+        self.assertTrue(produced.startswith(b"%PDF"))
+        self.assertNotIn(b"/XObject", produced)
+
 if __name__ == "__main__":
     unittest.main()
