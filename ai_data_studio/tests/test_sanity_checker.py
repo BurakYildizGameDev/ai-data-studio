@@ -458,5 +458,101 @@ class TestSanityAutoCorrectIsConfigurable(unittest.TestCase):
                                             sanity_auto_correct=False)
         self.assertEqual(contract.correlations[0].expected_sign, "positive")
 
+class TestNonNegativeAmounts(unittest.TestCase):
+    """Parasal kolonlar alt sinirsiz kalmamali.
+
+    Olculdu: Qwen2.5-Coder 1.5B'nin urettigi 1000 satirin 66'sinda
+    ``transaction_amount`` negatifti (en dusuk -538.62). Sozlesmede ``min``
+    olmadigi icin validator'un eleyecegi bir sey de yoktu.
+    """
+
+    @staticmethod
+    def _schema(*columns):
+        return SchemaContract(domain="Payments", row_count_target=100,
+                              columns=list(columns))
+
+    def test_amount_without_a_lower_bound_gets_zero(self):
+        schema = self._schema(ColumnSpec(name="transaction_amount", type="float"))
+
+        report = check_schema_sanity(schema)
+
+        self.assertEqual(schema.columns[0].min, 0)
+        self.assertEqual(report.corrections_applied, 1)
+        self.assertTrue(report.has_warnings)
+
+    def test_a_negative_lower_bound_is_raised_to_zero(self):
+        schema = self._schema(ColumnSpec(name="unit_price", type="float", min=-50))
+
+        check_schema_sanity(schema)
+
+        self.assertEqual(schema.columns[0].min, 0)
+
+    def test_every_listed_indicator_is_covered(self):
+        for name in ("transaction_amount", "unit_price", "monthly_salary",
+                     "annual_income", "service_fee", "shipping_cost",
+                     "transaction_amount_usd"):
+            with self.subTest(column=name):
+                schema = self._schema(ColumnSpec(name=name, type="float"))
+                check_schema_sanity(schema)
+                self.assertEqual(schema.columns[0].min, 0)
+
+    def test_columns_whose_negatives_are_legitimate_are_left_alone(self):
+        """Asiri duzeltme bu modulun bilinen kusuru; sinir dar tutuldu."""
+        for name in ("net_amount", "adjustment_amount", "profit_amount",
+                     "price_change", "balance_amount"):
+            with self.subTest(column=name):
+                schema = self._schema(ColumnSpec(name=name, type="float"))
+                report = check_schema_sanity(schema)
+                self.assertIsNone(schema.columns[0].min)
+                self.assertEqual(report.corrections_applied, 0)
+
+    def test_non_monetary_and_non_numeric_columns_are_ignored(self):
+        schema = self._schema(
+            ColumnSpec(name="risk_score", type="float"),
+            ColumnSpec(name="card_type", type="category", categories=["visa"]),
+            ColumnSpec(name="amount_label", type="string"),
+        )
+
+        report = check_schema_sanity(schema)
+
+        self.assertEqual(report.corrections_applied, 0)
+        self.assertIsNone(schema.columns[0].min)
+
+    def test_a_bound_that_is_already_zero_or_positive_is_untouched(self):
+        schema = self._schema(
+            ColumnSpec(name="transaction_amount", type="float", min=0),
+            ColumnSpec(name="service_fee", type="float", min=5),
+        )
+
+        report = check_schema_sanity(schema)
+
+        self.assertEqual(report.corrections_applied, 0)
+        self.assertEqual([c.min for c in schema.columns], [0, 5])
+
+    def test_auto_correct_off_reports_without_changing_the_contract(self):
+        schema = self._schema(ColumnSpec(name="transaction_amount", type="float"))
+
+        report = check_schema_sanity(schema, auto_correct=False)
+
+        self.assertIsNone(schema.columns[0].min)
+        self.assertEqual(report.corrections_applied, 0)
+        self.assertEqual(len(report.findings), 1)
+        self.assertFalse(report.findings[0].auto_corrected)
+
+    def test_the_corrected_bound_makes_the_validator_drop_negative_rows(self):
+        """Duzeltmenin amaci bu: negatif tutar artik ciktiya gecemez."""
+        import pandas as pd
+        from ai_data_studio.core.validator import apply_schema_bounds
+
+        schema = self._schema(ColumnSpec(name="transaction_amount", type="float"))
+        check_schema_sanity(schema)
+
+        frame = pd.DataFrame({"transaction_amount": [120.5, -538.62, 44.0]})
+        clean, removed = apply_schema_bounds(frame, schema)
+
+        self.assertEqual(len(clean), 2)
+        self.assertEqual(removed.get("transaction_amount"), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

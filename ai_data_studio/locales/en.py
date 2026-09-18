@@ -700,6 +700,8 @@ MESSAGES = {
     "codegen.attempt_failed": "Attempt {attempt} failed: {error}",
     "codegen.hint": "Fix hint: {hint}",
     "codegen.auto_import": "Missing import added automatically ({line}), running again without an LLM call...",
+    "codegen.return_wrapped": "A `return` was found outside any function; the code was wrapped in {name}(n_rows, seed) so it can run...",
+    "codegen.return_rebound": "{count} `return` statement(s) outside any function were rebound to {name}; the entry point the code already defines is used...",
     "codegen.attempt_ok": "Attempt {attempt} succeeded: {rows} rows ({seconds} s, {columns} columns)",
     "codegen.attempt_ok_relational": (
         "Attempt {attempt} succeeded: {tables} tables ({seconds} s) - {counts}"
@@ -1230,6 +1232,8 @@ MESSAGES = {
 
     # --- Schema Sanity Checker ------------------------------------------- #
     "sanity.report.clean": "Schema sanity check passed — no semantic issues detected.",
+    "sanity.bounds.amount_missing_min": "'{column}' looks like a monetary amount but carries no lower bound; min was set to 0 so negative values cannot be generated.",
+    "sanity.bounds.amount_negative_min": "'{column}' looks like a monetary amount but declared min={declared}; raised to 0. If negative values are intended, say so in the column name (net_, adjustment_, ...) or turn auto-correction off.",
     "sanity.correlation.ambiguous_pair": "{col_a} and {col_b} form a domain pair where a positive correlation can be correct; left unchanged - review it yourself.",
     "sanity.correlation.risk_asset_inverted": (
         "Suspected semantic inversion: '{col_a}' ({cat_a}) ↔ '{col_b}' ({cat_b}) "

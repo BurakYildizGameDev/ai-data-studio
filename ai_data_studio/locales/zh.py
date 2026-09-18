@@ -502,6 +502,8 @@ MESSAGES = {
     "codegen.attempt_failed": "尝试 {attempt} 失败：{error}",
     "codegen.hint": "修复提示：{hint}",
     "codegen.auto_import": "已自动补上缺失的 import（{line}），无需调用 LLM 正在重新运行...",
+    "codegen.return_wrapped": "发现函数外的 `return`；已将代码包装进 {name}(n_rows, seed) 以便运行...",
+    "codegen.return_rebound": "函数外的 {count} 条 `return` 语句已改写为对 {name} 的赋值；将使用代码中已有的入口函数...",
     "codegen.attempt_ok": "尝试 {attempt} 成功：{rows} 行（{seconds} s、{columns} 列）",
     "codegen.attempt_ok_relational": "尝试 {attempt} 成功：{tables} 表（{seconds} s）- {counts}",
     "codegen.schema_mismatch": "尝试 {attempt}：发现 {count} 架构不匹配",
@@ -869,6 +871,8 @@ MESSAGES = {
 
     # --- Schema Sanity Checker ------------------------------------------- #
     "sanity.report.clean": "模式合理性检查通过——未检测到语义问题。",
+    "sanity.bounds.amount_missing_min": "'{column}' 看起来是金额字段，但没有下界；已将 min 设为 0，以免生成负值。",
+    "sanity.bounds.amount_negative_min": "'{column}' 看起来是金额字段，却声明了 min={declared}；已提高到 0。若确实需要负值，请在列名中说明（net_、adjustment_ 等）或关闭自动纠正。",
     "sanity.correlation.ambiguous_pair": "{col_a} 与 {col_b} 属于正相关可能正确的领域组合；未作更改 - 请自行核对。",
     "sanity.correlation.risk_asset_inverted": (
         "疑似语义反转：'{col_a}'（{cat_a}）↔ '{col_b}'（{cat_b}）"

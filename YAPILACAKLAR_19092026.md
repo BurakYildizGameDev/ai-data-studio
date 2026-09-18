@@ -163,6 +163,34 @@ anahtarlar sessizce kabul edilecekti. `[tool.setuptools.package-data]` altına e
       atlanıyor; ubuntu matrisinde koştuğunu bir kez gözle doğrula. CI bugüne kadar
       kırmızıydı, yani bu hiç görülmedi — `3bacbe9` sonrası ilk yeşil koşuda bak.
 
+### 7. Benchmark bulguları (19 Eylül)
+
+`outputs/benchmark/` çıktılarından çıkan üç somut hata kapatıldı, dördüncü olarak da
+CI'da bekleyen kırılgan test düzeltildi.
+
+- [x] **CI'daki kırmızı ubuntu işi bir yarış koşuluydu, Linux'a özgü değildi.**
+      `test_single_chunk_matches_multi_chunk_output` iki serhi ayrı ayrı üretip
+      karşılaştırıyordu; `generated_at` saniye sınırını geçtiğinde düşüyor
+      (21:23:12 vs 21:23:13). Alanlar bir kez üretilip iki yazıma da veriliyor.
+- [x] **`PrivacyAuditReport.hipaa_result` yokmuş.** Pakette bu ad hiç olmadı, alanın
+      adı `hipaa_audit`; hatayı veren, depoda olmayan benchmark betiği. `hipaa_result`
+      artık gerçek denetim nesnesini döndüren bir takma ad. Varsayılanı `None` olan
+      bir alan eklemek veriyi sessizce "HIPAA verisi yok"a çevirirdi.
+- [x] **Fonksiyon dışında `return`.** `ast.parse` bunu kabul ediyor, hata `compile`
+      aşamasında çıkıyor — yani statik denetim temiz geçiyor ve çocuk süreç
+      `import user_code` satırında düşüyor; üç deneme de böyle yanıyordu.
+      `repair_module_level_return()`: giriş noktası yoksa modül
+      `generate_data(n_rows, seed)` içine alınıyor, varsa dışarıda kalan `return X`
+      `_result_df = X` oluyor. Onarım hem döngüde (dışa verilen `*_generator.py` de
+      çalışsın diye) hem `execute_in_sandbox` içinde; idempotent.
+- [x] **Negatif tutar.** `HeuristicSanityChecker` artık adı `amount/price/salary/
+      income/fee/cost` içeren sayısal kolonlarda `min`i 0'a çekiyor (yoksa da,
+      negatifse de). `net_`, `adjustment_`, `profit_`, `balance_`, `_change` gibi
+      negatifi meşru olanlar elenir; `auto_correct=False` yalnızca rapor eder.
+      Sözleşme düzeltildiği için hem üretim istemi hem validator aynı anda düzeliyor.
+
+860 test geçiyor, 4 atlanıyor.
+
 ---
 
 ## Açık bırakılan, bilinçli kararlar

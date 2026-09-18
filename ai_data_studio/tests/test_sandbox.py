@@ -1,4 +1,5 @@
 """İzole sandbox yürütme, güvenlik denetimi, zaman aşımı ve bellek watchdog testleri."""
+import ast
 import threading
 import unittest
 
@@ -6,6 +7,7 @@ from ai_data_studio.core.generator import (
     ExecutionResult,
     SecurityError,
     execute_in_sandbox,
+    repair_module_level_return,
     run_sandbox_child,
     sanity_check,
     static_import_check,
@@ -171,6 +173,104 @@ class TestSandboxExecution(unittest.TestCase):
         result = execute_in_sandbox(code, n_rows=10, timeout=60, cancel_event=cancel)
         self.assertFalse(result.success)
         self.assertIn("cancel", result.killed_reason.lower())
+
+
+# Bir modelin gercekte urettigi sekil: govde dogru, `def` satiri eksik.
+BARE_RETURN_CODE = """
+import numpy as np
+import pandas as pd
+
+n_rows = 40
+rng = np.random.default_rng(7)
+df = pd.DataFrame({
+    "age": rng.integers(18, 70, n_rows),
+    "income": rng.normal(50000, 10000, n_rows),
+    "ad_duration_s": rng.integers(5, 61, n_rows),
+    "watch_time_s": rng.random(n_rows) * 30,
+    "clicked": rng.random(n_rows) < 0.05,
+})
+return df
+"""
+
+
+class TestModuleLevelReturnRepair(unittest.TestCase):
+    """`return`i fonksiyon disinda birakan kod calisabilmeli.
+
+    Olculdu: ``ast.parse`` bunu kabul eder, hata ``compile`` asamasinda cikar.
+    Yani statik denetim temiz gecer ve cocuk surec ``import user_code``
+    satirinda "SyntaxError: 'return' outside function" ile duser - benchmark
+    kosusunda Dolphin-Qwen2 7B uc denemeyi de boyle yakti.
+    """
+
+    def test_the_unrepaired_code_really_does_not_compile(self):
+        """Onarimin neye karsi oldugunu testin kendisi gostersin."""
+        ast.parse(BARE_RETURN_CODE)          # ayristirma gecer
+        with self.assertRaises(SyntaxError) as ctx:
+            compile(BARE_RETURN_CODE, "user_code.py", "exec")
+        self.assertIn("outside function", str(ctx.exception))
+
+    def test_code_without_entrypoint_is_wrapped_and_runs(self):
+        repaired, note = repair_module_level_return(BARE_RETURN_CODE)
+
+        compile(repaired, "user_code.py", "exec")
+        namespace = {}
+        exec(compile(repaired, "user_code.py", "exec"), namespace)
+        frame = namespace["generate_data"](40, 7)
+        self.assertEqual(len(frame), 40)
+        self.assertIn("generate_data", note)
+
+    def test_stray_return_next_to_an_entrypoint_is_rebound(self):
+        code = (
+            "import pandas as pd\n"
+            "\n"
+            "\n"
+            "def generate_data(n_rows, seed):\n"
+            "    return pd.DataFrame({'a': range(n_rows)})\n"
+            "\n"
+            "\n"
+            "df = generate_data(3, 1)\n"
+            "return df\n"
+        )
+        repaired, _ = repair_module_level_return(code)
+
+        namespace = {}
+        exec(compile(repaired, "user_code.py", "exec"), namespace)
+        # Giris noktasi korunur, disarida kalan return bir atamaya doner.
+        self.assertTrue(callable(namespace["generate_data"]))
+        self.assertEqual(len(namespace["_result_df"]), 3)
+
+    def test_healthy_code_is_left_alone(self):
+        self.assertIsNone(repair_module_level_return(GOOD_CODE))
+
+    def test_repair_is_idempotent(self):
+        repaired, _ = repair_module_level_return(BARE_RETURN_CODE)
+        self.assertIsNone(repair_module_level_return(repaired))
+
+    def test_a_return_inside_a_loop_at_module_level_is_found(self):
+        code = "x = 1\nif x:\n    return x\n"
+        repaired, _ = repair_module_level_return(code)
+        compile(repaired, "user_code.py", "exec")
+
+    def test_other_syntax_errors_are_not_touched(self):
+        """Onarim yalnizca kendi hedefine bakar; gerisini denetim reddetsin."""
+        self.assertIsNone(repair_module_level_return("def f(:\n    pass\n"))
+
+    def test_future_import_stays_at_the_top_of_the_file(self):
+        code = ("from __future__ import annotations\n"
+                "import pandas as pd\n"
+                "df = pd.DataFrame({'a': [1]})\n"
+                "return df\n")
+        repaired, _ = repair_module_level_return(code)
+
+        compile(repaired, "user_code.py", "exec")
+        self.assertTrue(repaired.startswith("from __future__ import annotations"))
+
+    def test_sandbox_runs_code_that_returns_outside_a_function(self):
+        """Uctan uca: onarimsiz bu kosu SyntaxError ile duserdi."""
+        result = execute_in_sandbox(BARE_RETURN_CODE, n_rows=40, seed=7)
+
+        self.assertTrue(result.success, result.traceback)
+        self.assertEqual(len(result.dataframe), 40)
 
 
 class TestSanityCheck(unittest.TestCase):

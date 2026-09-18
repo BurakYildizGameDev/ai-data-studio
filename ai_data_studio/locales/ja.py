@@ -502,6 +502,8 @@ MESSAGES = {
     "codegen.attempt_failed": "{attempt} の試行が失敗しました: {error}",
     "codegen.hint": "修正ヒント: {hint}",
     "codegen.auto_import": "不足していた import を自動で追加しました ({line})。LLM を呼び出さずに再実行しています...",
+    "codegen.return_wrapped": "関数の外にある `return` を検出しました。実行できるようコードを {name}(n_rows, seed) で包みました...",
+    "codegen.return_rebound": "関数の外にある `return` 文 {count} 件を {name} への代入に変更しました。コードが既に定義しているエントリポイントを使用します...",
     "codegen.attempt_ok": "{attempt} の試行は成功しました: {rows} 行 ({seconds} s、{columns} 列)",
     "codegen.attempt_ok_relational": "{attempt} の試行が成功しました: {tables} テーブル ({seconds} s) - {counts}",
     "codegen.schema_mismatch": "{attempt} を試行: {count} スキーマの不一致が見つかりました",
@@ -869,6 +871,8 @@ MESSAGES = {
 
     # --- Schema Sanity Checker ------------------------------------------- #
     "sanity.report.clean": "スキーマの健全性チェックに合格しました — 意味的な問題は検出されませんでした。",
+    "sanity.bounds.amount_missing_min": "'{column}' は金額らしい名前ですが下限がありません。負の値が生成されないよう min を 0 に設定しました。",
+    "sanity.bounds.amount_negative_min": "'{column}' は金額らしい名前ですが min={declared} と宣言されています。0 に引き上げました。負の値が意図的なら列名で示す (net_, adjustment_, ...) か、自動補正を無効にしてください。",
     "sanity.correlation.ambiguous_pair": "{col_a} と {col_b} は正の相関が正しい場合があるドメインの組です。変更していません - ご自身で確認してください。",
     "sanity.correlation.risk_asset_inverted": (
         "意味的な反転の疑い：'{col_a}'（{cat_a}）↔ '{col_b}'（{cat_b}）は"

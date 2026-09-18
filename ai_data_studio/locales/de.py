@@ -502,6 +502,8 @@ MESSAGES = {
     "codegen.attempt_failed": "Versuch {attempt} fehlgeschlagen: {error}",
     "codegen.hint": "Fix-Hinweis: {hint}",
     "codegen.auto_import": "Fehlender Import automatisch ergänzt ({line}), erneute Ausführung ohne LLM-Aufruf...",
+    "codegen.return_wrapped": "Ein `return` außerhalb jeder Funktion gefunden; der Code wurde in {name}(n_rows, seed) eingeschlossen, damit er laufen kann...",
+    "codegen.return_rebound": "{count} `return`-Anweisung(en) außerhalb jeder Funktion wurden auf {name} umgeschrieben; der bereits definierte Einstiegspunkt wird verwendet...",
     "codegen.attempt_ok": "Versuch {attempt} erfolgreich: {rows}-Zeilen ({seconds}-Spalten, {columns}-Spalten)",
     "codegen.attempt_ok_relational": "Versuch {attempt} erfolgreich: {tables}-Tabellen ({seconds} s) - {counts}",
     "codegen.schema_mismatch": "Versuch {attempt}: {count}-Schemakonflikte gefunden",
@@ -869,6 +871,8 @@ MESSAGES = {
 
     # --- Schema Sanity Checker ------------------------------------------- #
     "sanity.report.clean": "Schema-Plausibilitätsprüfung bestanden — keine semantischen Probleme erkannt.",
+    "sanity.bounds.amount_missing_min": "'{column}' sieht nach einem Geldbetrag aus, hat aber keine Untergrenze; min wurde auf 0 gesetzt, damit keine negativen Werte entstehen.",
+    "sanity.bounds.amount_negative_min": "'{column}' sieht nach einem Geldbetrag aus, deklariert aber min={declared}; auf 0 angehoben. Sind negative Werte beabsichtigt, benennen Sie die Spalte entsprechend (net_, adjustment_, ...) oder schalten Sie die Autokorrektur ab.",
     "sanity.correlation.ambiguous_pair": "{col_a} und {col_b} bilden ein Fachpaar, bei dem eine positive Korrelation richtig sein kann; unverändert gelassen - bitte selbst prüfen.",
     "sanity.correlation.risk_asset_inverted": (
         "Vermutete semantische Umkehrung: '{col_a}' ({cat_a}) ↔ '{col_b}' ({cat_b}) "

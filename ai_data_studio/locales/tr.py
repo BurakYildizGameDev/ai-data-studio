@@ -697,6 +697,8 @@ MESSAGES = {
     "codegen.attempt_failed": "Deneme {attempt} başarısız: {error}",
     "codegen.hint": "Çözüm ipucu: {hint}",
     "codegen.auto_import": "Eksik import otomatik eklendi ({line}), LLM çağrısı yapmadan yeniden çalıştırılıyor...",
+    "codegen.return_wrapped": "Fonksiyon dışında bir `return` bulundu; kod çalışabilsin diye {name}(n_rows, seed) içine alındı...",
+    "codegen.return_rebound": "Fonksiyon dışında kalan {count} `return` ifadesi {name} atamasına çevrildi; kodun zaten tanımladığı giriş noktası kullanılıyor...",
     "codegen.attempt_ok": "Deneme {attempt} başarılı: {rows} satır ({seconds} sn, {columns} sütun)",
     "codegen.attempt_ok_relational": (
         "Deneme {attempt} başarılı: {tables} tablo üretildi ({seconds} sn) - {counts}"
@@ -1237,6 +1239,8 @@ MESSAGES = {
 
     # --- Schema Sanity Checker ------------------------------------------- #
     "sanity.report.clean": "Şema sağlamlık denetimi geçti — anlamsal sorun bulunamadı.",
+    "sanity.bounds.amount_missing_min": "'{column}' parasal bir tutara benziyor ama alt sınırı yok; negatif değer üretilemesin diye min 0 yapıldı.",
+    "sanity.bounds.amount_negative_min": "'{column}' parasal bir tutara benziyor ama min={declared} verilmiş; 0'a çekildi. Negatif değer kastediliyorsa kolon adında belirtin (net_, adjustment_, ...) ya da otomatik düzeltmeyi kapatın.",
     "sanity.correlation.ambiguous_pair": "{col_a} ile {col_b} pozitif korelasyonun doğru olabileceği bir alan çifti; değiştirilmedi - kendiniz gözden geçirin.",
     "sanity.correlation.risk_asset_inverted": (
         "Olası anlamsal terslik: '{col_a}' ({cat_a}) ↔ '{col_b}' ({cat_b}) "

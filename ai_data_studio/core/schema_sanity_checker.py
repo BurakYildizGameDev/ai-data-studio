@@ -5,6 +5,8 @@ inverted correlations and monotonicity rules.  For example:
   * income ↑ → default_rate ↑  (should be negative)
   * credit_score ↑ → is_fraud ↑  (should be negative)
   * Transitivity violation: A~B (+), B~C (−), but A~C (+)
+  * A monetary column ("transaction_amount") left without a lower bound,
+    which lets the generator emit negative amounts
 
 This module runs AFTER SchemaContract.from_dict() and BEFORE the pipeline
 starts generating data.  It is purely deterministic — no LLM calls — and
@@ -103,6 +105,24 @@ AMBIGUOUS_PAIRS: Set[frozenset] = {
     frozenset({"balance", "loss"}),
     frozenset({"revenue", "refund"}),
     frozenset({"revenue", "return"}),
+}
+
+
+# Negatif degeri olamayacak buyuklukler. Kucuk modeller bu kolonlara alt sinir
+# koymayi unutuyor: olculdu, Qwen2.5-Coder 1.5B'nin urettigi 1000 satirin 66'si
+# "transaction_amount" icin negatifti (en dusuk -538.62). Sozlesmede min yoksa
+# validator'un eleyecegi bir sey de yok - veri oldugu gibi cikiyor.
+NON_NEGATIVE_INDICATORS: Set[str] = {
+    "amount", "price", "salary", "salaries", "income", "fee", "cost",
+}
+
+# Ayni kelimeleri tasiyip negatifi MESRU olan kolonlar. Bunlara dokunulmaz:
+# net tutar eksiye duser, duzeltme kaydi eksi yazilir, kar/zarar zaten
+# isaretlidir. Asiri duzeltme bu modulun bilinen kusuru (bkz. O-6), o yuzden
+# sinir dar tutuldu.
+NEGATIVE_ALLOWED_TOKENS: Set[str] = {
+    "net", "adjustment", "adjust", "delta", "change", "difference", "diff",
+    "profit", "loss", "pnl", "margin", "variance", "growth", "balance",
 }
 
 
@@ -437,6 +457,59 @@ def _check_correlation_transitivity(
 # Public API
 # --------------------------------------------------------------------------- #
 
+def _check_non_negative_amounts(
+    schema: SchemaContract,
+    auto_correct: bool,
+) -> Tuple[List[SanityFinding], int]:
+    """Parasal kolonlarin alt sinirini 0'a cekerek negatif tutari engeller.
+
+    Diger denetimlerin aksine bu, kurallara degil KOLON SINIRLARINA bakar:
+    ``min`` hic verilmemisse ya da negatifse tutar kolonu negatif deger
+    uretebilir ve validator'un elemesi icin bir sinir yoktur. ``min = 0``
+    hem uretim istemini hem de dogrulamayi ayni anda duzeltir.
+
+    Adi negatifi mesru kilan kolonlar (net_amount, adjustment_amount,
+    profit_amount...) ELENIR; ayrica ``auto_correct=False`` ise yalnizca
+    rapor edilir, sozlesme degistirilmez.
+    """
+    findings: List[SanityFinding] = []
+    corrections = 0
+
+    for column in schema.columns:
+        if not column.is_numeric:
+            continue
+        lower = _normalise(column.name)
+        toks = _tokens(column.name)
+        if not _matches(NON_NEGATIVE_INDICATORS, lower, toks):
+            continue
+        if _matches(NEGATIVE_ALLOWED_TOKENS, lower, toks):
+            continue
+        if column.min is not None and column.min >= 0:
+            continue
+
+        declared = column.min
+        if auto_correct:
+            column.min = 0
+            corrections += 1
+
+        if declared is None:
+            message = t("sanity.bounds.amount_missing_min", column=column.name)
+        else:
+            message = t("sanity.bounds.amount_negative_min",
+                        column=column.name, declared=declared)
+
+        findings.append(SanityFinding(
+            severity="WARNING",
+            category="non_negative_amount",
+            message=message,
+            auto_corrected=auto_correct,
+            details={"column": column.name, "declared_min": declared,
+                     "applied_min": 0 if auto_correct else None},
+        ))
+
+    return findings, corrections
+
+
 def check_schema_sanity(
     schema: SchemaContract,
     *,
@@ -476,6 +549,12 @@ def check_schema_sanity(
     # 3. Correlation transitivity violations (informational, no auto-correct)
     trans_findings = _check_correlation_transitivity(schema)
     report.findings.extend(trans_findings)
+
+    # 4. Negatif olamayacak parasal kolonlarin alt siniri
+    bound_findings, bound_corrections = _check_non_negative_amounts(
+        schema, auto_correct)
+    report.findings.extend(bound_findings)
+    report.corrections_applied += bound_corrections
 
     # Push findings to schema warnings so they appear in the UI
     for finding in report.findings:

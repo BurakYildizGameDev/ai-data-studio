@@ -1547,11 +1547,19 @@ class TestProvenanceStreaming(unittest.TestCase):
         from ai_data_studio.core import orchestrator
 
         df = pd.DataFrame({"i": range(12), "u": ["ğüş"] * 12})
+        # Serh alanlari her cagrida yeniden uretilirse "generated_at" iki yazim
+        # arasinda saniye sinirini gecebilir ve test, blok birlestirmeyle hic
+        # ilgisi olmayan bir sebeple duser - CI'da Linux'ta tam olarak bu oldu
+        # (21:23:12 vs 21:23:13). Alanlar bir kez uretilip ikisine de verilir;
+        # zaten olculen sey bloklama, zaman damgasi degil.
+        fields = orchestrator._provenance_fields(df)
         paths_one = orchestrator._write_table_files(
-            df, self.out_dir, "one", ["json"], provenance=True)
+            df, self.out_dir, "one", ["json"], provenance=True,
+            provenance_fields=fields)
         with mock.patch.object(orchestrator, "_JSON_CHUNK_ROWS", 5):
             paths_many = orchestrator._write_table_files(
-                df, self.out_dir, "many", ["json"], provenance=True)
+                df, self.out_dir, "many", ["json"], provenance=True,
+                provenance_fields=fields)
 
         one = json.loads(Path(paths_one["json"]).read_text(encoding="utf-8"))
         many = json.loads(Path(paths_many["json"]).read_text(encoding="utf-8"))

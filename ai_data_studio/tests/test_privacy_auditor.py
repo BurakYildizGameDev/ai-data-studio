@@ -553,5 +553,33 @@ class TestAuditTableCli(unittest.TestCase):
             "all")
 
 
+class TestHipaaResultAlias(unittest.TestCase):
+    """``hipaa_result`` disaridaki kosumlarin kullandigi eski ad.
+
+    Bir benchmark kosumu alani bu adla okudu; 996 temiz satir uretilmis,
+    dogrulama gecmis bir kosu raporlama adiminda AttributeError ile dustu.
+    Takma ad GERCEK nesneyi dondurur: varsayilani None olan bir alan eklemek
+    veriyi sessizce "HIPAA verisi yok"a cevirirdi.
+    """
+
+    def test_the_alias_returns_the_same_object_not_a_copy(self):
+        report = PrivacyAuditReport()
+
+        self.assertIs(report.hipaa_result, report.hipaa_audit)
+
+    def test_the_alias_carries_the_findings(self):
+        audit = HIPAAAuditResult(
+            identifiers_found=[{"column": "ssn", "title": "SSN",
+                                "category": "direct"}],
+            passed=False,
+            summary="1 identifier",
+        )
+        report = PrivacyAuditReport(hipaa_audit=audit)
+
+        self.assertFalse(report.hipaa_result.passed)
+        self.assertEqual(report.hipaa_result.flagged_columns, ["ssn"])
+        self.assertEqual(report.to_dict()["hipaa"]["passed"], False)
+
+
 if __name__ == "__main__":
     unittest.main()

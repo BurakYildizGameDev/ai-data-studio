@@ -502,6 +502,8 @@ MESSAGES = {
     "codegen.attempt_failed": "La tentative {attempt} a échoué : {error}",
     "codegen.hint": "Astuce de correction : {hint}",
     "codegen.auto_import": "Import manquant ajouté automatiquement ({line}), nouvelle exécution sans appel au LLM...",
+    "codegen.return_wrapped": "Un `return` hors de toute fonction a été trouvé ; le code a été encapsulé dans {name}(n_rows, seed) pour qu'il puisse s'exécuter...",
+    "codegen.return_rebound": "{count} instruction(s) `return` hors de toute fonction ont été converties en {name} ; le point d'entrée déjà défini est utilisé...",
     "codegen.attempt_ok": "Tentative {attempt} réussie : lignes {rows} (colonnes {seconds}, colonnes {columns})",
     "codegen.attempt_ok_relational": "Tentative {attempt} réussie : tables {tables} ({seconds} s) - {counts}",
     "codegen.schema_mismatch": "Tentative {attempt} : incohérences de schéma {count} trouvées",
@@ -869,6 +871,8 @@ MESSAGES = {
 
     # --- Schema Sanity Checker ------------------------------------------- #
     "sanity.report.clean": "Vérification de cohérence du schéma réussie — aucun problème sémantique détecté.",
+    "sanity.bounds.amount_missing_min": "'{column}' ressemble à un montant monétaire mais n'a pas de borne inférieure ; min a été fixé à 0 afin qu'aucune valeur négative ne soit générée.",
+    "sanity.bounds.amount_negative_min": "'{column}' ressemble à un montant monétaire mais déclare min={declared} ; relevé à 0. Si les valeurs négatives sont voulues, indiquez-le dans le nom de la colonne (net_, adjustment_, ...) ou désactivez la correction automatique.",
     "sanity.correlation.ambiguous_pair": "{col_a} et {col_b} forment une paire métier où une corrélation positive peut être correcte ; laissée telle quelle - à vérifier vous-même.",
     "sanity.correlation.risk_asset_inverted": (
         "Inversion sémantique suspectée : '{col_a}' ({cat_a}) ↔ '{col_b}' ({cat_b}) "

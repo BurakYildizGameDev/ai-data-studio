@@ -256,6 +256,18 @@ class PrivacyAuditReport:
     hipaa_audit: HIPAAAuditResult = field(default_factory=HIPAAAuditResult)
     overall_privacy_status: str = "NO_ISSUES_FOUND"
 
+    @property
+    def hipaa_result(self) -> HIPAAAuditResult:
+        """``hipaa_audit`` icin takma ad.
+
+        Disaridaki bir kosum bu alani ``hipaa_result`` diye okudu ve
+        AttributeError ile 996 satirlik tamamlanmis bir kosunun raporlama
+        adimini dusurdu. Takma ad GERCEK denetim nesnesini dondurur;
+        varsayilani ``None`` olan bir alan eklemek, veriyi sessizce
+        "HIPAA verisi yok"a cevirirdi - cokmekten daha kotusu.
+        """
+        return self.hipaa_audit
+
     def to_dict(self) -> Dict[str, Any]:
         from dataclasses import asdict
 

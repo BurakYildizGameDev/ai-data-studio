@@ -295,6 +295,111 @@ def static_import_check(code: str, allowed: Optional[set] = None) -> None:
 
 
 # --------------------------------------------------------------------------- #
+# 1b. Fonksiyon disinda kalan return'un onarimi
+# --------------------------------------------------------------------------- #
+# Modul govdesindeki bir ``return``, ``ast.parse`` tarafindan KABUL edilir;
+# hata ancak ``compile`` asamasinda cikar. Yani statik denetim temiz gecer, kod
+# sandbox'a yazilir ve cocuk surec ``import user_code`` satirinda
+# "SyntaxError: 'return' outside function" ile duser. Uc deneme de ayni sekilde
+# yanar, cunku model hatayi genelde tekrarlar (olculdu: Dolphin-Qwen2 7B, 7B
+# benchmark kosusu - 3 denemede sifir satir).
+_RESULT_BINDING = "_result_df"
+_REPAIR_WRAPPER = "generate_data"
+
+
+def _module_level_returns(tree: ast.AST) -> List[ast.Return]:
+    """Hicbir fonksiyon kapsamina girmeyen ``return`` dugumleri.
+
+    Fonksiyon, lambda ve sinif govdelerine INILMEZ: ilk ikisinde ``return``
+    zaten mesru, sinif govdesinde ise sarmalama da kurtarmaz.
+    """
+    found: List[ast.Return] = []
+
+    def visit(node: ast.AST) -> None:
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef,
+                                  ast.Lambda, ast.ClassDef)):
+                continue
+            if isinstance(child, ast.Return):
+                found.append(child)
+            visit(child)
+
+    visit(tree)
+    return found
+
+
+def _defines_entrypoint(tree: ast.Module) -> bool:
+    """Modul, harness'in aradigi giris noktalarindan birini tanimliyor mu?"""
+    return any(isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+               and node.name in ENTRYPOINT_NAMES
+               for node in tree.body)
+
+
+def repair_module_level_return(code: str) -> Optional[Tuple[str, str]]:
+    """Fonksiyon disinda kalan ``return``i calisir hale getirir.
+
+    Iki ayri onarim, hangisinin dogru oldugu koda bagli:
+
+    * Giris noktasi HIC tanimlanmamissa modul, ``generate_data(n_rows, seed)``
+      icine alinir. Model aslinda bir fonksiyon govdesi yazmis ama ``def``
+      satirini unutmustur; sarmalayinca ``return df`` fonksiyonun donusu olur
+      ve harness onu bulur.
+    * Giris noktasi VARSA disarida kalan ``return X``, ``_result_df = X``
+      atamasina cevrilir. Modul govdesinde o ifade zaten olu koddu; amac
+      yalnizca dosyanin derlenebilmesi.
+
+    ``from __future__`` satirlari sarmalamanin disinda birakilir (dosyanin
+    basinda kalmalari sozdizimi geregi). Onarim metinseldir: yorumlar ve
+    bicimlendirme korunur, cunku bu kod kullaniciya ``*_generator.py`` olarak
+    da veriliyor.
+
+    Sarmalanan kod kendi ``n_rows``unu atiyorsa parametre golgelenir ve satir
+    sayisi sozlesmeden degil koddan gelir; uyusmazligi zaten sanity_check
+    yakalar ve dongu modele geri besler. Sessizce duzeltmeye calismayiz.
+
+    Returns
+    -------
+    (yeni_kod, aciklama) ya da onarilacak bir sey yoksa None.
+    """
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        # Baska bir sozdizimi hatasi: onarmayiz, statik denetim anlamli bir
+        # mesajla reddetsin ve model geri beslemeyle duzeltsin.
+        return None
+
+    strays = _module_level_returns(tree)
+    if not strays:
+        return None
+
+    lines = code.splitlines()
+
+    if not _defines_entrypoint(tree):
+        future_end = 0
+        for node in tree.body:
+            if isinstance(node, ast.ImportFrom) and node.module == "__future__":
+                future_end = max(future_end, node.end_lineno or 0)
+        head = lines[:future_end]
+        body = lines[future_end:]
+        indented = [("    " + line) if line.strip() else line for line in body]
+        repaired = head + ["", "def %s(n_rows, seed):" % _REPAIR_WRAPPER] + indented
+        return ("\n".join(repaired) + "\n",
+                t("codegen.return_wrapped", name=_REPAIR_WRAPPER))
+
+    # Sondan basa: bir satirin degismesi digerlerinin numarasini kaydirmasin.
+    for node in sorted(strays, key=lambda n: n.lineno, reverse=True):
+        index = node.lineno - 1
+        line = lines[index]
+        rest = line[node.col_offset + len("return"):]
+        if rest.strip():
+            lines[index] = line[:node.col_offset] + "%s =%s" % (_RESULT_BINDING, rest)
+        else:
+            lines[index] = line[:node.col_offset] + "pass"
+    return ("\n".join(lines) + "\n",
+            t("codegen.return_rebound", count=len(strays), name=_RESULT_BINDING))
+
+
+# --------------------------------------------------------------------------- #
 # 2. Bellek watchdog (psutil - Windows uyumlu)
 # --------------------------------------------------------------------------- #
 class _MemoryWatchdog(threading.Thread):
@@ -404,6 +509,13 @@ def execute_in_sandbox(
     Kod, ``generate_data(n_rows, seed) -> pd.DataFrame`` imzali bir fonksiyon
     tanimlamalidir; harness bu fonksiyonu cagirip ciktiyi parquet olarak yazar.
     """
+    # Onarim statik denetimden ONCE: guvenlik kontrolu her zaman calisacak
+    # olan nihai metni gormeli.
+    repair = repair_module_level_return(code)
+    if repair is not None:
+        code = repair[0]
+        log.info("Sandbox repaired a module-level return before execution")
+
     static_import_check(code)
 
     workdir = Path(tempfile.mkdtemp(prefix="aids_sbx_", dir=str(config.WORK_DIR)))
@@ -840,6 +952,7 @@ def _generation_loop(
     history: List[str] = []
     signatures: set = set()
     auto_imports: List[str] = []
+    code_repairs: List[str] = []
     feedback = ""
 
     def run(source: str) -> Tuple[ExecutionResult, bool]:
@@ -864,6 +977,14 @@ def _generation_loop(
         check_cancel()
         emit(t("codegen.attempt", attempt=attempt, total=max_retries),
              sandbox=True)
+
+        # Onarim burada, run()'in icinde degil: `code` yeniden baglanmali ki
+        # kullaniciya verilen *_generator.py de tek basina calissin.
+        repair = repair_module_level_return(code)
+        if repair is not None:
+            code, note = repair
+            code_repairs.append(note)
+            emit(note, sandbox=True)
 
         result, rejected = run(code)
         check_cancel()
@@ -921,6 +1042,7 @@ def _generation_loop(
                     "row_counts": {n: int(len(f)) for n, f in tables.items()},
                     "relational": relational,
                     "auto_imports": auto_imports,
+                    "code_repairs": code_repairs,
                 }
                 return tables, code, meta
             feedback = "The generated data does not match the schema:\n- " + "\n- ".join(issues)

@@ -502,6 +502,8 @@ MESSAGES = {
     "codegen.attempt_failed": "Попытка {attempt} не удалась: {error}",
     "codegen.hint": "Подсказка по исправлению: {hint}",
     "codegen.auto_import": "Недостающий импорт добавлен автоматически ({line}), повторный запуск без вызова LLM...",
+    "codegen.return_wrapped": "Найден `return` вне функции; код обёрнут в {name}(n_rows, seed), чтобы он смог выполниться...",
+    "codegen.return_rebound": "{count} оператор(ов) `return` вне функции преобразованы в присваивание {name}; используется уже определённая точка входа...",
     "codegen.attempt_ok": "Попытка {attempt} увенчалась успехом: строки {rows} (столбцы {seconds}, {columns})",
     "codegen.attempt_ok_relational": "Попытка {attempt} увенчалась успехом: таблицы {tables} ({seconds}) — {counts}",
     "codegen.schema_mismatch": "Попытка {attempt}: обнаружены несоответствия схемы {count}.",
@@ -869,6 +871,8 @@ MESSAGES = {
 
     # --- Schema Sanity Checker ------------------------------------------- #
     "sanity.report.clean": "Проверка корректности схемы пройдена — семантических проблем не обнаружено.",
+    "sanity.bounds.amount_missing_min": "'{column}' похоже на денежную сумму, но нижняя граница не задана; min установлен в 0, чтобы отрицательные значения не генерировались.",
+    "sanity.bounds.amount_negative_min": "'{column}' похоже на денежную сумму, но объявлено min={declared}; поднято до 0. Если отрицательные значения нужны, укажите это в имени столбца (net_, adjustment_, ...) или отключите автокоррекцию.",
     "sanity.correlation.ambiguous_pair": "{col_a} и {col_b} образуют доменную пару, где положительная корреляция может быть верной; оставлено без изменений - проверьте сами.",
     "sanity.correlation.risk_asset_inverted": (
         "Подозрение на семантическую инверсию: '{col_a}' ({cat_a}) ↔ '{col_b}' ({cat_b}) "
