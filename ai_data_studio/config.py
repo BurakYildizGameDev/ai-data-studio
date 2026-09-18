@@ -188,6 +188,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "use_hf_seed": False,
     "hf_seed_query": "",
     "export_formats": ["csv", "parquet"],
+    "export_pdf": False,
     "appearance": "dark",
     # Arayuz dili (bkz. ai_data_studio/i18n.py). Varsayilan Ingilizce; degisiklik
     # yeniden baslatma ister, widget metinleri canli degistirilmiyor.

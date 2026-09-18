@@ -96,6 +96,11 @@ class PipelineConfig:
     # Kutuphane olarak cagrildiginda disk'e dosya birakmak istemeyebiliriz;
     # False ise [7] adimi veri/sema/kod/rapor dosyalarini hic yazmaz.
     write_outputs: bool = True
+    # Yasal provenance serhi: True ise CSV basina "# PROVENANCE: ..." satirlari,
+    # Parquet'e schema metadata, JSON'a "_provenance" ust duzey alani eklenir.
+    provenance_header: bool = False
+    # Yonetici ozeti PDF denetim raporu (Pro / Enterprise surum gerektirir)
+    export_pdf: bool = False
     z_threshold: float = validator.DEFAULT_Z_THRESHOLD
     contamination: float = validator.DEFAULT_CONTAMINATION
     correlation_guard: bool = True
@@ -1274,24 +1279,107 @@ def _write_raw_tables(tables: Dict[str, pd.DataFrame], contract: DatasetContract
     return paths
 
 
+# --------------------------------------------------------------------------- #
+# Provenance metadata helpers (EU AI Act Art. 50 / GDPR / HIPAA)
+# --------------------------------------------------------------------------- #
+_PROVENANCE_TEXT = (
+    "100% Synthetic Data - Non-PII - Generated Locally by AI Synthetic Data Studio. "
+    "This dataset contains no real personal identifiable information."
+)
+_PROVENANCE_COMPLIANCE = "EU AI Act Art. 50 / Non-Personal Data"
+_PROVENANCE_GENERATOR = "ai-data-studio"
+
+
+def _write_csv_with_provenance(df: pd.DataFrame, path: Path) -> None:
+    """CSV dosyasinin basina provenance yorum satiri ekler.
+
+    ``pd.read_csv(..., comment='#')`` ile okunabilir; standart araclar
+    yorum satirini otomatik atlar.
+    """
+    import io
+    buf = io.StringIO()
+    buf.write("# PROVENANCE: %s\n" % _PROVENANCE_TEXT)
+    buf.write("# COMPLIANCE: %s\n" % _PROVENANCE_COMPLIANCE)
+    df.to_csv(buf, index=False, encoding="utf-8")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(buf.getvalue(), encoding="utf-8")
+
+
+def _write_parquet_with_provenance(df: pd.DataFrame, path: Path) -> None:
+    """Parquet dosyasina schema metadata olarak provenance ekler.
+
+    Kolon yapisi bozulmaz; ``pd.read_parquet()`` normal okur.
+    Metadata ``pq.read_schema(path).metadata`` ile gorulebilir.
+    """
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    table = pa.Table.from_pandas(df)
+    existing_meta = table.schema.metadata or {}
+    provenance_meta = {
+        b"provenance": _PROVENANCE_TEXT.encode("utf-8"),
+        b"compliance": _PROVENANCE_COMPLIANCE.encode("utf-8"),
+        b"generator": _PROVENANCE_GENERATOR.encode("utf-8"),
+    }
+    merged = {**existing_meta, **provenance_meta}
+    table = table.replace_schema_metadata(merged)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pq.write_table(table, str(path))
+
+
+def _write_json_with_provenance(df: pd.DataFrame, path: Path) -> None:
+    """JSON dosyasina ust duzey ``_provenance`` anahtari ekler."""
+    import json as _json
+    records = _json.loads(df.to_json(orient="records", force_ascii=False))
+    output = {
+        "_provenance": {
+            "notice": _PROVENANCE_TEXT,
+            "compliance": _PROVENANCE_COMPLIANCE,
+            "generator": _PROVENANCE_GENERATOR,
+        },
+        "data": records,
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        _json.dumps(output, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
 def _write_table_files(df: pd.DataFrame, out_dir: Path, stem: str,
-                       formats: List[str]) -> Dict[str, str]:
-    """Bir tablonun veri dosyalarini istenen formatlarda yazar."""
+                       formats: List[str],
+                       provenance: bool = False) -> Dict[str, str]:
+    """Bir tablonun veri dosyalarini istenen formatlarda yazar.
+
+    *provenance* True ise dosyalara yasal serh eklenir:
+      - CSV: dosya basina ``# PROVENANCE: ...`` yorum satiri
+      - Parquet: schema metadata (``provenance``, ``compliance``, ``generator``)
+      - JSON: ust duzey ``_provenance`` anahtari
+    """
     written: Dict[str, str] = {}
     if "csv" in formats:
         target = out_dir / (stem + ".csv")
-        df.to_csv(target, index=False, encoding="utf-8")   # Bolum 10.5
+        if provenance:
+            _write_csv_with_provenance(df, target)
+        else:
+            df.to_csv(target, index=False, encoding="utf-8")
         written["csv"] = str(target)
     if "parquet" in formats:
         target = out_dir / (stem + ".parquet")
         try:
-            df.to_parquet(target, index=False)
+            if provenance:
+                _write_parquet_with_provenance(df, target)
+            else:
+                df.to_parquet(target, index=False)
             written["parquet"] = str(target)
         except Exception as exc:
             log.warning("Parquet yazılamadı (pyarrow eksik olabilir): %s", exc)
     if "json" in formats:
         target = out_dir / (stem + ".json")
-        df.to_json(target, orient="records", force_ascii=False, indent=2)
+        if provenance:
+            _write_json_with_provenance(df, target)
+        else:
+            df.to_json(target, orient="records", force_ascii=False, indent=2)
         written["json"] = str(target)
     return written
 
@@ -1318,13 +1406,15 @@ def _write_outputs(tables: Dict[str, pd.DataFrame], contract: DatasetContract,
         table_files: Dict[str, Dict[str, str]] = {}
         for name in contract.generation_order():
             written = _write_table_files(tables[name], out_dir,
-                                         "job_%d_%s" % (job_id, name), formats)
+                                         "job_%d_%s" % (job_id, name), formats,
+                                         provenance=cfg.provenance_header)
             table_files[name] = written
             for kind, path in written.items():
                 paths["%s:%s" % (kind, name)] = path
     else:
         table_files = {}
-        paths.update(_write_table_files(tables[contract.root_table], out_dir, stem, formats))
+        paths.update(_write_table_files(tables[contract.root_table], out_dir, stem, formats,
+                                        provenance=cfg.provenance_header))
 
     schema_json = contract.to_json() if contract.is_relational else schema.to_json()
     config.write_text(out_dir / (stem + "_schema.json"), schema_json)
@@ -1343,6 +1433,24 @@ def _write_outputs(tables: Dict[str, pd.DataFrame], contract: DatasetContract,
         paths["plan"] = str(out_dir / (stem + "_plan.json"))
 
     paths.update(_write_privacy_reports(report, contract, out_dir, stem, job_id))
+
+    if cfg.export_pdf or "pdf" in formats:
+        from ..reporting import generate_pdf_report, is_pdf_available
+        if is_pdf_available():
+            pdf_path = out_dir / (stem + "_audit_report.pdf")
+            try:
+                generate_pdf_report(
+                    dataframe=tables[contract.root_table],
+                    schema=schema,
+                    report=report,
+                    output_path=pdf_path,
+                    job_id=job_id,
+                    domain=contract.domain,
+                    enforce_pro=True,
+                )
+                paths["pdf"] = str(pdf_path)
+            except Exception as exc:
+                log.warning("PDF denetim raporu üretilemedi: %s", exc)
 
     if contract.is_relational:
         manifest_path = out_dir / (stem + "_manifest.json")
@@ -1502,6 +1610,10 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--web-seed", action="store_true", help=_help("cli.help.web_seed"))
     p.add_argument("--web-query", default="", help=_help("cli.help.web_query"))
     p.add_argument("--formats", default="csv,parquet", help=_help("cli.help.formats"))
+    p.add_argument("--provenance", action="store_true",
+                   help=_help("cli.help.provenance"))
+    p.add_argument("--export-pdf", action="store_true",
+                   help=_help("cli.help.export_pdf"))
     p.add_argument("--output-dir", default=None)
     p.add_argument("--push-to-hub", default="", help=_help("cli.help.push_to_hub"))
     p.add_argument("--public", action="store_true", help=_help("cli.help.public"))
@@ -1660,6 +1772,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         use_web_seed=args.web_seed or bool(args.web_query),
         web_seed_query=args.web_query,
         export_formats=[f.strip() for f in args.formats.split(",") if f.strip()],
+        provenance_header=args.provenance,
+        export_pdf=args.export_pdf,
         output_dir=Path(args.output_dir) if args.output_dir else None,
         push_to_hub=args.push_to_hub,
         hub_private=not args.public,

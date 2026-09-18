@@ -1288,3 +1288,69 @@ class TestProjectPlannerPipeline(unittest.TestCase):
         _, result = self._run()
         self.assertTrue(result.contract.is_relational)
         self.assertIn("relational", result.report)
+
+
+import pandas as pd
+
+
+class TestProvenanceOutputs(unittest.TestCase):
+    """CSV, Parquet ve JSON provenance / yasal şerh çıktı testleri."""
+
+    def setUp(self):
+        import tempfile
+        import pandas as pd
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.out_dir = Path(self.temp_dir.name)
+        self.df = pd.DataFrame({
+            "income": [50000.0, 75000.0, 120000.0],
+            "credit_score": [650, 720, 800],
+            "is_default": [0, 0, 0],
+        })
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def test_default_csv_has_no_provenance_header(self):
+        from ai_data_studio.core.orchestrator import _write_table_files
+        paths = _write_table_files(self.df, self.out_dir, "test_clean", ["csv"], provenance=False)
+        csv_text = Path(paths["csv"]).read_text(encoding="utf-8")
+        self.assertFalse(csv_text.startswith("# PROVENANCE"))
+        # Standart pd.read_csv dogrudan okuyabilmeli
+        reread = pd.read_csv(paths["csv"])
+        self.assertEqual(len(reread), 3)
+        self.assertEqual(list(reread.columns), ["income", "credit_score", "is_default"])
+
+    def test_provenance_csv_has_comment_header(self):
+        from ai_data_studio.core.orchestrator import _write_table_files
+        paths = _write_table_files(self.df, self.out_dir, "test_prov", ["csv"], provenance=True)
+        csv_text = Path(paths["csv"]).read_text(encoding="utf-8")
+        self.assertTrue(csv_text.startswith("# PROVENANCE: 100% Synthetic Data"))
+        self.assertIn("# COMPLIANCE: EU AI Act Art. 50", csv_text)
+        # comment='#' ile sorunsuz okunmali
+        reread = pd.read_csv(paths["csv"], comment="#")
+        self.assertEqual(len(reread), 3)
+        self.assertEqual(list(reread.columns), ["income", "credit_score", "is_default"])
+
+    def test_provenance_parquet_has_schema_metadata(self):
+        import pyarrow.parquet as pq
+        from ai_data_studio.core.orchestrator import _write_table_files
+        paths = _write_table_files(self.df, self.out_dir, "test_prov", ["parquet"], provenance=True)
+        schema = pq.read_schema(paths["parquet"])
+        self.assertIsNotNone(schema.metadata)
+        self.assertIn(b"provenance", schema.metadata)
+        self.assertIn(b"100% Synthetic Data", schema.metadata[b"provenance"])
+        self.assertIn(b"compliance", schema.metadata)
+        # Normal pd.read_parquet metadata'dan etkilenmeden okumali
+        reread = pd.read_parquet(paths["parquet"])
+        self.assertEqual(len(reread), 3)
+
+    def test_provenance_json_has_envelope(self):
+        import json
+        from ai_data_studio.core.orchestrator import _write_table_files
+        paths = _write_table_files(self.df, self.out_dir, "test_prov", ["json"], provenance=True)
+        data = json.loads(Path(paths["json"]).read_text(encoding="utf-8"))
+        self.assertIn("_provenance", data)
+        self.assertIn("100% Synthetic Data", data["_provenance"]["notice"])
+        self.assertIn("data", data)
+        self.assertEqual(len(data["data"]), 3)
+

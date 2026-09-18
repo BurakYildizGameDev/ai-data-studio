@@ -92,6 +92,8 @@ def build_config(
     dirty_table: str = "",
     agentic: bool = False,
     max_agent_rounds: int = 2,
+    provenance_header: bool = False,
+    export_pdf: bool = False,
 ) -> PipelineConfig:
     """Okunabilir anahtar kelimelerden bir :class:`PipelineConfig` kurar.
 
@@ -153,6 +155,8 @@ def build_config(
         export_formats=export_formats,
         output_dir=Path(output_dir) if output_dir is not None else None,
         write_outputs=exporting,
+        provenance_header=provenance_header,
+        export_pdf=export_pdf,
         z_threshold=z_threshold,
         contamination=contamination,
         correlation_guard=correlation_guard,
