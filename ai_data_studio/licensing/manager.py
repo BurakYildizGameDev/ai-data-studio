@@ -13,6 +13,7 @@ import hmac
 import json
 import logging
 import os
+import sys
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -130,7 +131,27 @@ class LicenseInfo:
 
 # Iptal listesi paketle birlikte gelir: 7/24 sunucu tutmadan calisan
 # offline-first bir CRL. Sizan bir anahtar sonraki surumde buraya girer.
-REVOCATION_LIST_PATH = Path(__file__).resolve().parent / "revoked_keys.json"
+def _revocation_list_path() -> Path:
+    """Iptal listesinin diskteki yeri.
+
+    Kaynaktan ve wheel'den kosarken modulun yanindadir. PyInstaller ile
+    paketlendiginde build_exe.py dosyayi --add-data ile ayni goreli yola
+    koyar, yani ilk aday yine tutar; farkli bir spec dosyasiyla derlenmis
+    bir exe'de dosya _MEIPASS kokune dusebilir, o yuzden oraya da bakilir.
+    Hicbiri yoksa ilk aday dondurulur ve load_revoked_keys() bos kume verir.
+    """
+    candidates = [Path(__file__).resolve().parent / "revoked_keys.json"]
+    bundle = getattr(sys, "_MEIPASS", None)
+    if bundle:
+        candidates.append(Path(bundle) / "ai_data_studio" / "licensing" / "revoked_keys.json")
+        candidates.append(Path(bundle) / "revoked_keys.json")
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return candidates[0]
+
+
+REVOCATION_LIST_PATH = _revocation_list_path()
 
 
 def load_revoked_keys() -> Set[str]:

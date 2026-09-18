@@ -6,6 +6,7 @@
 | [schema-contract.md](schema-contract.md) | Every contract field, multi-table Dataset Contracts, and the mistakes the tolerant parser repairs |
 | [relational.md](relational.md) | Multi-table datasets: integrity checks, repair order, output layout, provider advice |
 | [project-planner.md](project-planner.md) | Generating data from a project description: target, class balance, leakage, split |
+| [provenance.md](provenance.md) | Verifying a generated file offline: the three checks, every failure mode, the declaration's fields — written for an auditor |
 | [ENGINEERING_REPORT_TR.md](ENGINEERING_REPORT_TR.md) | Long-form engineering report in Turkish (see below) |
 
 ## `ENGINEERING_REPORT_TR.md`

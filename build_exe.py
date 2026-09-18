@@ -12,6 +12,7 @@ kaçırabilir; collect-all ile runtime bütünlüğü garanti edilir.
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
@@ -59,6 +60,14 @@ HIDDEN_IMPORTS = [
     "runpy",
 ]
 
+# Kod olmayan, calisma aninda okunan dosyalar: (kaynak, exe icindeki hedef dizin).
+# --hidden-import yalnizca .py modullerini toplar; bu dosyalar onun disinda kalir.
+# Iptal listesi eksik olursa load_revoked_keys() bos kume doner ve iptal edilmis
+# anahtarlar exe'de sessizce kabul edilir - bu yuzden acikca eklenir.
+DATA_FILES = [
+    (ROOT / "ai_data_studio" / "licensing" / "revoked_keys.json", "ai_data_studio/licensing"),
+]
+
 # Paketlemeye gerek olmayan agir/gereksiz bagimliliklar - boyutu ciddi dusurur.
 EXCLUDES = [
     "PyQt5", "PyQt6", "PySide2", "PySide6", "IPython", "jupyter", "notebook",
@@ -100,6 +109,11 @@ def build(onefile: bool = True, console: bool = False, clean: bool = True) -> in
         cmd += ["--hidden-import", module]
     for module in EXCLUDES:
         cmd += ["--exclude-module", module]
+    for source, destination in DATA_FILES:
+        if not source.exists():
+            print("Veri dosyasi bulunamadi: %s" % source, file=sys.stderr)
+            return 1
+        cmd += ["--add-data", "%s%s%s" % (source, os.pathsep, destination)]
 
     icon = ROOT / "ai_data_studio" / "assets" / "icon.ico"
     if icon.exists():

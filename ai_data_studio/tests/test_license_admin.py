@@ -12,6 +12,7 @@ import datetime
 import hashlib
 import hmac
 import json
+import secrets
 import unittest
 
 from ai_data_studio.licensing import LicenseManager, LicenseStatus
@@ -193,6 +194,62 @@ class TestWebhooks(unittest.TestCase):
         self.assertFalse(admin.verify_polar_webhook(
             self.payload, "v1," + sig, self.secret,
             msg_id=self.msg_id, timestamp="not-a-number"))
+
+
+try:  # pragma: no cover - gelistirme bagimliligi, CI'da kurulu degil
+    from svix.webhooks import Webhook as _SvixWebhook
+except ImportError:  # pragma: no cover
+    _SvixWebhook = None
+
+
+@unittest.skipUnless(_SvixWebhook is not None,
+                     "svix kurulu degil (pip install -r requirements-dev.txt)")
+class TestPolarAgainstTheRealSvixLibrary(unittest.TestCase):
+    """Imzayi Polar'in kullandigi kutuphaneye imzalatip bizim dogrulayiciya verir.
+
+    Digerleri HMAC'i testin icinde elle kuruyor, yani bizim yorumumuzu kendi
+    yorumumuzla karsilastiriyor: birlestirme sirasi bastan yanlis olsaydi ikisi
+    birden yanlis olur ve testler yine gecerdi. Burada imzayi svix uretiyor ve
+    bizim urettigimizi svix dogruluyor - iki yon de gercek kutuphaneye karsi.
+    """
+
+    def setUp(self):
+        self.secret_raw = base64.b64encode(secrets.token_bytes(32)).decode("ascii")
+        self.secret = "whsec_" + self.secret_raw
+        self.msg_id = "msg_2abc"
+        self.payload = b'{"type":"order.created","data":{"id":"ord_1"}}'
+        self.timestamp = int(datetime.datetime.now(
+            datetime.timezone.utc).timestamp())
+        self.moment = datetime.datetime.fromtimestamp(
+            self.timestamp, datetime.timezone.utc)
+
+    def test_a_signature_svix_produced_verifies_here(self):
+        header = _SvixWebhook(self.secret).sign(
+            self.msg_id, self.moment, self.payload.decode("utf-8"))
+
+        self.assertTrue(admin.verify_polar_webhook(
+            self.payload, header, self.secret,
+            msg_id=self.msg_id, timestamp=self.timestamp))
+
+    def test_svix_accepts_what_this_module_considers_valid(self):
+        header = _SvixWebhook(self.secret).sign(
+            self.msg_id, self.moment, self.payload.decode("utf-8"))
+
+        # Dogrulayici gecti diyorsa svix de gecmeli; aksi halde canli bir
+        # teslimatta ayrisirdik.
+        _SvixWebhook(self.secret).verify(self.payload, {
+            "svix-id": self.msg_id,
+            "svix-timestamp": str(self.timestamp),
+            "svix-signature": header,
+        })
+
+    def test_a_body_changed_after_svix_signed_it_is_refused(self):
+        header = _SvixWebhook(self.secret).sign(
+            self.msg_id, self.moment, self.payload.decode("utf-8"))
+
+        self.assertFalse(admin.verify_polar_webhook(
+            self.payload + b" ", header, self.secret,
+            msg_id=self.msg_id, timestamp=self.timestamp))
 
 
 if __name__ == "__main__":

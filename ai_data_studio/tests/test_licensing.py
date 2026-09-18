@@ -16,6 +16,7 @@ import datetime
 import hashlib
 import hmac
 import os
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -395,6 +396,42 @@ class TestKeyringServiceName(unittest.TestCase):
             self.mgr.remove_license()
 
         self.assertEqual(self.kr.store, {})
+
+
+class TestRevocationListLocation(unittest.TestCase):
+    """Iptal listesi PyInstaller paketinde de bulunabilmeli.
+
+    Exe icinde dosya bulunamazsa load_revoked_keys() bos kume doner ve iptal
+    edilmis anahtarlar sessizce kabul edilir; olculdu, --add-data eklenmeden
+    once tam olarak bu oluyordu (bkz. build_exe.py DATA_FILES).
+    """
+
+    def test_source_checkout_uses_the_file_next_to_the_module(self):
+        path = manager._revocation_list_path()
+
+        self.assertEqual(path.parent, Path(manager.__file__).resolve().parent)
+        self.assertTrue(path.is_file())
+
+    def test_bundle_root_is_searched_when_the_module_copy_is_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = Path(tmp)
+            (bundle / "revoked_keys.json").write_text(
+                '{"revoked": ["ADS-PROBE-0001"]}', encoding="utf-8")
+
+            with mock.patch.object(manager, "__file__",
+                                   str(bundle / "missing" / "manager.py")),                  mock.patch.object(sys, "_MEIPASS", str(bundle), create=True):
+                path = manager._revocation_list_path()
+
+                with mock.patch.object(manager, "REVOCATION_LIST_PATH", path):
+                    self.assertEqual(manager.load_revoked_keys(),
+                                     {"ADS-PROBE-0001"})
+
+    def test_a_missing_list_reads_as_empty_rather_than_raising(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            absent = Path(tmp) / "revoked_keys.json"
+
+            with mock.patch.object(manager, "REVOCATION_LIST_PATH", absent):
+                self.assertEqual(manager.load_revoked_keys(), set())
 
 
 if __name__ == "__main__":

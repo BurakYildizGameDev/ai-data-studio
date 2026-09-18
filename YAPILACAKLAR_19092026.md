@@ -62,7 +62,17 @@ tutarsızlığı.
 
 ---
 
-## Yarın yapılacaklar
+## 19 Eylül — durum
+
+Güne CI kırmızı başladı: PDF raporu geldiğinden beri (`9ef9018`) altı test işi de
+düşüyordu. Sebep tek değil, iki tane ve ikisi de eksik beyan:
+`reportlab` hiçbir zaman `requirements.txt`'e yazılmamıştı, üstelik yokken
+`class NumberedCanvas(canvas.Canvas)` modül yüklenirken NameError veriyordu — yani
+`ai_data_studio.reporting` import'u komple düşüyor, pytest toplama aşamasında
+ölüyordu. `cryptography` de yalnızca `google-auth` üzerinden dolaylı geliyordu.
+Üçü de düzeltildi (`3bacbe9`), temiz bir venv'de 838 test yeşil.
+
+Aşağıdaki liste bu notun yazıldığı sırayla güncellendi.
 
 ### 1. Özel anahtarı kasaya al — **ÖNCE BU** ⚠️
 
@@ -94,18 +104,25 @@ Bu arada **gerçek bir eksik bulundu ve düzeltildi:** `revoked_keys.json` paket
 dahil değildi. Kurulu sürümde `load_revoked_keys()` boş küme dönecek, yani iptal edilmiş
 anahtarlar sessizce kabul edilecekti. `[tool.setuptools.package-data]` altına eklendi.
 
-- [ ] Yarın tek yapılacak: `python -m build` çıktısını bir kez daha gözle kontrol et.
-      **Dikkat:** `build/` dizini bayatlıyor — kontrolden önce `rm -rf build dist
-      ai_data_studio.egg-info` yap, yoksa eski içeriği görürsün (bugün tam olarak bu oldu).
+- [x] **19 Eylül:** `rm -rf build dist ai_data_studio.egg-info` sonrası `python -m build`
+      ile yeniden derlendi ve wheel açılıp içine bakıldı:
+      `tools/` yok, test dosyası 0 adet, `revoked_keys.json` var, `py.typed` var.
+      sdist de aynı. Bu madde kapandı.
 
 ### 3. `build_exe.py` testi
 
-- [ ] `python build_exe.py` çalıştır, hata vermeden bitmeli.
+- [x] `python build_exe.py` çalıştı: 188 sn, `dist/AIDataStudio.exe`, 187 MB, hata yok.
+- [x] Exe içinde `tools/` **yok**, `license_admin` **yok**, `ai_data_studio.tests` **yok**,
+      `reportlab` var (arşiv 9095 giriş; `CArchiveReader` ile listelendi).
+- [x] **`revoked_keys.json` gerçekten gömülmüyordu — tahmin doğruydu, düzeltildi.**
+      PyInstaller `--hidden-import` yalnızca `.py` modüllerini topluyor, veri dosyasını
+      değil. Ölçüldü: aynı sondayı iki kez derledim, `--add-data` olmadan exe içinde
+      `exists: False`, `load_revoked_keys() == set()` — yani iptal edilmiş anahtarlar
+      exe'de sessizce kabul ediliyordu; `--add-data` ile `exists: True`,
+      `keys == ['ADS-PROBE-0001']`. `build_exe.py`'a `DATA_FILES` eklendi,
+      `manager.py` yolu `_MEIPASS` altında da arıyor, üç test eklendi.
 - [ ] Üretilen exe'yi aç: lisans rozeti başlıkta görünüyor mu, lisans diyaloğu açılıyor mu.
-- [ ] Exe içinde `tools/` olmadığını doğrula (PyInstaller `--debug imports` çıktısında ara).
-- [ ] `revoked_keys.json` exe'ye gömülmüş mü — `--add-data` gerekebilir; `manager.py`
-      dosyayı `Path(__file__).parent`'tan okuyor, PyInstaller'da bu `_MEIPASS` altına düşer.
-      **Bu muhtemelen çalışmayacak, kontrol et.**
+      (Gözle bakılacak, bende kalan tek exe maddesi bu.)
 - [ ] Exe'de PDF dışa aktarımı dene (lisanssız → uyarı, lisanslı → PDF).
 
 ### 4. LemonSqueezy ürün ve webhook kurulumu
@@ -125,18 +142,26 @@ anahtarlar sessizce kabul edilecekti. `[tool.setuptools.package-data]` altına e
 
 ### 5. Polar.sh (opsiyonel, LemonSqueezy'den sonra)
 
-- [ ] Svix imza doğrulaması **canlı bir teslimata karşı hiç test edilmedi** — `svix`
-      paketi kurulu olmadığı için çapraz doğrulama yapılamadı. İlk gerçek webhook'ta
-      doğrula; tutmazsa `{id}.{timestamp}.{body}` birleştirme sırasına bak.
+- [x] **19 Eylül: çapraz doğrulama yapıldı, imza uyuşuyor.** `svix 2.5.0` kuruldu;
+      imzayı kütüphaneye attırıp `verify_polar_webhook()` ile doğruladık, sonra tersini
+      yaptık — `svix.verify()` bizim geçerli saydığımızı da kabul ediyor. Gövde
+      değiştirilince, `msg_id` değişince ve timestamp eskiyince reddediliyor, rotasyonlu
+      başlıkta ikinci imza tutuyor. `{id}.{timestamp}.{body}` sırası doğruymuş.
+      Üç test eklendi (`TestPolarAgainstTheRealSvixLibrary`); `svix` yoksa atlanıyor,
+      `requirements-dev.txt`'e girdi. CI yalnızca `requirements.txt` kurduğu için orada
+      atlanır — yerelde `pip install -r requirements-dev.txt` ile koşar.
+- [ ] Geriye kalan tek belirsizlik: Polar'ın **gerçekte** gönderdiği başlık adları ve
+      gövdenin birebir baytları. İlk canlı teslimatta ham isteği logla ve bir kez bak.
 
 ### 6. Küçük işler
 
-- [ ] Bu dosyanın adı `yapilicaklar_1909.md` — repodaki diğer dosya `YAPILACAKLAR.md`.
-      Tutarlılık istersen `git mv yapilicaklar_1909.md YAPILACAKLAR_19092026.md`.
-- [ ] `docs/` altına kısa bir `provenance.md` yaz: denetçiye verilecek "bu dosyayı nasıl
-      doğrularsınız" sayfası. README'deki bölüm başlangıç olarak yeterli.
+- [x] Dosya adı `YAPILACAKLAR_19092026.md` oldu (`git mv`).
+- [x] `docs/provenance.md` yazıldı ve README ile `docs/README.md`'den bağlandı. İçindeki
+      bütün çıktılar gerçek: imzasız, imzalı ve veri değiştirilmiş üç durum tek
+      kullanımlık bir ana anahtarla üretilip `verify_output_file` ile koşturuldu.
 - [ ] CI'da POSIX izin testi (`test_license_file_is_owner_only_on_posix`) Windows'ta
-      atlanıyor; ubuntu matrisinde koştuğunu bir kez gözle doğrula.
+      atlanıyor; ubuntu matrisinde koştuğunu bir kez gözle doğrula. CI bugüne kadar
+      kırmızıydı, yani bu hiç görülmedi — `3bacbe9` sonrası ilk yeşil koşuda bak.
 
 ---
 

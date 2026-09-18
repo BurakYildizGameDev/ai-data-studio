@@ -409,6 +409,9 @@ call, and no network request is made. Revoked keys ship with the client in
 `ai_data_studio/licensing/revoked_keys.json` and are refused even when their signature is
 valid.
 
+[docs/provenance.md](docs/provenance.md) is written for the person on the receiving end: what
+each line of the result means, what every failure looks like, and how to read the data back.
+
 What this does **not** do: the declaration states what the tool measured. Whether a dataset may
 be transferred, published or relied on for a given purpose is the data controller's
 determination, not the generator's. An unlicensed run still writes the declaration; it is
@@ -572,6 +575,7 @@ tools/                          # Seller side only - NOT shipped, NOT in build_e
 - [docs/schema-contract.md](docs/schema-contract.md) — contract fields, multi-table contracts, tolerant parsing
 - [docs/relational.md](docs/relational.md) — multi-table datasets, integrity checks, output layout
 - [docs/project-planner.md](docs/project-planner.md) — generating data from a project description
+- [docs/provenance.md](docs/provenance.md) — the page to hand an auditor: how to verify a file offline
 - [docs/ENGINEERING_REPORT_TR.md](docs/ENGINEERING_REPORT_TR.md) — long-form engineering report in Turkish
 
 ## License

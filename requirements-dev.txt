@@ -2,5 +2,8 @@
 
 pytest>=7.0
 ruff
+# Polar.sh webhook imzasini uretenin ta kendisi: test_license_admin.py imzayi
+# ona attirip bizim dogrulayiciyla karsilastirir. Yoksa o testler atlanir.
+svix>=1.0
 # build_exe.py
 pyinstaller>=6.0
