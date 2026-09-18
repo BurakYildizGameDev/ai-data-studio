@@ -2,6 +2,7 @@
 """Enterprise PDF Report generation tests."""
 from __future__ import annotations
 
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -47,19 +48,42 @@ class TestPDFReportGeneration(unittest.TestCase):
             ],
         )
 
+        # Pipeline raporunun GERCEK sekli (orchestrator ciktisiyla birebir).
+        # Eski fixture "validation" / "privacy" / "raw_rows" anahtarlarini
+        # kullaniyordu; bu anahtarlar hicbir zaman uretilmiyordu, yani testler
+        # yanlis bir sozlesmeyi dogruluyordu.
         self.report = {
-            "raw_rows": 210,
-            "validation": {
-                "rows_after_validation": 200,
-                "zscore_removed": 6,
-                "isolation_forest_removed": 4,
-                "category_failures": 0,
-                "rule_failures": 0,
-            },
-            "privacy": {
-                "mean_dcr": 0.384,
-                "nndr_ratio": 0.891,
-                "jensen_shannon_mean": 0.038,
+            "rows_in": 210,
+            "rows_out": 200,
+            "retention_pct": 95.2,
+            "removed_total": 10,
+            "stages": [
+                {"stage": "Duplicate removal", "rows_before": 210,
+                 "rows_after": 210, "removed": 0, "removed_pct": 0.0},
+                {"stage": "Schema bounds", "rows_before": 210,
+                 "rows_after": 204, "removed": 6, "removed_pct": 2.86},
+                {"stage": "Z-score outliers", "rows_before": 204,
+                 "rows_after": 200, "removed": 4, "removed_pct": 1.96},
+            ],
+            "business_rules": [
+                {"rule": "credit_score <= 850", "status": "applied",
+                 "violations": 0, "violation_pct": 0.0},
+            ],
+            "correlations": [
+                {"pair": ["annual_income", "credit_score"],
+                 "expected_sign": "positive", "min_r": 0.3,
+                 "method": "pearson", "actual_r": 0.71, "pass": True},
+            ],
+            "schema_conformance": {"missing_columns": [], "extra_columns": [],
+                                   "column_order_matches": True},
+            "privacy_audit": {
+                "has_reference_data": True,
+                "overall_privacy_status": "NO_ISSUES_FOUND",
+                "distribution_divergence": 0.038,
+                "dcr": {"mean_dcr": 0.384, "min_dcr": 0.11,
+                        "risk_level": "LOW", "identical_matches": 0},
+                "nndr": {"mean_nndr": 0.891, "median_nndr": 0.9,
+                         "memorization_risk": "LOW", "low_ratio_count": 0},
             },
         }
 
@@ -202,6 +226,117 @@ class TestPDFParagraphInjection(unittest.TestCase):
             'Sales <img src="http://attacker.invalid/beacon.png" width="9" height="9"/>')
         self.assertTrue(produced.startswith(b"%PDF"))
         self.assertNotIn(b"/XObject", produced)
+
+
+class TestPDFReportTruthfulness(unittest.TestCase):
+    """Rapor yalnizca OLCULEN seyleri beyan etmeli.
+
+    Onceki surum report["validation"] / report["privacy"] / report["raw_rows"]
+    okuyordu. Pipeline bu anahtarlarin hicbirini uretmez, dolayisiyla her
+    rapor sifir sayimlar ve sabit 0.38 / 0.89 / 0.04 gizlilik degerleriyle
+    doluyor, yaninda kosulsuz "PASSED" / "Low Risk" basiyordu.
+    """
+
+    def setUp(self):
+        from reportlab import rl_config
+        # Sikistirmasiz yaz: metin PDF'e duz "(...) Tj" olarak girer ve
+        # disari bagimlilik olmadan okunabilir.
+        self._old_compression = rl_config.pageCompression
+        rl_config.pageCompression = 0
+
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.out_pdf = Path(self.temp_dir.name) / "r.pdf"
+        n = 20
+        self.df = pd.DataFrame({
+            "value_a": np.arange(n, dtype=float),
+            "label": ["row-%d" % i for i in range(n)],
+        })
+        self.schema = SchemaContract(
+            domain="probe", row_count_target=n,
+            columns=[ColumnSpec(name="value_a", type="float"),
+                     ColumnSpec(name="label", type="string")],
+        )
+
+    def tearDown(self):
+        from reportlab import rl_config
+        rl_config.pageCompression = self._old_compression
+        self.temp_dir.cleanup()
+
+    def _text(self, report) -> str:
+        generate_pdf_report(dataframe=self.df, schema=self.schema, report=report,
+                            output_path=self.out_pdf, job_id=1, domain="probe",
+                            enforce_pro=False)
+        data = self.out_pdf.read_bytes().decode("latin-1")
+        return " ".join(re.findall(r"\(([^)]*)\)", data))
+
+    def test_missing_privacy_audit_invents_no_metrics(self):
+        text = self._text({"rows_in": 20, "rows_out": 20})
+        for fabricated in ("0.380", "0.890", "0.040",
+                           "Zero Overfitting", "Excellent Privacy"):
+            self.assertNotIn(fabricated, text)
+        self.assertIn("No privacy audit", text)
+
+    def test_failing_business_rules_are_not_reported_as_passed(self):
+        text = self._text({
+            "rows_in": 20, "rows_out": 20,
+            "business_rules": [{"rule": "x <= y", "status": "applied",
+                                "violations": 7, "violation_pct": 35.0}],
+        })
+        self.assertIn("7 violations", text)
+        self.assertIn("FAILED", text)
+        self.assertIn("REVIEW REQUIRED", text)
+
+    def test_failing_correlation_is_not_reported_as_passed(self):
+        text = self._text({
+            "rows_in": 20, "rows_out": 20,
+            "correlations": [{"pair": ["a", "b"], "expected_sign": "positive",
+                              "min_r": 0.3, "actual_r": 0.01, "pass": False}],
+        })
+        self.assertIn("FAILED", text)
+
+    def test_clean_run_is_reported_as_passed(self):
+        text = self._text({
+            "rows_in": 20, "rows_out": 20,
+            "business_rules": [{"rule": "x <= y", "status": "applied",
+                                "violations": 0, "violation_pct": 0.0}],
+            "correlations": [{"pair": ["a", "b"], "expected_sign": "positive",
+                              "min_r": 0.3, "actual_r": 0.8, "pass": True}],
+            "schema_conformance": {"missing_columns": [], "extra_columns": []},
+        })
+        self.assertIn("PASSED", text)
+        self.assertNotIn("REVIEW REQUIRED", text)
+
+    def test_unmeasured_checks_say_not_measured(self):
+        text = self._text({"rows_in": 20, "rows_out": 20})
+        self.assertIn("NOT MEASURED", text)
+        self.assertNotIn("REVIEW REQUIRED", text)
+
+    def test_real_stage_names_reach_the_scorecard(self):
+        text = self._text({
+            "rows_in": 20, "rows_out": 18,
+            "stages": [{"stage": "Schema bounds", "rows_before": 20,
+                        "rows_after": 18, "removed": 2, "removed_pct": 10.0}],
+        })
+        self.assertIn("Schema bounds", text)
+        self.assertIn("Rows In", text)
+
+    def test_auditor_risk_level_drives_the_privacy_verdict(self):
+        text = self._text({
+            "rows_in": 20, "rows_out": 20,
+            "privacy_audit": {
+                "has_reference_data": True,
+                "distribution_divergence": 0.4,
+                "dcr": {"mean_dcr": 0.01, "risk_level": "HIGH"},
+                "nndr": {"mean_nndr": 0.1, "memorization_risk": "HIGH"},
+            },
+        })
+        self.assertIn("HIGH RISK", text)
+        self.assertNotIn("LOW RISK", text)
+
+    def test_footer_does_not_claim_certification(self):
+        text = self._text({"rows_in": 20, "rows_out": 20})
+        self.assertNotIn("Provenance Certified", text)
+        self.assertIn("Provenance Declaration", text)
 
 if __name__ == "__main__":
     unittest.main()

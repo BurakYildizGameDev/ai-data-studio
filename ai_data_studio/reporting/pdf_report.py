@@ -59,6 +59,38 @@ from ..licensing import get_license_manager
 log = logging.getLogger(__name__)
 
 
+def _verdict(ok: Optional[bool], good: str, bad: str) -> str:
+    """Gercek olcume dayali verdict uretir; ``None`` = olculmedi.
+
+    Rapor hukuki bir beyandir. Olculmemis ya da basarisiz bir denetim icin
+    "PASSED" basmak beyanin tamamini gecersiz kilar, o yuzden burada sabit
+    kodlanmis bir sonuc yok.
+    """
+    if ok is None:
+        return "<font color='#b45309'><b>NOT MEASURED</b></font>"
+    color = "#059669" if ok else "#dc2626"
+    return "<font color='%s'><b>%s</b></font>" % (color, good if ok else bad)
+
+
+def _risk_verdict(level: Optional[str]) -> str:
+    """Gizlilik denetcisinin kendi risk seviyesini verdict'e cevirir.
+
+    Denetci taban cizgisini de hesaba katarak LOW/MEDIUM/HIGH/UNKNOWN
+    uretir; bunu rapor icinde yeniden esik karsilastirmasiyla turetmek
+    denetcinin kararini golgelerdi.
+    """
+    if not level or level == "UNKNOWN":
+        return "<font color='#b45309'><b>NOT MEASURED</b></font>"
+    colors_by_level = {"LOW": "#059669", "MEDIUM": "#b45309", "HIGH": "#dc2626"}
+    return "<font color='%s'><b>%s RISK</b></font>" % (
+        colors_by_level.get(level, "#b45309"), level)
+
+
+def _metric_text(value: Optional[float], fmt: str = "%.3f") -> str:
+    """Olculmemis metrik yerine sayi uydurmaz."""
+    return "—" if value is None else fmt % value
+
+
 def _rl(text: Any) -> str:
     """Paragraph'a basilacak her serbest metin buradan gecer.
 
@@ -113,7 +145,8 @@ class NumberedCanvas(canvas.Canvas):
 
         page_str = f"Page {self._pageNumber} of {page_count}"
         self.drawRightString(558, 32, page_str)
-        self.drawString(54, 32, "100% Synthetic Data • Non-PII • EU AI Act Art. 50 Provenance Certified")
+        # "Certified" degil: bu belge bir beyandir, bir belgelendirme degil.
+        self.drawString(54, 32, "100% Synthetic Data • Non-PII • EU AI Act Art. 50 Provenance Declaration")
         self.restoreState()
 
 
@@ -307,10 +340,38 @@ def generate_pdf_report(
     story.append(Paragraph("1. Executive Summary & KPIs", heading_style))
     row_count = len(dataframe)
     col_count = len(dataframe.columns)
-    val_info = report.get("validation", {})
-    cleaned_rows = val_info.get("rows_after_validation", row_count)
-    raw_rows = report.get("raw_rows", schema.row_count_target or row_count)
-    retention_rate = (cleaned_rows / raw_rows * 100.0) if raw_rows > 0 else 100.0
+
+    # Pipeline raporunun GERCEK alanlari. Onceki surum report["validation"],
+    # report["privacy"] ve report["raw_rows"] okuyordu; bu anahtarlarin ucu de
+    # hicbir zaman uretilmiyordu, dolayisiyla her rapor sifirlar ve sabit
+    # varsayilanlarla dolduruluyordu.
+    stages: List[Dict[str, Any]] = list(report.get("stages") or [])
+    rules_info: List[Dict[str, Any]] = list(report.get("business_rules") or [])
+    corr_info: List[Dict[str, Any]] = list(report.get("correlations") or [])
+    conformance: Dict[str, Any] = report.get("schema_conformance") or {}
+    privacy_audit: Dict[str, Any] = report.get("privacy_audit") or {}
+
+    raw_rows = report.get("rows_in")
+    cleaned_rows = report.get("rows_out", row_count)
+    retention_pct = report.get("retention_pct")
+    if retention_pct is None and raw_rows:
+        retention_pct = cleaned_rows / raw_rows * 100.0
+
+    rule_violations = sum(int(r.get("violations") or 0) for r in rules_info
+                          if r.get("status") == "applied")
+    corr_checked = [c for c in corr_info if c.get("pass") is not None]
+    corr_failed = [c for c in corr_checked if not c.get("pass")]
+    conformance_ok = (bool(conformance)
+                      and not conformance.get("missing_columns")
+                      and not conformance.get("extra_columns"))
+
+    # Toplu kalite karari: olculmeyen hicbir seyi "gecti" saymaz.
+    checks = [c for c in (
+        (rule_violations == 0) if rules_info else None,
+        (not corr_failed) if corr_checked else None,
+        conformance_ok if conformance else None,
+    ) if c is not None]
+    quality_ok = all(checks) if checks else None
 
     kpi_data = [
         [
@@ -323,9 +384,9 @@ def generate_pdf_report(
         [
             Paragraph(f"{schema.row_count_target:,}", table_cell),
             Paragraph(f"{row_count:,}", table_cell),
-            Paragraph(f"{retention_rate:.1f}%", table_cell),
+            Paragraph(_metric_text(retention_pct, "%.1f%%"), table_cell),
             Paragraph(f"{col_count}", table_cell),
-            Paragraph("<font color='#059669'><b>PASSED</b></font>", table_cell),
+            Paragraph(_verdict(quality_ok, "PASSED", "REVIEW REQUIRED"), table_cell),
         ],
     ]
     kpi_table = Table(kpi_data, colWidths=[100, 100, 100, 100, 104])
@@ -345,44 +406,37 @@ def generate_pdf_report(
 
     # 4. Multi-Stage Validation Breakdown
     story.append(Paragraph("2. Multi-Stage Validation Scorecard", heading_style))
-    z_removed = val_info.get("zscore_removed", 0)
-    iso_removed = val_info.get("isolation_forest_removed", 0)
-    cat_failures = val_info.get("category_failures", 0)
-    rule_failures = val_info.get("rule_failures", 0)
-
+    # Skorkart pipeline'in GERCEKTEN kostugu asamalardan kurulur. Sabit dort
+    # satir yazmak, o asama hic kosmamis olsa bile "CLEANED/PASSED" beyan
+    # ediyordu; asama adlari ayrica i18n'lidir, o yuzden ada gore eslesme yok.
     val_data = [
         [
-            Paragraph("<b>Validation Check</b>", table_header),
-            Paragraph("<b>Filter Type</b>", table_header),
-            Paragraph("<b>Detected Anomalies</b>", table_header),
-            Paragraph("<b>Status</b>", table_header),
-        ],
-        [
-            Paragraph("Statistical Z-Score Guard", table_cell),
-            Paragraph("Univariate Extreme Values", table_cell),
-            Paragraph(f"{z_removed:,} rows", table_cell),
-            Paragraph("<font color='#059669'>CLEANED</font>", table_cell),
-        ],
-        [
-            Paragraph("Isolation Forest Discriminator", table_cell),
-            Paragraph("Multivariate Outliers", table_cell),
-            Paragraph(f"{iso_removed:,} rows", table_cell),
-            Paragraph("<font color='#059669'>CLEANED</font>", table_cell),
-        ],
-        [
-            Paragraph("Categorical Domain Check", table_cell),
-            Paragraph("Discrete Value Set", table_cell),
-            Paragraph(f"{_rl(cat_failures)} invalid", table_cell),
-            Paragraph("<font color='#059669'>PASSED</font>", table_cell),
-        ],
-        [
-            Paragraph("Business Rule & Monotonicity", table_cell),
-            Paragraph("Deterministic Invariants", table_cell),
-            Paragraph(f"{_rl(rule_failures)} violations", table_cell),
-            Paragraph("<font color='#059669'>PASSED</font>", table_cell),
-        ],
+            Paragraph("<b>Validation Stage</b>", table_header),
+            Paragraph("<b>Rows In</b>", table_header),
+            Paragraph("<b>Removed</b>", table_header),
+            Paragraph("<b>Rows Out</b>", table_header),
+        ]
     ]
-    val_table = Table(val_data, colWidths=[160, 160, 100, 84])
+    if stages:
+        for st in stages:
+            before = st.get("rows_before")
+            after = st.get("rows_after")
+            removed = int(st.get("removed") or 0)
+            val_data.append([
+                Paragraph(_rl(st.get("stage", "—")), table_cell),
+                Paragraph(_metric_text(before, "%d"), table_cell),
+                Paragraph(f"{removed:,}", table_cell),
+                Paragraph(_metric_text(after, "%d"), table_cell),
+            ])
+    else:
+        val_data.append([
+            Paragraph(_verdict(None, "", ""), table_cell),
+            Paragraph("—", table_cell),
+            Paragraph("—", table_cell),
+            Paragraph("—", table_cell),
+        ])
+
+    val_table = Table(val_data, colWidths=[220, 90, 90, 104])
     val_table.setStyle(
         TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1e293b")),
@@ -393,6 +447,48 @@ def generate_pdf_report(
         ])
     )
     story.append(val_table)
+    story.append(Spacer(1, 10))
+
+    contract_data = [
+        [
+            Paragraph("<b>Contract Check</b>", table_header),
+            Paragraph("<b>Observed</b>", table_header),
+            Paragraph("<b>Status</b>", table_header),
+        ],
+        [
+            Paragraph("Business rules & invariants", table_cell),
+            Paragraph(f"{rule_violations:,} violations" if rules_info else "—", table_cell),
+            Paragraph(_verdict((rule_violations == 0) if rules_info else None,
+                               "PASSED", "FAILED"), table_cell),
+        ],
+        [
+            Paragraph("Correlation targets", table_cell),
+            Paragraph(f"{len(corr_checked) - len(corr_failed)}/{len(corr_checked)} met"
+                      if corr_checked else "—", table_cell),
+            Paragraph(_verdict((not corr_failed) if corr_checked else None,
+                               "PASSED", "FAILED"), table_cell),
+        ],
+        [
+            Paragraph("Schema conformance", table_cell),
+            Paragraph(
+                ("%d missing, %d extra" % (len(conformance.get("missing_columns") or []),
+                                           len(conformance.get("extra_columns") or [])))
+                if conformance else "—", table_cell),
+            Paragraph(_verdict(conformance_ok if conformance else None,
+                               "PASSED", "FAILED"), table_cell),
+        ],
+    ]
+    contract_table = Table(contract_data, colWidths=[220, 160, 124])
+    contract_table.setStyle(
+        TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1e293b")),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8fafc")]),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ])
+    )
+    story.append(contract_table)
     story.append(Spacer(1, 12))
 
     # 5. Correlation Structure & Heatmap
@@ -405,50 +501,72 @@ def generate_pdf_report(
         ]))
 
     # 6. Privacy & Leakage Audit (DCR, NNDR)
-    priv_info = report.get("privacy", {})
-    dcr_score = priv_info.get("mean_dcr", 0.38)
-    nndr_score = priv_info.get("nndr_ratio", 0.89)
-    js_div = priv_info.get("jensen_shannon_mean", 0.04)
+    # UYDURMA VARSAYILAN YOK. Onceki surum report["privacy"] okuyordu - boyle
+    # bir anahtar hic uretilmiyor - ve bulunamayinca 0.38 / 0.89 / 0.04
+    # basiyordu. Yani her rapor, gizlilik denetimi hic kosmamis olsa bile
+    # olculmus gibi gorunen uc sayi ve "Low Risk" beyani tasiyordu.
+    dcr_info: Dict[str, Any] = privacy_audit.get("dcr") or {}
+    nndr_info: Dict[str, Any] = privacy_audit.get("nndr") or {}
+    dcr_score = dcr_info.get("mean_dcr")
+    nndr_score = nndr_info.get("mean_nndr")
+    js_div = privacy_audit.get("distribution_divergence")
+    has_reference = bool(privacy_audit.get("has_reference_data"))
 
     story.append(Paragraph("4. Privacy Audit & Leakage Metrics", heading_style))
-    priv_data = [
-        [
-            Paragraph("<b>Metric</b>", table_header),
-            Paragraph("<b>Target Threshold</b>", table_header),
-            Paragraph("<b>Observed Value</b>", table_header),
-            Paragraph("<b>Privacy Assessment</b>", table_header),
-        ],
-        [
-            Paragraph("Distance to Closest Record (DCR)", table_cell),
-            Paragraph("> 0.15 (safe from memorization)", table_cell),
-            Paragraph(f"{dcr_score:.3f}", table_cell),
-            Paragraph("<font color='#059669'>Low Risk (Zero Overfitting)</font>", table_cell),
-        ],
-        [
-            Paragraph("Nearest Neighbor Ratio (NNDR)", table_cell),
-            Paragraph("> 0.70 (diverse synthesis)", table_cell),
-            Paragraph(f"{nndr_score:.3f}", table_cell),
-            Paragraph("<font color='#059669'>Excellent Privacy Shield</font>", table_cell),
-        ],
-        [
-            Paragraph("Jensen-Shannon Divergence", table_cell),
-            Paragraph("< 0.10 (distribution fidelity)", table_cell),
-            Paragraph(f"{js_div:.3f}", table_cell),
-            Paragraph("<font color='#059669'>High Statistical Match</font>", table_cell),
-        ],
-    ]
-    priv_table = Table(priv_data, colWidths=[150, 140, 90, 124])
-    priv_table.setStyle(
-        TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1e293b")),
-            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8fafc")]),
-            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
-            ("TOPPADDING", (0, 0), (-1, -1), 4),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ])
-    )
-    story.append(priv_table)
-    story.append(Spacer(1, 12))
+    if not privacy_audit:
+        story.append(Paragraph(
+            "<b>No privacy audit was performed for this run.</b> Distance to Closest "
+            "Record, Nearest Neighbour Distance Ratio and distribution divergence "
+            "require a reference dataset; run the pipeline with the privacy audit "
+            "enabled to populate this section.",
+            body_style))
+        story.append(Spacer(1, 12))
+    else:
+        if not has_reference:
+            story.append(Paragraph(
+                "No reference dataset was supplied, so memorisation metrics could "
+                "not be computed for this run.", body_style))
+            story.append(Spacer(1, 4))
+        priv_data = [
+            [
+                Paragraph("<b>Metric</b>", table_header),
+                Paragraph("<b>Reference Threshold</b>", table_header),
+                Paragraph("<b>Observed Value</b>", table_header),
+                Paragraph("<b>Auditor Assessment</b>", table_header),
+            ],
+            [
+                Paragraph("Distance to Closest Record (DCR)", table_cell),
+                Paragraph("higher is safer (baseline-relative)", table_cell),
+                Paragraph(_metric_text(dcr_score), table_cell),
+                Paragraph(_risk_verdict(dcr_info.get("risk_level")), table_cell),
+            ],
+            [
+                Paragraph("Nearest Neighbour Ratio (NNDR)", table_cell),
+                Paragraph("higher is safer (baseline-relative)", table_cell),
+                Paragraph(_metric_text(nndr_score), table_cell),
+                Paragraph(_risk_verdict(nndr_info.get("memorization_risk")), table_cell),
+            ],
+            [
+                Paragraph("Jensen-Shannon Divergence", table_cell),
+                Paragraph("0 = identical, 1 = disjoint (not a privacy guarantee)", table_cell),
+                Paragraph(_metric_text(js_div), table_cell),
+                Paragraph("<font color='#475569'><b>INFORMATIONAL</b></font>"
+                          if js_div is not None else _verdict(None, "", ""),
+                          table_cell),
+            ],
+        ]
+        priv_table = Table(priv_data, colWidths=[150, 160, 80, 114])
+        priv_table.setStyle(
+            TableStyle([
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1e293b")),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8fafc")]),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
+                ("TOPPADDING", (0, 0), (-1, -1), 4),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ])
+        )
+        story.append(priv_table)
+        story.append(Spacer(1, 12))
 
     # 7. Schema Specification & Column Dictionary
     story.append(KeepTogether([
