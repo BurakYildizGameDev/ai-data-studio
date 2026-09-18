@@ -1267,6 +1267,7 @@ MESSAGES = {
     "license.status.invalid_payload": "Bozuk lisans verisi",
     "license.status.clock_tampered": "Lisans saat denetimi başarısız: sistem saati daha önce kaydedilen tarihin gerisinde. Sistem saatini düzeltip yeniden başlatın.",
     "license.status.bad_expiry": "Lisans bitiş tarihi okunamadı",
+    "license.status.not_persisted": "Lisans doğrulandı ancak kaydedilemedi; yeniden başlatınca kaybolacak",
     "license.status.expired": "Lisans süresi {date} tarihinde doldu",
     "license.status.valid": "Aktif ve doğrulandı",
     "license.tier.community": "Topluluk Sürümü",

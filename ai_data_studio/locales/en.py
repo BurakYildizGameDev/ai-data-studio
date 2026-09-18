@@ -1260,6 +1260,7 @@ MESSAGES = {
     "license.status.invalid_payload": "Corrupted license data",
     "license.status.clock_tampered": "License clock check failed: the system clock is behind a previously recorded date. Correct the system time and restart.",
     "license.status.bad_expiry": "License expiry date could not be read",
+    "license.status.not_persisted": "License verified but could not be saved; it will be lost on restart",
     "license.status.expired": "License expired on {date}",
     "license.status.valid": "Active and verified",
     "license.tier.community": "Community Edition",

@@ -288,6 +288,51 @@ class TestExpiryAndClock(unittest.TestCase):
             self.mgr.remove_license()
 
 
+class TestLicenseFilePermissions(unittest.TestCase):
+    """Keyring yokken token'in dosyaya nasil yazildigini dogrular."""
+
+    def setUp(self):
+        self.mgr, self.private_key = ephemeral_manager()
+        self.tmp = tempfile.TemporaryDirectory()
+        self._old_file = manager.LICENSE_FILE_PATH
+        manager.LICENSE_FILE_PATH = Path(self.tmp.name) / "store" / ".license"
+
+    def tearDown(self):
+        manager.LICENSE_FILE_PATH = self._old_file
+        self.tmp.cleanup()
+
+    def _token(self):
+        return generate_signed_license(
+            {"key": "K", "tier": "pro", "expires_at": "lifetime"}, self.private_key)
+
+    def test_license_file_is_owner_only_on_posix(self):
+        """POSIX'te 0600 olmali: eskiden umask'a tabi 0644 yaziliyordu."""
+        with mock.patch("ai_data_studio.config._keyring", return_value=None):
+            info = self.mgr.install_license(self._token())
+            self.assertEqual(info.status, LicenseStatus.VALID)
+
+        path = manager.LICENSE_FILE_PATH
+        self.assertTrue(path.exists())
+        if os.name == "nt":
+            self.skipTest("POSIX izin bitleri Windows'ta uygulanmaz")
+        self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(path.parent.stat().st_mode & 0o777, 0o700)
+
+    def test_written_token_round_trips(self):
+        with mock.patch("ai_data_studio.config._keyring", return_value=None):
+            self.mgr.install_license(self._token())
+            loaded = self.mgr.get_active_license(force_reload=True)
+            self.assertEqual(loaded.status, LicenseStatus.VALID)
+            self.assertEqual(loaded.key, "K")
+
+    def test_unstorable_license_is_reported_not_silently_lost(self):
+        """Hicbir yere yazilamiyorsa kullanici bunu gormeli."""
+        with mock.patch("ai_data_studio.config._keyring", return_value=None),              mock.patch.object(manager, "_write_private",
+                               side_effect=OSError("read-only")):
+            info = self.mgr.install_license(self._token())
+            self.assertEqual(info.status, LicenseStatus.VALID)
+            self.assertIn("restart", info.status_message.lower())
+
 class TestWebhooks(unittest.TestCase):
     """LemonSqueezy and Polar.sh webhook signature verification tests."""
 

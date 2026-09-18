@@ -12,6 +12,7 @@ import hashlib
 import hmac
 import json
 import logging
+import os
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -113,6 +114,35 @@ CLOCK_SKEW_TOLERANCE = datetime.timedelta(hours=24)
 CACHE_TTL = datetime.timedelta(minutes=15)
 
 
+def _write_private(path: Path, content: str) -> None:
+    """Lisans token'ini yalnizca sahibin okuyabilecegi izinlerle yazar.
+
+    config.write_text() umask'a tabidir ve POSIX'te 0644 uretir; APP_DATA_DIR
+    de 0755 aciliyordu. Keyring'in bulunmadigi ortamlarda (headless Linux,
+    Docker, air-gapped sunucu - yani tam da Enterprise hedef kitlesi) ayni
+    makinedeki baska bir kullanici token'i okuyup kopyalayabiliyordu.
+
+    Windows'ta os.open'in mod parametresi yok sayilir; koruma oradaki
+    %LOCALAPPDATA% ACL kalitimindan gelir.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if os.name != "nt":
+        try:
+            os.chmod(path.parent, 0o700)
+        except OSError as exc:  # pragma: no cover - dosya sistemine bagli
+            log.warning("Could not tighten license directory permissions: %s", exc)
+
+    fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(content)
+
+    if os.name != "nt":
+        try:
+            os.chmod(path, 0o600)
+        except OSError as exc:  # pragma: no cover - dosya sistemine bagli
+            log.warning("Could not tighten license file permissions: %s", exc)
+
+
 def _clock_is_sane(now: datetime.datetime) -> bool:
     """Sistem saatinin geriye alinmadigini dogrular.
 
@@ -140,7 +170,7 @@ def _clock_is_sane(now: datetime.datetime) -> bool:
 
     if seen is None or now > seen:
         try:
-            config.write_text(LICENSE_SEEN_PATH, now.isoformat())
+            _write_private(LICENSE_SEEN_PATH, now.isoformat())
         except Exception as exc:  # pragma: no cover - salt okunur disk
             log.warning("Could not update license clock stamp: %s", exc)
     return True
@@ -312,9 +342,15 @@ class LicenseManager:
 
         if not stored:
             try:
-                config.write_text(LICENSE_FILE_PATH, token)
+                _write_private(LICENSE_FILE_PATH, token)
+                stored = True
             except Exception as exc:
                 log.warning("Could not write license file: %s", exc)
+
+        if not stored:
+            # Dogrulama gecti ama hicbir yere yazilamadi: kullanici "aktif"
+            # gorur, uygulamayi kapatinca lisans kaybolurdu.
+            info.status_message = t("license.status.not_persisted")
 
         self._cached_license = info
         self._cached_at = datetime.datetime.now(datetime.timezone.utc)

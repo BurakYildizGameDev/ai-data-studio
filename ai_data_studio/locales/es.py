@@ -880,6 +880,7 @@ MESSAGES = {
     "license.status.invalid_payload": "Datos de licencia dañados",
     "license.status.clock_tampered": "Comprobación del reloj fallida: el reloj del sistema es anterior a una fecha ya registrada. Corrija la hora del sistema y reinicie.",
     "license.status.bad_expiry": "No se pudo leer la fecha de caducidad de la licencia",
+    "license.status.not_persisted": "Licencia verificada pero no se pudo guardar; se perderá al reiniciar",
     "license.status.expired": "La licencia caducó el {date}",
     "license.status.valid": "Activo y verificado",
     "license.tier.community": "Edición Comunitaria",

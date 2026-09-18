@@ -880,6 +880,7 @@ MESSAGES = {
     "license.status.invalid_payload": "दूषित लाइसेंस डेटा",
     "license.status.clock_tampered": "लाइसेंस घड़ी जाँच विफल: सिस्टम घड़ी पहले दर्ज की गई तिथि से पीछे है। सिस्टम समय ठीक करके पुनः प्रारंभ करें।",
     "license.status.bad_expiry": "लाइसेंस समाप्ति तिथि पढ़ी नहीं जा सकी",
+    "license.status.not_persisted": "लाइसेंस सत्यापित हुआ पर सहेजा नहीं जा सका; पुनः प्रारंभ पर खो जाएगा",
     "license.status.expired": "लाइसेंस {date} को समाप्त हो गया",
     "license.status.valid": "सक्रिय और सत्यापित",
     "license.tier.community": "कम्युनिटी संस्करण",

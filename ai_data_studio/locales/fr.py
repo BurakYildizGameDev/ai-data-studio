@@ -899,6 +899,7 @@ MESSAGES = {
     "license.status.invalid_payload": "Données de licence corrompues",
     "license.status.clock_tampered": "Échec de la vérification de l'horloge : l'horloge système est antérieure à une date déjà enregistrée. Corrigez l'heure et redémarrez.",
     "license.status.bad_expiry": "Impossible de lire la date d'expiration de la licence",
+    "license.status.not_persisted": "Licence vérifiée mais non enregistrée ; elle sera perdue au redémarrage",
     "license.status.expired": "Licence expirée le {date}",
     "license.status.valid": "Actif et vérifié",
     "license.tier.community": "Édition Communautaire",
