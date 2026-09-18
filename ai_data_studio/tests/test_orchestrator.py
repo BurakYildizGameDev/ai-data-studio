@@ -6,6 +6,7 @@ import json
 import tempfile
 import threading
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from ai_data_studio.core import orchestrator
@@ -1291,6 +1292,88 @@ class TestProjectPlannerPipeline(unittest.TestCase):
 
 
 import pandas as pd
+
+
+class TestProvenanceStreaming(unittest.TestCase):
+    """Provenance yazicilarinin veri setini bellege sermedigini dogrular.
+
+    Olculdu (300k satir, 11 MB veri): eski JSON yolu to_json -> json.loads ->
+    json.dumps turu yapiyordu ve 359 MB tepe bellek kullaniyordu (31.8x).
+    CSV yolu StringIO'da toplayip getvalue() ile ikinci kopya cikariyordu.
+    """
+
+    def setUp(self):
+        import tempfile
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.out_dir = Path(self.temp_dir.name)
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def test_json_chunk_boundary_produces_valid_json(self):
+        """Blok birlestirme sinirinda gecerli JSON uretilmeli."""
+        import json
+        import pandas as pd
+        from ai_data_studio.core import orchestrator
+
+        rows = 25
+        df = pd.DataFrame({"i": range(rows), "s": ["r%d" % i for i in range(rows)]})
+        # Blok boyutunu kucultup birden fazla blok yazilmasini zorlariz.
+        with mock.patch.object(orchestrator, "_JSON_CHUNK_ROWS", 4):
+            paths = orchestrator._write_table_files(
+                df, self.out_dir, "chunked", ["json"], provenance=True)
+
+        doc = json.loads(Path(paths["json"]).read_text(encoding="utf-8"))
+        self.assertEqual(sorted(doc.keys()), ["_provenance", "data"])
+        self.assertEqual(len(doc["data"]), rows)
+        self.assertEqual([r["i"] for r in doc["data"]], list(range(rows)))
+        self.assertIn("compliance", doc["_provenance"])
+
+    def test_single_chunk_matches_multi_chunk_output(self):
+        import json
+        import pandas as pd
+        from ai_data_studio.core import orchestrator
+
+        df = pd.DataFrame({"i": range(12), "u": ["ğüş"] * 12})
+        paths_one = orchestrator._write_table_files(
+            df, self.out_dir, "one", ["json"], provenance=True)
+        with mock.patch.object(orchestrator, "_JSON_CHUNK_ROWS", 5):
+            paths_many = orchestrator._write_table_files(
+                df, self.out_dir, "many", ["json"], provenance=True)
+
+        one = json.loads(Path(paths_one["json"]).read_text(encoding="utf-8"))
+        many = json.loads(Path(paths_many["json"]).read_text(encoding="utf-8"))
+        self.assertEqual(one, many)
+        self.assertEqual(many["data"][0]["u"], "ğüş")
+
+    def test_csv_is_written_straight_to_the_file_handle(self):
+        """to_csv bir dosya tutamagi almali, bellekteki bir tampon degil.
+
+        Eski surum StringIO'ya yazip getvalue() ile ikinci bir kopya
+        cikariyordu; bu testin yakaladigi sey tam olarak o tampondur.
+        """
+        import io as _io
+        import pandas as pd
+        from ai_data_studio.core import orchestrator
+
+        df = pd.DataFrame({"a": [1, 2], "b": [3.0, 4.0]})
+        seen = {}
+        real_to_csv = pd.DataFrame.to_csv
+
+        def spy(self_df, target=None, **kwargs):
+            seen["target"] = target
+            return real_to_csv(self_df, target, **kwargs)
+
+        with mock.patch.object(pd.DataFrame, "to_csv", spy):
+            orchestrator._write_table_files(
+                df, self.out_dir, "spy", ["csv"], provenance=True)
+
+        target = seen.get("target")
+        self.assertIsNotNone(target, "to_csv cagrilmadi")
+        self.assertNotIsInstance(target, _io.StringIO)
+        self.assertTrue(hasattr(target, "write"))
+        self.assertTrue(hasattr(target, "name"),
+                        "to_csv bellekteki bir tampona yaziyor")
 
 
 class TestOutputPathTraversal(unittest.TestCase):
