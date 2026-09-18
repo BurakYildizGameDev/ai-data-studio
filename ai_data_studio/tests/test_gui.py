@@ -1124,6 +1124,111 @@ class TestAuthAndOllamaDialogs(unittest.TestCase):
         opened.assert_called_once_with("https://ollama.com/download")
 
 
+
+@unittest.skipUnless(GUI_AVAILABLE, "Grafik ortami yok")
+class TestTemplateFallback(unittest.TestCase):
+    """Ollama'si, oturumu ve anahtari olmayan kullanicinin yolu.
+
+    Sablon secildiginde arayuz model aramaz, sozlesme hazir gider ve kosu
+    hicbir saglayiciya cikmaz.
+    """
+
+    def setUp(self):
+        from unittest import mock
+
+        from ai_data_studio import config
+
+        self._settings_patch = mock.patch.object(
+            config, "load_settings", return_value=dict(config.DEFAULT_SETTINGS)
+        )
+        self._settings_patch.start()
+        self.addCleanup(self._settings_patch.stop)
+
+        from ai_data_studio.gui.app_window import AppWindow
+        self.app = make_tk(AppWindow)
+        self.app.withdraw()
+        self.app.update_idletasks()
+        self.view = self.app.pipeline_view
+
+    def tearDown(self):
+        try:
+            self.app.destroy()
+        except Exception:
+            pass
+
+    def _select_template(self, name: str) -> None:
+        label = next(key for key, value in self.view._template_labels.items()
+                     if value == name)
+        self.view.template_menu.set(label)
+        self.view._on_template_change(label)
+        self.app.update_idletasks()
+
+    def test_the_menu_lists_every_bundled_template(self):
+        from ai_data_studio import templates
+
+        names = {value for value in self.view._template_labels.values() if value}
+        self.assertEqual(names, {e["name"] for e in templates.list_templates()})
+
+    def test_choosing_a_template_switches_the_engine_to_parametric(self):
+        from ai_data_studio.core.orchestrator import ENGINE_PARAMETRIC
+
+        self._select_template("credit_risk")
+
+        self.assertEqual(self.view.engine, ENGINE_PARAMETRIC)
+        self.assertTrue(self.view.template_hint.cget("text"))
+
+    def test_a_template_run_needs_neither_a_model_nor_a_prompt(self):
+        """Modelsiz kullanicidan metin ya da anahtar istemek yolu kapatirdi."""
+        from unittest import mock
+
+        selector = self.view.model_selector
+        self._select_template("ecommerce_orders")
+        self.view.prompt_box.delete("1.0", "end")
+
+        with mock.patch.object(type(selector), "is_ready", return_value=False):
+            inputs = self.view.collect_inputs()
+
+        self.assertTrue(inputs["contract_json"])
+        self.assertEqual(inputs["model"], "")
+        self.assertTrue(inputs["domain_prompt"])
+
+    def test_the_contract_reaches_pipeline_config_unchanged(self):
+        import json
+        from unittest import mock
+
+        from ai_data_studio.core.orchestrator import PipelineConfig
+
+        selector = self.view.model_selector
+        self._select_template("card_transactions")
+        with mock.patch.object(type(selector), "is_ready", return_value=False):
+            inputs = self.view.collect_inputs()
+
+        cfg = PipelineConfig(**inputs)
+        self.assertEqual(json.loads(cfg.contract_json)["domain"],
+                         "Card transactions with fraud labels")
+
+    def test_without_a_template_the_error_points_at_both_ways_out(self):
+        """Eskiden yalnizca "model yok" diyordu; cikis yolunu soylemiyordu."""
+        from unittest import mock
+
+        from ai_data_studio.i18n import t
+
+        selector = self.view.model_selector
+        self.view.prompt_box.delete("1.0", "end")
+        self.view.prompt_box.insert("1.0", "musteri islemleri")
+
+        with mock.patch.object(type(selector), "is_ready", return_value=False), \
+             mock.patch.object(type(selector), "readiness_message",
+                               return_value="no model"):
+            with self.assertRaises(ValueError) as ctx:
+                self.view.collect_inputs()
+
+        message = str(ctx.exception)
+        self.assertIn("no model", message)
+        self.assertEqual(message, t("pipeline.error.no_model_or_template",
+                                    reason="no model"))
+
+
 def _all_text(widget) -> str:
     """Bir widget agacindaki tüm metinleri tek stringde toplar."""
     parts = []

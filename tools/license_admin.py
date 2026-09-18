@@ -174,6 +174,71 @@ def _within_replay_window(timestamp: Any, tolerance_s: int) -> bool:
     return abs(now - sent) <= tolerance_s
 
 
+ENTERPRISE_MARKERS = ("enterprise", "business", "team")
+
+
+def payload_from_lemonsqueezy_order(event: Dict[str, Any], *,
+                                    days: Optional[int] = 365,
+                                    lifetime: bool = False,
+                                    allow_test_mode: bool = False) -> Dict[str, Any]:
+    """Turn an ``order_created`` webhook into a licence payload.
+
+    This is the fulfilment step: webhook arrives -> signature verified ->
+    payload built here -> :func:`generate_signed_license` mints the token ->
+    the token is emailed to the buyer.
+
+    Test-mode orders are REFUSED unless *allow_test_mode* is passed. LemonSqueezy
+    sends real-looking ``order_created`` events from its test mode, and a
+    fulfilment handler that cannot tell them apart mints perfectly valid
+    lifetime licences for orders that were never paid.
+
+    The tier comes from ``meta.custom_data.tier`` when the checkout sets it, and
+    otherwise from the product/variant name, so a store that only renames its
+    products keeps working.
+    """
+    meta = event.get("meta") or {}
+    if str(meta.get("event_name") or "") != "order_created":
+        raise ValueError("not an order_created event: %r" % meta.get("event_name"))
+    if bool(meta.get("test_mode")) and not allow_test_mode:
+        raise ValueError(
+            "test-mode order refused; pass allow_test_mode=True to mint from it")
+
+    data = event.get("data") or {}
+    attributes = data.get("attributes") or {}
+    email = str(attributes.get("user_email") or "").strip()
+    if not email:
+        raise ValueError("the order carries no user_email")
+
+    first_item = attributes.get("first_order_item") or {}
+    custom = meta.get("custom_data") or {}
+    named = " ".join(str(x) for x in (
+        custom.get("tier", ""), first_item.get("product_name", ""),
+        first_item.get("variant_name", ""),
+    )).lower()
+    tier = "enterprise" if any(m in named for m in ENTERPRISE_MARKERS) else "pro"
+
+    order_number = attributes.get("order_number") or attributes.get("identifier") or "0"
+    try:
+        suffix = "%05d" % int(order_number)
+    except (TypeError, ValueError):
+        # UUID gibi sayisal olmayan tanimlayicilar: ilk 8 karakter yeter.
+        suffix = str(order_number).replace("-", "")[:8].upper()
+
+    try:
+        seats = max(1, int(first_item.get("quantity") or 1))
+    except (TypeError, ValueError):
+        seats = 1
+
+    return build_payload(
+        "ADS-%s-%s" % (tier.upper(), suffix),
+        email,
+        tier,
+        days=None if lifetime else days,
+        lifetime=lifetime,
+        seats=seats,
+    )
+
+
 def verify_lemonsqueezy_webhook(payload_bytes: bytes, signature_header: str,
                                 webhook_secret: str, *,
                                 timestamp: Optional[Any] = None,
@@ -286,6 +351,20 @@ def main(argv: Optional[list] = None) -> int:
     issue.add_argument("--no-report-key", action="store_true",
                        help="issue a v1 token that cannot sign reports")
 
+    fulfil = sub.add_parser(
+        "fulfil", help="verify a LemonSqueezy webhook body and mint the licence")
+    fulfil.add_argument("--body", required=True,
+                        help="file holding the RAW webhook body (bytes as received)")
+    fulfil.add_argument("--signature", required=True,
+                        help="the X-Signature header value")
+    fulfil.add_argument("--webhook-secret", default=os.getenv("LEMONSQUEEZY_WEBHOOK_SECRET", ""),
+                        help="store webhook secret (or LEMONSQUEEZY_WEBHOOK_SECRET)")
+    fulfil.add_argument("--days", type=int, default=365)
+    fulfil.add_argument("--lifetime", action="store_true")
+    fulfil.add_argument("--allow-test-mode", action="store_true",
+                        help="mint from a LemonSqueezy TEST-mode order (dry runs only)")
+    fulfil.add_argument("--private-key", default="")
+
     keygen = sub.add_parser("keygen", help="generate a new master keypair")
     keygen.add_argument("--out", help="write the private key to this file")
 
@@ -311,6 +390,26 @@ def main(argv: Optional[list] = None) -> int:
     if args.command == "revoke":
         path = revoke_key(args.key, args.reason)
         print("Revoked %s. Ship %s with the next release." % (args.key, path))
+        return 0
+
+    if args.command == "fulfil":
+        # Govde HAM okunur: imza baytlarin uzerinde hesaplandi, JSON'i yeniden
+        # bicimlendirmek imzayi bozar.
+        body = Path(args.body).read_bytes()
+        if not args.webhook_secret:
+            raise SystemExit(
+                "No webhook secret. Pass --webhook-secret or set "
+                "LEMONSQUEEZY_WEBHOOK_SECRET.")
+        if not verify_lemonsqueezy_webhook(body, args.signature, args.webhook_secret):
+            print("Signature does NOT match; nothing was minted.", file=sys.stderr)
+            return 1
+        payload = payload_from_lemonsqueezy_order(
+            json.loads(body.decode("utf-8")),
+            days=args.days, lifetime=args.lifetime,
+            allow_test_mode=args.allow_test_mode)
+        token = generate_signed_license(payload, _resolve_private_key(args.private_key))
+        print("# %s  %s  seats=%s" % (payload["key"], payload["email"], payload["seats"]))
+        print(token)
         return 0
 
     payload = build_payload(

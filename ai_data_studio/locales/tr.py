@@ -570,6 +570,26 @@ MESSAGES = {
     # --- CLI --help ---------------------------------------------------------- #
     "cli.help.description": "AI Synthetic Data Studio - GUI'siz uçtan uca pipeline",
     "cli.help.domain": "Üretilecek veri setinin domain/görev tanımı",
+    "run.contract.no_model_needed": "Hazır sözleşme verildi - model gerekmiyor, hiçbir yere istek gitmiyor",
+    "run.contract.engine_forced": "  -> kod üretimi için de model gerekmez: parametrik motor çalışıyor",
+    "run.contract.parsing": "Verilen sözleşme okunuyor...",
+    "run.contract.loaded": "Sözleşme yüklendi: {domain} ({columns} kolon), istenen satır: {rows}",
+    "pipeline.error.contract_needs_llm": "Hazır sözleşme modelsiz çalışır, bu yüzden şunlarla birlikte kullanılamaz: {features}",
+    "pipeline.error.contract_invalid": "Verilen sözleşme okunamadı: {error}",
+    "cli.help.template": "pakette gelen hazır bir sözleşmeden, hiçbir model olmadan üretir (bkz. --list-templates)",
+    "cli.help.list_templates": "hazır sözleşme şablonlarını listeler ve çıkar",
+    "cli.help.schema_file": "kendi Schema Contract JSON dosyanızdan, hiçbir model olmadan üretir",
+    "cli.error.template_and_schema_file": "--template ve --schema-file birlikte kullanılamaz, birini seçin.",
+    "cli.error.template_unknown": "Böyle bir şablon yok: {name}. Listelemek için --list-templates.",
+    "cli.error.schema_file_unreadable": "Şema dosyası okunamadı: {error}",
+    "cli.templates.none": "Bu derlemede şablon yok.",
+    "cli.templates.header": "Hazır sözleşme şablonları (model yok, anahtar yok, ağ yok):",
+    "cli.templates.detail": "{columns} kolon - {description}",
+    "cli.templates.usage": "Kullanımı: ai-data-studio --template <ad> --rows 5000",
+    "pipeline.template.label": "Şablon",
+    "pipeline.template.none": "Yok (modelle üret)",
+    "pipeline.template.hint": "Şablon seçilirse model gerekmez: sözleşme hazır gelir, veriyi parametrik motor derler.",
+    "pipeline.error.no_model_or_template": "{reason} - ya Ayarla düğmesiyle bir API anahtarı girin, ya da Şablon listesinden birini seçip modelsiz üretin.",
     "cli.help.project": (
         "Veri yerine PROJEYİ anlat: planlayıcı hangi verinin gerektiğine, hedef "
         "değişkene, sınıf dengesine, ayıklanacak sızıntı kolonlarına ve train/test "

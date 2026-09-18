@@ -1,0 +1,44 @@
+{
+  "domain": "Consumer credit risk scoring",
+  "description": "Loan applicants: income, credit score, debt ratio and a default label, with the monotonic relations a risk model expects.",
+  "row_count_target": 10000,
+  "random_seed": 42,
+  "columns": [
+    {"name": "applicant_id", "type": "int", "min": 1, "max": 999999,
+     "description": "Applicant identifier"},
+    {"name": "age", "type": "int", "min": 18, "max": 75,
+     "distribution": "normal", "mean": 40, "std": 12,
+     "description": "Applicant age"},
+    {"name": "annual_income", "type": "float", "min": 8000, "max": 400000,
+     "distribution": "lognormal", "mean": 11.0, "std": 0.6,
+     "description": "Declared annual income"},
+    {"name": "credit_score", "type": "int", "min": 300, "max": 850,
+     "distribution": "normal", "mean": 690, "std": 90,
+     "description": "Bureau score"},
+    {"name": "employment_years", "type": "float", "min": 0, "max": 45,
+     "distribution": "exponential", "mean": 6,
+     "description": "Years in current employment"},
+    {"name": "loan_amount", "type": "float", "min": 1000, "max": 250000,
+     "distribution": "lognormal", "mean": 9.8, "std": 0.7,
+     "description": "Requested loan amount"},
+    {"name": "debt_to_income", "type": "float", "min": 0.0, "max": 0.9,
+     "distribution": "beta",
+     "description": "Total debt divided by income"},
+    {"name": "home_ownership", "type": "category",
+     "categories": ["rent", "mortgage", "own"],
+     "description": "Housing status"},
+    {"name": "has_defaulted", "type": "bool", "target_ratio": 0.07,
+     "description": "Whether the applicant defaulted"}
+  ],
+  "business_rules": [
+    "loan_amount <= annual_income * 5",
+    "debt_to_income >= 0.0 and debt_to_income <= 0.9"
+  ],
+  "correlations": [
+    {"columns": ["annual_income", "credit_score"], "expected_sign": "positive", "min_r": 0.2}
+  ],
+  "monotonicity_rules": [
+    {"columns": ["credit_score", "has_defaulted"], "direction": "decreasing"},
+    {"columns": ["debt_to_income", "has_defaulted"], "direction": "increasing"}
+  ]
+}

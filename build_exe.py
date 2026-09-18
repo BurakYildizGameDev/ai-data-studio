@@ -25,10 +25,12 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
 import time
+import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -79,6 +81,9 @@ HIDDEN_IMPORTS = [
 DATA_FILES = [
     (ROOT / "ai_data_studio" / "licensing" / "revoked_keys.json", "ai_data_studio/licensing"),
 ]
+# Sozlesme sablonlari: modelsiz yolun tamami bunlara bagli.
+DATA_FILES += [(path, "ai_data_studio/templates")
+               for path in sorted((ROOT / "ai_data_studio" / "templates").glob("*.json"))]
 
 # Paketlemeye gerek olmayan agir/gereksiz bagimliliklar - boyutu ciddi dusurur.
 EXCLUDES = [
@@ -86,6 +91,51 @@ EXCLUDES = [
     "pytest", "sphinx", "torch", "tensorflow", "matplotlib.backends.backend_qt5agg",
     "matplotlib.backends.backend_tkagg", "tkinter.test", "test",
 ]
+
+
+# Zip'e girmemesi gereken artiklar. PyInstaller normalde bunlari uretmez ama
+# klasorde elle denenmis bir sey kalmis olabilir; dagitilan arsiv temiz olmali.
+ZIP_EXCLUDE_DIRS = {"__pycache__", ".pytest_cache"}
+ZIP_EXCLUDE_SUFFIXES = (".pyc", ".pyo", ".log", ".zip")
+
+
+def project_version() -> str:
+    """pyproject.toml'daki surum. Paketi IMPORT etmeden okunur: derleme
+    betigi uygulamanin bagimliliklarini yuklemek zorunda kalmasin."""
+    try:
+        text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    except OSError:
+        return "0.0.0"
+    match = re.search(r'^version\s*=\s*"([^"]+)"', text, re.MULTILINE)
+    return match.group(1) if match else "0.0.0"
+
+
+def package_zip(folder: Path) -> Path:
+    """onedir klasorunu tek bir dagitim arsivine koyar.
+
+    Arsivin icinde klasor KORUNUR (``AIDataStudio/AIDataStudio.exe``): onedir
+    ciktisinda exe yanindaki ``_internal`` olmadan calismaz, duz acilan bir zip
+    ise kullanicinin masaustune 9000 dosya doker.
+    """
+    target = folder.parent / ("%s-%s-win64.zip" % (folder.name, project_version()))
+    if target.exists():
+        target.unlink()
+
+    written = 0
+    with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
+        for path in sorted(folder.rglob("*")):
+            if any(part in ZIP_EXCLUDE_DIRS for part in path.parts):
+                continue
+            if path.is_dir():
+                continue
+            if path.suffix.lower() in ZIP_EXCLUDE_SUFFIXES:
+                continue
+            archive.write(path, folder.name + "/" + str(path.relative_to(folder)).replace(os.sep, "/"))
+            written += 1
+
+    size_mb = target.stat().st_size / 1024 / 1024
+    print("Dagitim arsivi: %s (%d dosya, %.1f MB)" % (target, written, size_mb))
+    return target
 
 
 def build(onefile: bool = True, console: bool = False, clean: bool = True) -> int:
@@ -182,15 +232,35 @@ def main() -> int:
                         help="Konsol penceresini birak (hata ayiklama)")
     parser.add_argument("--no-clean", action="store_true",
                         help="build/ ve dist/ dizinlerini silme")
+    parser.add_argument("--zip", action="store_true",
+                        help="onedir ciktisini dagitima hazir bir zip'e koy")
     args = parser.parse_args()
+
+    def finish(code: int, onefile: bool) -> int:
+        """Onedir ciktisi istendiyse zip'lenir; onefile zaten tek dosya."""
+        if code == 0 and args.zip and not onefile:
+            folder = ROOT / "dist" / APP_NAME
+            if not folder.is_dir():
+                print("Zip icin onedir ciktisi bulunamadi: %s" % folder,
+                      file=sys.stderr)
+                return 1
+            package_zip(folder)
+        return code
+
     if args.both:
         for onefile in (True, False):
-            code = build(onefile=onefile, console=args.console,
-                         clean=not args.no_clean)
+            code = finish(build(onefile=onefile, console=args.console,
+                                clean=not args.no_clean), onefile)
             if code != 0:
                 return code
         return 0
-    return build(onefile=not args.onedir, console=args.console, clean=not args.no_clean)
+    onefile = not args.onedir
+    if args.zip and onefile:
+        print("--zip yalnizca --onedir (ya da --both) ciktisi icin anlamlidir.",
+              file=sys.stderr)
+        return 2
+    return finish(build(onefile=onefile, console=args.console,
+                        clean=not args.no_clean), onefile)
 
 
 if __name__ == "__main__":

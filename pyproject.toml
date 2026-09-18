@@ -86,3 +86,6 @@ ai_data_studio = ["py.typed", "*.pyi", "assets/*"]
 # Iptal listesi wheel'e GIRMELI: eksik olursa load_revoked_keys() bos kume
 # doner ve iptal edilmis anahtarlar kurulu surumde sessizce kabul edilir.
 "ai_data_studio.licensing" = ["revoked_keys.json"]
+# Modelsiz yolun tamami bu dosyalara bagli: eksik olurlarsa Ollama'si ve
+# anahtari olmayan kullanicinin veri uretecek hicbir yolu kalmaz.
+"ai_data_studio.templates" = ["*.json"]

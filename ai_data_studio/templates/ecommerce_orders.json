@@ -1,0 +1,37 @@
+{
+  "domain": "E-commerce order lines",
+  "description": "Online retail orders: basket value, item count, shipping fee, delivery time and returns.",
+  "row_count_target": 10000,
+  "random_seed": 42,
+  "columns": [
+    {"name": "order_id", "type": "int", "min": 1, "max": 9999999,
+     "description": "Order identifier"},
+    {"name": "customer_age", "type": "int", "min": 18, "max": 85,
+     "distribution": "normal", "mean": 38, "std": 12,
+     "description": "Age of the ordering customer"},
+    {"name": "item_count", "type": "int", "min": 1, "max": 25,
+     "distribution": "poisson", "mean": 3,
+     "description": "Number of items in the basket"},
+    {"name": "basket_value", "type": "float", "min": 0, "max": 5000,
+     "distribution": "lognormal", "mean": 4.2, "std": 0.8,
+     "description": "Total basket value before shipping"},
+    {"name": "shipping_cost", "type": "float", "min": 0, "max": 120,
+     "distribution": "uniform",
+     "description": "Shipping fee charged to the customer"},
+    {"name": "delivery_days", "type": "int", "min": 1, "max": 21,
+     "distribution": "poisson", "mean": 4,
+     "description": "Days between order and delivery"},
+    {"name": "channel", "type": "category",
+     "categories": ["web", "ios", "android", "marketplace"],
+     "description": "Where the order was placed"},
+    {"name": "is_returned", "type": "bool", "target_ratio": 0.08,
+     "description": "Whether the order came back"}
+  ],
+  "business_rules": [
+    "shipping_cost <= basket_value",
+    "basket_value >= item_count"
+  ],
+  "correlations": [
+    {"columns": ["item_count", "basket_value"], "expected_sign": "positive", "min_r": 0.3}
+  ]
+}

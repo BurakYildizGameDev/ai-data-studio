@@ -129,6 +129,11 @@ class PipelineConfig:
     # Doluysa pipeline domain tarifi yerine PROJE tarifi alir: planlayici hangi verinin
     # gerektigine kendisi karar verir ve sozlesmeyi uretir (bkz. core/project_planner).
     project_prompt: str = ""
+    # Doluysa sozlesme HAZIR gelir (sablon ya da kullanicinin kendi JSON'i) ve
+    # pipeline hicbir modele gitmez: [1] servis kontrolu ve [2] sema uretimi
+    # atlanir, uretim parametrik motorla yapilir. Ollama'si, Claude oturumu ve
+    # API anahtari olmayan kullanicinin veri uretebildigi tek yol budur.
+    contract_json: str = ""
     # Yetim yabanci anahtarlar bulundugunda True ise satirlar elenir, False ise
     # yalnizca raporlanir - CI kapisi olarak kullanilabilsin diye.
     repair_orphans: bool = True
@@ -210,6 +215,12 @@ def run_pipeline(cfg: PipelineConfig,
     # Motor secimi is'e baslamadan once dogrulanir: yanlis yazilmis bir bayrak
     # yuzunden dakikalarca suren bir LLM cagrisindan SONRA patlamak kotu.
     engine_choice = (cfg.engine or ENGINE_LLM).strip().lower()
+    # Sozlesme hazirsa kod uretimi icin de model gerekmemeli: parametrik motor
+    # sozlesmeyi dogrudan derler. Kullanici "llm" sectiyse sessizce degistirmeyiz,
+    # asagida gorunur bir satirla soyleriz.
+    offline_contract = bool(str(cfg.contract_json or "").strip())
+    if offline_contract:
+        engine_choice = ENGINE_PARAMETRIC
     if engine_choice not in ENGINES:
         raise ValueError(t("pipeline.error.unknown_engine",
                            engine=cfg.engine, valid=", ".join(ENGINES)))
@@ -261,16 +272,32 @@ def run_pipeline(cfg: PipelineConfig,
         # [1] Servis kontrolu
         # ---------------------------------------------------------------- #
         check_cancel()
-        yield progress(1, t("run.checking_provider", provider=cfg.provider,
-                            model=cfg.resolved_model()))
-        if llm_client is None:
-            llm_client = _build_llm_client(cfg, state, job_id)
-        if llm_progress_cb is not None:
-            llm_client.progress_cb = llm_progress_cb
-        yield progress(1, t("run.service_ready", model=llm_client.model), 1.0)
-        yield progress(1, "  -> " + t("run.provider_model", provider=cfg.provider,
-                                      model=llm_client.model), 1.0)
-        if (engine_choice in (ENGINE_LLM, ENGINE_AUTO)
+        if offline_contract:
+            # Modelsiz yol: saglayiciya hic bakilmaz, ag istegi yapilmaz.
+            blocking = [name for name, used in (
+                ("--project", bool(cfg.project_prompt)),
+                ("--agentic", bool(cfg.agentic)),
+                ("--web-seed", bool(cfg.use_web_seed)),
+                ("--push-to-hub", bool(cfg.push_to_hub)),
+            ) if used]
+            if blocking:
+                raise ValueError(t("pipeline.error.contract_needs_llm",
+                                   features=", ".join(blocking)))
+            yield progress(1, t("run.contract.no_model_needed"), 1.0)
+            if (cfg.engine or ENGINE_LLM).strip().lower() != ENGINE_PARAMETRIC:
+                yield progress(1, t("run.contract.engine_forced"), 1.0)
+        else:
+            yield progress(1, t("run.checking_provider", provider=cfg.provider,
+                                model=cfg.resolved_model()))
+            if llm_client is None:
+                llm_client = _build_llm_client(cfg, state, job_id)
+            if llm_progress_cb is not None:
+                llm_client.progress_cb = llm_progress_cb
+            yield progress(1, t("run.service_ready", model=llm_client.model), 1.0)
+            yield progress(1, "  -> " + t("run.provider_model", provider=cfg.provider,
+                                          model=llm_client.model), 1.0)
+        if (not offline_contract
+                and engine_choice in (ENGINE_LLM, ENGINE_AUTO)
                 and cfg.provider == config.PROVIDER_OLLAMA):
             from ..services.ollama_service import is_small_model
             if is_small_model(llm_client.model):
@@ -353,6 +380,25 @@ def run_pipeline(cfg: PipelineConfig,
                 contract = DatasetContract.from_schema(compiled_result)
             yield progress(2, "  └─ " + t("run.agents.consensus",
                                           tables=len(contract.table_names)), 1.0)
+        elif offline_contract:
+            # Sablon ya da kullanicinin kendi JSON'i. Tek tablolu Schema Contract
+            # da, cok tablolu Dataset Contract da kabul edilir.
+            yield progress(2, t("run.contract.parsing"))
+            try:
+                contract = DatasetContract.from_dict(json.loads(cfg.contract_json))
+            except Exception as exc:
+                raise ValueError(t("pipeline.error.contract_invalid", error=exc)) from exc
+            root = contract.table(contract.root_table)
+            # Satir sayisi ve tohum sozlesmede degil, KOSUDA istenen degerdir;
+            # ayni sablondan farkli boyutta veri uretilebilmeli. Yalniz KOK
+            # tablonun sayisi degistirilir: cocuk tablolarin satir sayisi
+            # iliskilerden (mean_per_parent) turuyor.
+            root.row_count_target = cfg.row_count
+            for table in contract.tables:
+                table.random_seed = cfg.random_seed
+            yield progress(2, t("run.contract.loaded", domain=root.domain,
+                                columns=len(root.columns),
+                                rows=format(cfg.row_count, ",")), 1.0)
         elif cfg.project_prompt:
             # Planlayici yolu: kac tablo gerektigine plan karar verir, kullanici degil.
             if not 1 <= cfg.max_tables <= MAX_TABLES:
@@ -1874,6 +1920,12 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         description=t("cli.help.description"),
     )
     p.add_argument("--domain", help=_help("cli.help.domain"))
+    p.add_argument("--template", metavar="NAME", default="",
+                   help=_help("cli.help.template"))
+    p.add_argument("--list-templates", action="store_true",
+                   help=_help("cli.help.list_templates"))
+    p.add_argument("--schema-file", metavar="FILE", default="",
+                   help=_help("cli.help.schema_file"))
     p.add_argument("--project",
                    help=_help("cli.help.project"))
     p.add_argument("--check-auth", action="store_true",
@@ -2017,6 +2069,25 @@ def check_auth() -> int:
     return 0
 
 
+def _run_list_templates() -> int:
+    """``--list-templates``: pakette gelen hazir sozlesmeleri yazar."""
+    from ..templates import list_templates
+
+    entries = list_templates()
+    if not entries:
+        print(t("cli.templates.none"))
+        return 1
+    print(t("cli.templates.header"))
+    for entry in entries:
+        print("  %-20s %s" % (entry["name"], entry["domain"]))
+        print("  %-20s %s" % ("", t("cli.templates.detail",
+                                    columns=entry["columns"],
+                                    description=entry["description"])))
+    print()
+    print(t("cli.templates.usage"))
+    return 0
+
+
 def _run_verify_report(paths: List[str]) -> int:
     """``verify-report`` alt komutu: ciktilari cevrimdisi dogrular."""
     exit_code = 0
@@ -2061,16 +2132,43 @@ def main(argv: Optional[List[str]] = None) -> int:
         from .hardware_profiler import format_hardware_report
         print(format_hardware_report())
         return 0
+    if args.list_templates:
+        return _run_list_templates()
+
+    # Hazir sozlesme: sablon adi ya da dosya. Ikisi de modelsiz yolu acar.
+    contract_json = ""
+    if args.template and args.schema_file:
+        print(t("cli.error.template_and_schema_file"), file=sys.stderr)
+        return 2
+    if args.template:
+        from ..templates import template_json
+        try:
+            contract_json = template_json(args.template)
+        except KeyError:
+            print(t("cli.error.template_unknown", name=args.template),
+                  file=sys.stderr)
+            return 2
+    elif args.schema_file:
+        try:
+            contract_json = config.read_text(args.schema_file)
+        except OSError as exc:
+            print(t("cli.error.schema_file_unreadable", error=exc), file=sys.stderr)
+            return 2
+
     if args.domain and args.project:
         print(t("cli.error.domain_and_project"), file=sys.stderr)
         return 2
-    if not args.domain and not args.project:
+    if not args.domain and not args.project and not contract_json:
         print(t("cli.error.domain_or_project"), file=sys.stderr)
         return 2
 
     cfg = PipelineConfig(
-        domain_prompt=args.domain or args.project,
+        # Hazir sozlesmede alan adi sozlesmeden gelir; --domain verilmediyse
+        # is kaydinin bos bir baslikla durmamasi icin sablon adi kullanilir.
+        domain_prompt=(args.domain or args.project
+                       or args.template or args.schema_file),
         project_prompt=args.project or "",
+        contract_json=contract_json,
         provider=args.provider,
         model=args.model,
         row_count=args.rows,

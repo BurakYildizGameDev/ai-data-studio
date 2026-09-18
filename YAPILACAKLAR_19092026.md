@@ -222,6 +222,40 @@ CI'da bekleyen kırılgan test düzeltildi.
 
 876 test geçiyor, 4 atlanıyor.
 
+### 9. Bağımlılıksız kullanıcı akışı ve satış hattı (19 Eylül, gece)
+
+- [x] **Modelsiz üretim yolu açıldı.** Bulduğum asıl boşluk şuydu: parametrik motor
+      yalnızca KOD üretimini modelsiz yapıyordu, sözleşmeyi yine LLM yazıyordu — yani
+      Ollama'sı/oturumu/anahtarı olmayan kullanıcı hiçbir şey üretemiyordu.
+      `PipelineConfig.contract_json` eklendi: doluysa [1] servis kontrolü ve [2] şema
+      üretimi tamamen atlanıyor, motor parametriğe geçiyor, hiçbir sağlayıcıya
+      gidilmiyor. Modele ihtiyaç duyan seçenekler (`--project`, `--agentic`,
+      `--web-seed`, `--push-to-hub`) sessizce yok sayılmıyor, açık hatayla reddediliyor.
+- [x] **Üç hazır sözleşme** paketle geliyor (`ai_data_studio/templates/`): e-ticaret
+      siparişleri, kart işlemleri (fraud etiketli), tüketici kredi riski. Wheel'e ve
+      exe'ye dahil.
+- [x] **CLI:** `--list-templates`, `--template <ad>`, `--schema-file <dosya>`.
+      Ölçüldü: `--template ecommerce_orders --rows 500` → 494 temiz satır,
+      "0 calls, 0 tokens", $0.0000.
+- [x] **GUI:** motor menüsünün üstüne Şablon seçici eklendi; şablon seçilince motor
+      parametriğe geçiyor, Başlat artık model istemiyor, alan tarifi de zorunlu değil.
+      Model yokken çıkan hata artık iki çıkışı da söylüyor (anahtar gir / şablon seç).
+- [x] **LemonSqueezy karşılama akışı.** `payload_from_lemonsqueezy_order()` +
+      `license_admin.py fulfil` komutu: webhook gövdesi → X-Signature doğrulaması →
+      sipariş/payload eşlemesi → Ed25519 token. **Test modu siparişi varsayılan olarak
+      REDDEDİLİYOR** (`--allow-test-mode` gerekiyor): LemonSqueezy test modundan
+      gerçeğinden ayırt edilemeyen `order_created` gönderiyor, ayırt etmeyen bir
+      karşılama betiği ödenmemiş sipariş için geçerli lisans basardı.
+      23 test + arayüzde aktivasyon testi: token LicenseDialog'a yapıştırıldığında
+      rozet Pro'ya dönüyor, `require_pro` açılıyor, yeniden başlatmada kalıcı.
+- [x] **Dağıtım:** `build_exe.py --zip` onedir çıktısını
+      `dist/AIDataStudio-2.0.0-win64.zip` olarak paketliyor (klasör yapısı korunuyor;
+      `_internal` olmadan exe çalışmaz).
+
+- [ ] **Sende kalan:** LemonSqueezy hesabında iki ürün ve webhook secret'ı; gerçek bir
+      test siparişi verip `fulfil` komutunu canlı gövdeye karşı çalıştırmak. Kod tarafı
+      hazır, hesap tarafı değil.
+
 ---
 
 ## Açık bırakılan, bilinçli kararlar

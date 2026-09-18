@@ -128,6 +128,20 @@ report["monotonicity"]["passed_rules"]                          # 1 (of 1)
 
 The whole script, imports included, runs in about a second.
 
+The desktop studio and the CLI reach the same place through a contract that ships with the app.
+This is the path for a machine with no Ollama, no Claude Code session and no API key:
+
+```bash
+ai-data-studio --list-templates
+ai-data-studio --template card_transactions --rows 5000
+```
+
+Three contracts are bundled — e-commerce orders, card transactions with a fraud label, and
+consumer credit risk — and `--schema-file contract.json` takes your own instead. In the desktop
+studio it is the **Template** dropdown above the engine: pick one and the Run button stops
+asking for a model. Either way no LLM client is ever built, the engine switches to parametric,
+and the run reports $0.0000 because no call is made.
+
 ---
 
 ## Installation

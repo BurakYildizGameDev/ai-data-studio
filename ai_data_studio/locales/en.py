@@ -572,6 +572,26 @@ MESSAGES = {
     # --- CLI --help -------------------------------------------------------- #
     "cli.help.description": "AI Synthetic Data Studio - the headless end-to-end pipeline",
     "cli.help.domain": "Domain / task description of the dataset to generate",
+    "run.contract.no_model_needed": "Ready-made contract supplied - no model needed, nothing is sent anywhere",
+    "run.contract.engine_forced": "  -> code generation needs no model either: running the parametric engine",
+    "run.contract.parsing": "Reading the supplied contract...",
+    "run.contract.loaded": "Contract loaded: {domain} ({columns} columns), {rows} rows requested",
+    "pipeline.error.contract_needs_llm": "A ready-made contract runs without a model, so it cannot be combined with: {features}",
+    "pipeline.error.contract_invalid": "The supplied contract could not be read: {error}",
+    "cli.help.template": "generate from a built-in contract template, without any model (see --list-templates)",
+    "cli.help.list_templates": "list the built-in contract templates and exit",
+    "cli.help.schema_file": "generate from your own Schema Contract JSON file, without any model",
+    "cli.error.template_and_schema_file": "Use either --template or --schema-file, not both.",
+    "cli.error.template_unknown": "No such template: {name}. Run --list-templates to see them.",
+    "cli.error.schema_file_unreadable": "The schema file could not be read: {error}",
+    "cli.templates.none": "No templates are bundled with this build.",
+    "cli.templates.header": "Built-in contract templates (no model, no key, no network):",
+    "cli.templates.detail": "{columns} columns - {description}",
+    "cli.templates.usage": "Use one with: ai-data-studio --template <name> --rows 5000",
+    "pipeline.template.label": "Template",
+    "pipeline.template.none": "None (generate with a model)",
+    "pipeline.template.hint": "Pick a template and no model is needed: the contract comes ready and the data is compiled by the parametric engine.",
+    "pipeline.error.no_model_or_template": "{reason} - either enter an API key with the Configure button, or pick a Template and generate without a model.",
     "cli.help.project": (
         "Describe the PROJECT instead of the data: the planner decides what data is "
         "needed, the target variable, the class balance, which leakage columns to "

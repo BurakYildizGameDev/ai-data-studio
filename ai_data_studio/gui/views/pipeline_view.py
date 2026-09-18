@@ -73,6 +73,14 @@ ENGINE_HINTS = {
 }
 
 
+def _template_domain(entries, name: str) -> str:
+    """Sablonun alan adi; is kaydi bos bir baslikla durmasin diye."""
+    for entry in entries:
+        if entry["name"] == name:
+            return str(entry["domain"] or name)
+    return name
+
+
 def _engine_label(value: str) -> str:
     """Motor değerinden kullanıcıya görünen etikete döner (bilinmeyen -> LLM)."""
     for label, engine in ENGINE_LABELS.items():
@@ -368,17 +376,43 @@ class PipelineView(ctk.CTkFrame):
         engines_frame.grid_columnconfigure(1, weight=1)
         row += 1
 
-        ctk.CTkLabel(engines_frame, text=t("pipeline.engine.label")).grid(
+        # --- Sablon (modelsiz yol) ---------------------------------------- #
+        # Ollama'si, Claude oturumu ve API anahtari olmayan kullanici hicbir sey
+        # uretemiyordu: parametrik motor sozlesmeyi derleyebiliyor ama sozlesmeyi
+        # yazan bir model yoktu. Sablon secilirse sozlesme hazir gelir ve kosu
+        # hicbir saglayiciya gitmez.
+        from ...templates import list_templates
+
+        self._templates = list_templates()
+        self._template_labels = {t("pipeline.template.none"): ""}
+        for entry in self._templates:
+            self._template_labels["%s (%s)" % (entry["domain"], entry["name"])] = entry["name"]
+
+        ctk.CTkLabel(engines_frame, text=t("pipeline.template.label")).grid(
             row=0, column=0, sticky="w", padx=(10, 8), pady=(10, 6))
+        self.template_menu = ctk.CTkOptionMenu(
+            engines_frame, values=list(self._template_labels),
+            command=self._on_template_change)
+        self.template_menu.set(t("pipeline.template.none"))
+        self.template_menu.grid(row=0, column=1, sticky="ew", padx=(0, 10), pady=(10, 6))
+
+        self.template_hint = ctk.CTkLabel(
+            engines_frame, text="", font=ctk.CTkFont(size=11),
+            text_color=COLOR_MUTED, wraplength=430, justify="left")
+        self.template_hint.grid(row=1, column=0, columnspan=2, sticky="w",
+                                padx=10, pady=(0, 6))
+
+        ctk.CTkLabel(engines_frame, text=t("pipeline.engine.label")).grid(
+            row=2, column=0, sticky="w", padx=(10, 8), pady=(10, 6))
         self.engine_menu = ctk.CTkOptionMenu(
             engines_frame, values=list(ENGINE_LABELS), command=self._on_engine_change)
         self.engine_menu.set(_engine_label(settings.get("engine", ENGINE_LLM)))
-        self.engine_menu.grid(row=0, column=1, sticky="ew", padx=(0, 10), pady=(10, 6))
+        self.engine_menu.grid(row=2, column=1, sticky="ew", padx=(0, 10), pady=(10, 6))
 
         self.engine_hint = ctk.CTkLabel(
             engines_frame, text=ENGINE_HINTS[self.engine], font=ctk.CTkFont(size=11),
             text_color=COLOR_MUTED, wraplength=430, justify="left")
-        self.engine_hint.grid(row=1, column=0, columnspan=2, sticky="w",
+        self.engine_hint.grid(row=3, column=0, columnspan=2, sticky="w",
                               padx=10, pady=(0, 6))
         # Model listesi motor menusunden once yuklenmis olabilir (bulut saglayicilar
         # senkron dolar); kucuk model kontrolunu simdi bir kez calistir.
@@ -388,13 +422,13 @@ class PipelineView(ctk.CTkFrame):
         ctk.CTkCheckBox(engines_frame,
                         text=t("pipeline.engine.time_series"),
                         variable=self.time_series_var).grid(
-            row=2, column=0, columnspan=2, sticky="w", padx=10, pady=(0, 4))
+            row=4, column=0, columnspan=2, sticky="w", padx=10, pady=(0, 4))
 
         self.expand_features_var = ctk.BooleanVar(value=settings.get("expand_features", False))
         ctk.CTkCheckBox(engines_frame,
                         text=t("pipeline.engine.expand_features"),
                         variable=self.expand_features_var).grid(
-            row=3, column=0, columnspan=2, sticky="w", padx=10, pady=(0, 4))
+            row=5, column=0, columnspan=2, sticky="w", padx=10, pady=(0, 4))
 
         self.dirty_var = ctk.BooleanVar(value=float(settings.get("dirty_rate", 0.0)) > 0)
         ctk.CTkCheckBox(engines_frame, text=t("pipeline.engine.dirty"),
@@ -547,6 +581,27 @@ class PipelineView(ctk.CTkFrame):
             self._engine_switched_for = model
         self._refresh_engine_hint()
 
+    def _on_template_change(self, _label: str = "") -> None:
+        """Sablon secildiginde motoru parametrige alir ve bunu goruntuler.
+
+        Sozlesme hazirsa kod uretimi icin de modele gerek yok; orchestrator
+        zaten parametrik motora geciyor, menu de bunu gostermeli ki kullanici
+        neyin kostugunu ekranda gorsun.
+        """
+        name = self.template
+        if name:
+            self.engine_menu.set(_engine_label(ENGINE_PARAMETRIC))
+            self.template_hint.configure(text=t("pipeline.template.hint"),
+                                         text_color=COLOR_MUTED)
+        else:
+            self.template_hint.configure(text="")
+        self._refresh_engine_hint()
+
+    @property
+    def template(self) -> str:
+        """Secili sablonun adi; sablon secili degilse bos."""
+        return self._template_labels.get(self.template_menu.get(), "")
+
     def _refresh_engine_hint(self) -> None:
         engine = self.engine
         text, color = ENGINE_HINTS.get(engine, ""), COLOR_MUTED
@@ -685,7 +740,9 @@ class PipelineView(ctk.CTkFrame):
     def collect_inputs(self) -> Dict[str, Any]:
         """Formdaki değerleri PipelineConfig alanlarına çevirir. Hatada ValueError."""
         prompt = self.prompt_box.get("1.0", "end-1c").strip()
-        if not prompt:
+        # Sablon secildiyse alan tarifi zaten sozlesmede yaziyor; kullanicidan
+        # ayrica metin istemek modelsiz yolu gereksiz yere kapatirdi.
+        if not prompt and not self.template:
             raise ValueError(
                 t("pipeline.error.empty_project") if self.is_project_mode
                 else t("pipeline.error.empty_domain")
@@ -716,9 +773,13 @@ class PipelineView(ctk.CTkFrame):
             if not 0 < dirty_rate <= 1:
                 raise ValueError(t("pipeline.error.dirty_range"))
 
-        if not self.model_selector.is_ready():
-            raise ValueError(self.model_selector.readiness_message())
-        model = self.model_selector.model
+        # Sablon secildiyse model aranmaz: kosu hicbir saglayiciya gitmez.
+        template = self.template
+        if not template and not self.model_selector.is_ready():
+            # Hata mesaji yalnizca "model yok" demesin; iki cikisi da soylesin.
+            raise ValueError(t("pipeline.error.no_model_or_template",
+                               reason=self.model_selector.readiness_message()))
+        model = "" if template else self.model_selector.model
 
         relational = bool(self.relational_var.get()) and not self.is_project_mode
         max_tables = 6
@@ -730,7 +791,13 @@ class PipelineView(ctk.CTkFrame):
             if not 2 <= max_tables <= 12:
                 raise ValueError(t("pipeline.error.max_tables_range"))
 
+        contract_json = ""
+        if template:
+            from ...templates import template_json
+            contract_json = template_json(template)
+
         return {
+            "contract_json": contract_json,
             "relational": relational,
             "max_tables": max_tables,
             "repair_orphans": bool(self.repair_orphans_var.get()),
@@ -739,7 +806,7 @@ class PipelineView(ctk.CTkFrame):
             "expand_features": bool(self.expand_features_var.get()),
             "dirty_rate": dirty_rate,
             "agentic": bool(self.agentic_var.get()),
-            "domain_prompt": prompt,
+            "domain_prompt": prompt or _template_domain(self._templates, template),
             # Proje kipinde ayni metin plana da gecer; orchestrator project_prompt
             # doluysa sema uretimi yerine planlayiciyi calistirir.
             "project_prompt": prompt if self.is_project_mode else "",

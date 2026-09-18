@@ -133,6 +133,52 @@ class TestLicenseDialog(unittest.TestCase):
         finally:
             dialog.destroy()
 
+    def test_a_token_minted_from_a_lemonsqueezy_order_activates_in_the_dialog(self):
+        """Satin alma akisinin son halkasi: musteriye giden token arayuzde acilmali.
+
+        Zincir testte bastan kurulur - webhook govdesi, imza dogrulamasi,
+        siparis->payload eslemesi, token - ve sonunda musterinin yapacagi sey
+        yapilir: token kutuya yapistirilip Etkinlestir'e basilir.
+        """
+        import hashlib
+        import hmac
+        import json
+
+        from ai_data_studio.gui.components.license_dialog import LicenseDialog
+        from tools import license_admin as admin
+
+        secret = "test_mode_webhook_secret_0123456789"
+        order = {
+            "meta": {"test_mode": True, "event_name": "order_created",
+                     "custom_data": {}},
+            "data": {"attributes": {
+                "order_number": 42,
+                "user_email": "buyer@example.com",
+                "first_order_item": {"product_name": "AI Data Studio",
+                                     "variant_name": "Pro", "quantity": 1},
+            }},
+        }
+        body = json.dumps(order, separators=(",", ":")).encode("utf-8")
+        signature = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
+        self.assertTrue(admin.verify_lemonsqueezy_webhook(body, signature, secret))
+
+        payload = admin.payload_from_lemonsqueezy_order(
+            json.loads(body.decode("utf-8")), allow_test_mode=True)
+        token = admin.generate_signed_license(payload, self.private_key)
+
+        dialog = make_tk(lambda: LicenseDialog(self.root))
+        try:
+            dialog.key_entry.insert(0, token)
+            dialog._on_activate()
+
+            self.assertIn("Pro", dialog.current_tier_label.cget("text"))
+            info = self.mgr.get_active_license()
+            self.assertTrue(info.is_pro)
+            self.assertEqual(info.key, "ADS-PRO-00042")
+            self.assertEqual(info.email, "buyer@example.com")
+        finally:
+            dialog.destroy()
+
     def test_license_dialog_buy_button_opens_browser(self):
         from ai_data_studio.gui.components.license_dialog import LicenseDialog
 

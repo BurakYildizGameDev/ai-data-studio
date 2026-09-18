@@ -1,0 +1,43 @@
+{
+  "domain": "Card transactions with fraud labels",
+  "description": "Payment card transactions: amount, distance from the card holder, device trust and a rare fraud label.",
+  "row_count_target": 10000,
+  "random_seed": 42,
+  "columns": [
+    {"name": "customer_id", "type": "int", "min": 1, "max": 999999,
+     "description": "Card holder identifier"},
+    {"name": "customer_age", "type": "int", "min": 18, "max": 95,
+     "distribution": "normal", "mean": 42, "std": 14,
+     "description": "Age of the card holder"},
+    {"name": "credit_limit", "type": "float", "min": 500, "max": 50000,
+     "distribution": "lognormal", "mean": 8.5, "std": 0.7,
+     "description": "Approved credit limit"},
+    {"name": "transaction_amount", "type": "float", "min": 0, "max": 5000,
+     "distribution": "lognormal", "mean": 4.0, "std": 1.1,
+     "description": "Amount charged in this transaction"},
+    {"name": "distance_km", "type": "float", "min": 0, "max": 8000,
+     "distribution": "exponential", "mean": 25,
+     "description": "Distance between the transaction and the card holder's home"},
+    {"name": "device_trust_score", "type": "float", "min": 0.0, "max": 1.0,
+     "distribution": "beta",
+     "description": "How well known the device is, 1 = fully trusted"},
+    {"name": "failed_attempts_24h", "type": "int", "min": 0, "max": 12,
+     "distribution": "poisson", "mean": 0.3,
+     "description": "Failed authorisations in the last 24 hours"},
+    {"name": "card_type", "type": "category",
+     "categories": ["classic", "gold", "platinum", "business"],
+     "description": "Card product"},
+    {"name": "is_foreign", "type": "bool", "target_ratio": 0.12,
+     "description": "Transaction outside the home country"},
+    {"name": "is_fraud", "type": "bool", "target_ratio": 0.006,
+     "description": "Fraud label; deliberately rare"}
+  ],
+  "business_rules": [
+    "transaction_amount <= credit_limit",
+    "customer_age >= 18 and customer_age <= 95",
+    "failed_attempts_24h >= 0"
+  ],
+  "correlations": [
+    {"columns": ["credit_limit", "transaction_amount"], "expected_sign": "positive", "min_r": 0.2}
+  ]
+}
