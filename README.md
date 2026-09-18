@@ -240,6 +240,25 @@ tables = compile_dataset(spec, rows=10_000, seed=42)   # rows = size of the root
 tables["customers"], tables["orders"]                  # 10,000 customers, ~40,000 orders, 0 orphan keys
 ```
 
+Read exported data back, and check that a file is what it says it is:
+
+```python
+from ai_data_studio import read_output, verify_provenance
+
+df = read_output("out/job_1_orders.csv")     # csv, json or parquet; unwraps the
+                                             # provenance header transparently
+
+result = verify_provenance("out/job_1_orders.csv")
+result.ok                                    # every check passed
+result.license_key, result.license_tier      # who signed it
+result.content_matches                       # the data is the data described
+print("\n".join(result.summary_lines()))
+```
+
+`read_output` exists because a provenance CSV starts with `#` comment lines, and
+`pandas.read_csv` does not skip those by default — it raises a `ParserError`. It also reads
+floats with `float_precision="round_trip"`, so values come back bit-for-bit as written.
+
 `import ai_data_studio` takes under a millisecond; pandas and the provider SDKs load on first
 use. The package ships type information (`py.typed`).
 
@@ -292,6 +311,9 @@ Frequently used flags (`--help` lists all of them):
 | `--push-to-hub` | Uploads the clean data to a Hugging Face repository |
 | `--no-repair-orphans` | CI gate for relational runs: exit code 3 instead of deleting orphan foreign keys |
 | `--agentic` | Experimental: four LLM roles (domain analyst, statistician, critic, schema engineer) design the contract over up to two review rounds. With `qwen2.5-coder:1.5b` it finished 3 of 3 runs but took 7 calls and ~40 s each, and wrote weaker contracts (no ranges, fewer correlations) than the default single call — not recommended for small models |
+| `--provenance` | Write the provenance declaration into every output file — see [Provenance and offline verification](#provenance-and-offline-verification) |
+| `--verify-report FILE...` | Verify a generated file's provenance offline and exit; exit code 1 if any check fails |
+| `--export-pdf` | Executive audit report as PDF (requires a Pro or Enterprise licence — see [Editions](#editions)) |
 | `--hardware`, `--check-auth` | Print the hardware tier or the credential status, then exit |
 
 ---
@@ -350,6 +372,71 @@ Without reference data the memorisation check is reported as **not measured**. T
 `cap_hipaa_age` (groups ages over 89 as 90) are available in
 `ai_data_studio.core.privacy_auditor` for your own preprocessing; the pipeline does not call
 them.
+
+## Provenance and offline verification
+
+`--provenance` writes a declaration into every output file: what produced the data, when, how
+many rows, which random seed, whether a privacy audit ran, and a SHA-256 of the data itself.
+CSV gets `#` comment lines, Parquet gets schema metadata, JSON gets a top-level `_provenance`
+key, and the PDF audit report carries it in its document metadata.
+
+With a Pro or Enterprise licence the declaration is also **signed**, and anyone can check it
+without contacting a server:
+
+```bash
+ai-data-studio --verify-report out/job_1_orders.csv
+```
+
+```
+out/job_1_orders.csv
+  PASS  Licence signature valid - issued to key ADS-PRO-00042 (PRO)
+  PASS  Declaration signature valid - the declaration was produced by that licence
+  PASS  Content digest matches - the file is the data the declaration describes
+```
+
+Three separate things are checked, and a failure says which one broke:
+
+1. **The licence is real.** Its payload is verified against the public key compiled into this
+   open-source client, so a self-issued licence does not pass.
+2. **The declaration came from that licence.** Each licence carries its own report-signing
+   keypair; the public half is inside the signed payload, the private half never leaves the
+   licence holder. Copying a valid licence out of someone else's report does not let you sign
+   your own.
+3. **The data is the data.** The declared SHA-256 is recomputed from the file.
+
+Everything runs locally, which is the point for air-gapped deployments — there is no server to
+call, and no network request is made. Revoked keys ship with the client in
+`ai_data_studio/licensing/revoked_keys.json` and are refused even when their signature is
+valid.
+
+What this does **not** do: the declaration states what the tool measured. Whether a dataset may
+be transferred, published or relied on for a given purpose is the data controller's
+determination, not the generator's. An unlicensed run still writes the declaration; it is
+simply unsigned, and `--verify-report` says so rather than pretending otherwise.
+
+## Editions
+
+The code in this repository is MIT-licensed and the generation pipeline is complete without a
+licence key. A key unlocks the reporting and attestation layer.
+
+| | Community | Pro / Enterprise |
+| --- | --- | --- |
+| Generation, validation, privacy checks, all engines | ✅ | ✅ |
+| Every export format, relational output, CLI and Python API | ✅ | ✅ |
+| Provenance declaration in output files | ✅ | ✅ |
+| **Signed** provenance an auditor can verify offline | — | ✅ |
+| Executive PDF audit report (`--export-pdf`) | — | ✅ |
+| Verifying someone else's signed file (`--verify-report`) | ✅ | ✅ |
+
+Verification is deliberately free and open source: an auditor receiving a signed dataset should
+never need a licence, or a network connection, to check it.
+
+Keys are installed in the desktop studio (the header badge opens the licence dialog) or by
+placing the token where the app stores credentials. They are validated offline against the
+embedded public key; there is no activation call and no heartbeat. Enterprise payloads may
+declare `seats` and a `machine_id`, which are recorded in the manifest as statements — the tool
+does not refuse to run on a second machine, because a developer moving between a laptop and a
+desktop is a customer.
 
 ## Domain features
 
@@ -460,14 +547,23 @@ ai_data_studio/
 │   ├── relational_validator.py # Primary / foreign keys, cardinality, orphan repair
 │   ├── privacy_auditor.py      # Heuristic privacy checks (DCR / NNDR, identifier-name scan)
 │   ├── fraud_injector.py       # Fraud and rare-event scenarios
+│   ├── schema_sanity_checker.py   # Catches inverted correlations from small models
 │   ├── state_manager.py        # SQLite checkpoints and job history
 │   └── orchestrator.py         # 7-step pipeline and command line
+├── licensing/                  # Offline licence and provenance VERIFICATION
+│   ├── manager.py              # Ed25519 token verification, keyring storage
+│   ├── provenance.py           # sign_provenance() / verify_provenance()
+│   └── revoked_keys.json       # Offline revocation list, shipped with the client
+├── reporting/                  # Executive PDF audit report (ReportLab)
 ├── agents/                     # --agentic: experimental multi-role contract design
 ├── services/                   # Ollama, Gemini (AI Studio / Antigravity CLI), Claude,
 │                               # web and Hugging Face clients, shared prompt blocks
 ├── gui/                        # CustomTkinter desktop studio
-├── locales/                    # Message catalogs (en, tr, de, fr, ru, zh, ja)
+├── locales/                    # Message catalogs (en, tr, de, fr, es, ru, zh, ja, hi)
 └── tests/                      # Offline test suite with mock LLM clients
+
+tools/                          # Seller side only - NOT shipped, NOT in build_exe
+└── license_admin.py            # Issue, revoke and keygen; payment webhook checks
 ```
 
 ## Documentation
@@ -480,4 +576,8 @@ ai_data_studio/
 
 ## License
 
-Distributed under the **MIT License**. See [LICENSE](LICENSE) for details.
+The source in this repository is distributed under the **MIT License** — see [LICENSE](LICENSE).
+
+Pro and Enterprise licence keys are a commercial product on top of it; see [Editions](#editions)
+for what they unlock. Licence verification and provenance verification are part of the MIT
+source, so a signed dataset can always be checked by anyone.

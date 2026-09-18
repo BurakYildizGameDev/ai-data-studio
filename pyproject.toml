@@ -81,3 +81,6 @@ exclude = ["ai_data_studio.tests", "ai_data_studio.tests.*"]
 [tool.setuptools.package-data]
 # PEP 561: tip stub'lari ve "bu paket tiplenmis" isareti wheel'e girsin.
 ai_data_studio = ["py.typed", "*.pyi", "assets/*"]
+# Iptal listesi wheel'e GIRMELI: eksik olursa load_revoked_keys() bos kume
+# doner ve iptal edilmis anahtarlar kurulu surumde sessizce kabul edilir.
+"ai_data_studio.licensing" = ["revoked_keys.json"]

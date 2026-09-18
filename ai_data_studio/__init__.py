@@ -30,6 +30,8 @@ _EXPORTS = {
     "compile_dataset": ("ai_data_studio.api", "compile_dataset"),
     "compile_schema": ("ai_data_studio.api", "compile_schema"),
     "build_config": ("ai_data_studio.api", "build_config"),
+    "read_output": ("ai_data_studio.api", "read_output"),
+    "verify_provenance": ("ai_data_studio.api", "verify_provenance"),
     "PipelineConfig": ("ai_data_studio.core.orchestrator", "PipelineConfig"),
     "PipelineResult": ("ai_data_studio.core.orchestrator", "PipelineResult"),
     "PipelineCancelled": ("ai_data_studio.core.orchestrator", "PipelineCancelled"),

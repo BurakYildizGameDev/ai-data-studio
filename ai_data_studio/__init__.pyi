@@ -7,7 +7,9 @@ from .api import build_config as build_config
 from .api import compile_dataset as compile_dataset
 from .api import compile_schema as compile_schema
 from .api import generate as generate
+from .api import read_output as read_output
 from .api import validate as validate
+from .api import verify_provenance as verify_provenance
 from .core.orchestrator import ENGINE_AUTO as ENGINE_AUTO
 from .core.orchestrator import ENGINE_LLM as ENGINE_LLM
 from .core.orchestrator import ENGINE_PARAMETRIC as ENGINE_PARAMETRIC
