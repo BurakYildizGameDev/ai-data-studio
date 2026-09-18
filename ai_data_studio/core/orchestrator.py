@@ -22,6 +22,7 @@ import json
 import logging
 import os
 import queue
+import re
 import sys
 import threading
 import time
@@ -1126,6 +1127,41 @@ def _privacy_report_from_dict(pa_data: Dict[str, Any]):
     )
 
 
+# --------------------------------------------------------------------------- #
+# Cikti yolu guvenligi
+# --------------------------------------------------------------------------- #
+_STEM_SAFE_RE = re.compile(r"[^A-Za-z0-9_-]+")
+
+
+def _safe_stem(value: str, fallback: str = "dataset") -> str:
+    """Serbest metni dosya adi parcasina indirger.
+
+    ``contract.domain`` ve tablo adlari LLM yanitindan ya da paylasilan bir
+    sema JSON'undan gelir; sema dogrulamasi ikisinin de icerigini sinirlamaz
+    (kolon adlarinin aksine). Dogrudan dosya adina girdiklerinde ``../..``
+    ile cikti dizininden kacip keyfi dosya yazilmasina izin veriyorlardi -
+    ozellikle calistirilabilir ``_generator.py`` dosyasi.
+    """
+    cleaned = _STEM_SAFE_RE.sub("_", str(value or "")).strip("._-")
+    return cleaned[:64] or fallback
+
+
+def _out_path(out_dir: Path, filename: str) -> Path:
+    """``out_dir/filename`` yolunu kurar ve dizin sinirini asmadigini dogrular.
+
+    _safe_stem zaten ayraclari temizliyor; bu, cagiranin onu atlamasi
+    durumunda devreye giren ikinci savunma katmani.
+    """
+    base = Path(out_dir)
+    target = base / filename
+    resolved_base = base.resolve()
+    resolved_target = target.resolve()
+    if resolved_target != resolved_base and not resolved_target.is_relative_to(resolved_base):
+        raise ValueError(
+            "cikti yolu cikti dizininin disina tasiyor: %r" % filename)
+    return target
+
+
 def _write_privacy_reports(report: Dict[str, Any], contract: DatasetContract,
                            out_dir: Path, stem: str, job_id: int) -> Dict[str, str]:
     """Gizlilik denetimi yapılan HER tablo için markdown rapor yazar.
@@ -1147,13 +1183,13 @@ def _write_privacy_reports(report: Dict[str, Any], contract: DatasetContract,
             table_report = (report.get("tables") or {}).get(name) or {}
             if table_report.get("privacy_audit"):
                 targets.append(("privacy_report:%s" % name,
-                                "job_%d_%s" % (job_id, name),
+                                "job_%d_%s" % (job_id, _safe_stem(name)),
                                 table_report["privacy_audit"]))
 
     for key, file_stem, pa_data in targets:
         try:
             audit_obj = _privacy_report_from_dict(pa_data)
-            md_path = out_dir / (file_stem + "_privacy_report.md")
+            md_path = _out_path(out_dir, file_stem + "_privacy_report.md")
             config.write_text(md_path, audit_obj.to_markdown())
             written[key] = str(md_path)
         except Exception as exc:
@@ -1267,7 +1303,8 @@ def _write_raw_tables(tables: Dict[str, pd.DataFrame], contract: DatasetContract
     paths: Dict[str, str] = {}
     for name, df in tables.items():
         # Tek tabloda eski dosya adi korunur; cok tabloda tablo adi eklenir.
-        stem = "job_%d_raw" % job_id if not contract.is_relational else "job_%d_%s_raw" % (job_id, name)
+        stem = ("job_%d_raw" % job_id if not contract.is_relational
+                else "job_%d_%s_raw" % (job_id, _safe_stem(name)))
         target = config.RAW_DIR / (stem + ".parquet")
         try:
             df.to_parquet(target, index=False)
@@ -1358,14 +1395,14 @@ def _write_table_files(df: pd.DataFrame, out_dir: Path, stem: str,
     """
     written: Dict[str, str] = {}
     if "csv" in formats:
-        target = out_dir / (stem + ".csv")
+        target = _out_path(out_dir, stem + ".csv")
         if provenance:
             _write_csv_with_provenance(df, target)
         else:
             df.to_csv(target, index=False, encoding="utf-8")
         written["csv"] = str(target)
     if "parquet" in formats:
-        target = out_dir / (stem + ".parquet")
+        target = _out_path(out_dir, stem + ".parquet")
         try:
             if provenance:
                 _write_parquet_with_provenance(df, target)
@@ -1375,7 +1412,7 @@ def _write_table_files(df: pd.DataFrame, out_dir: Path, stem: str,
         except Exception as exc:
             log.warning("Parquet yazılamadı (pyarrow eksik olabilir): %s", exc)
     if "json" in formats:
-        target = out_dir / (stem + ".json")
+        target = _out_path(out_dir, stem + ".json")
         if provenance:
             _write_json_with_provenance(df, target)
         else:
@@ -1398,7 +1435,7 @@ def _write_outputs(tables: Dict[str, pd.DataFrame], contract: DatasetContract,
     out_dir = Path(cfg.output_dir or config.OUTPUT_DIR)
     out_dir.mkdir(parents=True, exist_ok=True)
     schema = contract.table(contract.root_table)
-    stem = "job_%d_%s" % (job_id, contract.domain)
+    stem = "job_%d_%s" % (job_id, _safe_stem(contract.domain))
     paths: Dict[str, str] = {}
 
     formats = [f.lower() for f in (cfg.export_formats or ["csv"])]
@@ -1406,7 +1443,7 @@ def _write_outputs(tables: Dict[str, pd.DataFrame], contract: DatasetContract,
         table_files: Dict[str, Dict[str, str]] = {}
         for name in contract.generation_order():
             written = _write_table_files(tables[name], out_dir,
-                                         "job_%d_%s" % (job_id, name), formats,
+                                         "job_%d_%s" % (job_id, _safe_stem(name)), formats,
                                          provenance=cfg.provenance_header)
             table_files[name] = written
             for kind, path in written.items():
@@ -1417,27 +1454,31 @@ def _write_outputs(tables: Dict[str, pd.DataFrame], contract: DatasetContract,
                                         provenance=cfg.provenance_header))
 
     schema_json = contract.to_json() if contract.is_relational else schema.to_json()
-    config.write_text(out_dir / (stem + "_schema.json"), schema_json)
-    paths["schema"] = str(out_dir / (stem + "_schema.json"))
+    schema_path = _out_path(out_dir, stem + "_schema.json")
+    config.write_text(schema_path, schema_json)
+    paths["schema"] = str(schema_path)
 
-    config.write_text(out_dir / (stem + "_generator.py"), code)
-    paths["code"] = str(out_dir / (stem + "_generator.py"))
+    code_path = _out_path(out_dir, stem + "_generator.py")
+    config.write_text(code_path, code)
+    paths["code"] = str(code_path)
 
-    config.write_json(out_dir / (stem + "_report.json"), report)
-    paths["report"] = str(out_dir / (stem + "_report.json"))
+    report_path = _out_path(out_dir, stem + "_report.json")
+    config.write_json(report_path, report)
+    paths["report"] = str(report_path)
 
     if plan is not None:
         # Plan sozlesmeden ayri yazilir: hedef, sinif dengesi, ayiklanan sizinti
         # kolonlari ve bolme stratejisi veri setiyle birlikte tasinmali.
-        config.write_text(out_dir / (stem + "_plan.json"), plan.to_json())
-        paths["plan"] = str(out_dir / (stem + "_plan.json"))
+        plan_path = _out_path(out_dir, stem + "_plan.json")
+        config.write_text(plan_path, plan.to_json())
+        paths["plan"] = str(plan_path)
 
     paths.update(_write_privacy_reports(report, contract, out_dir, stem, job_id))
 
     if cfg.export_pdf or "pdf" in formats:
         from ..reporting import generate_pdf_report, is_pdf_available
         if is_pdf_available():
-            pdf_path = out_dir / (stem + "_audit_report.pdf")
+            pdf_path = _out_path(out_dir, stem + "_audit_report.pdf")
             try:
                 generate_pdf_report(
                     dataframe=tables[contract.root_table],
@@ -1453,7 +1494,7 @@ def _write_outputs(tables: Dict[str, pd.DataFrame], contract: DatasetContract,
                 log.warning("PDF denetim raporu üretilemedi: %s", exc)
 
     if contract.is_relational:
-        manifest_path = out_dir / (stem + "_manifest.json")
+        manifest_path = _out_path(out_dir, stem + "_manifest.json")
         config.write_json(manifest_path,
                           _build_manifest(tables, contract, report, job_id,
                                           table_files, paths))

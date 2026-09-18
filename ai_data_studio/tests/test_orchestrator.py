@@ -1293,6 +1293,66 @@ class TestProjectPlannerPipeline(unittest.TestCase):
 import pandas as pd
 
 
+class TestOutputPathTraversal(unittest.TestCase):
+    """Cikti dosya adlarinin cikti dizini disina tasamayacagini dogrular.
+
+    ``domain`` ve tablo adlari LLM yanitindan veya paylasilan bir sema
+    JSON'undan gelir; sanitize edilmeden dosya adina girdiklerinde
+    ``../..`` ile keyfi konuma dosya yazdiriyorlardi.
+    """
+
+    def setUp(self):
+        import tempfile
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.out_dir = Path(self.temp_dir.name) / "outputs"
+        self.out_dir.mkdir()
+        self.outside = Path(self.temp_dir.name) / "outside"
+        self.outside.mkdir()
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def test_safe_stem_strips_traversal_sequences(self):
+        from ai_data_studio.core.orchestrator import _safe_stem
+        for hostile in ("../../../etc/pwned", r"..\..\Desktop\evil",
+                        "C:/abs/path", "....//....//x"):
+            stem = _safe_stem(hostile)
+            self.assertNotIn("/", stem)
+            self.assertNotIn("\\", stem)
+            self.assertNotIn("..", stem)
+            self.assertNotIn(":", stem)
+
+    def test_safe_stem_falls_back_when_nothing_survives(self):
+        from ai_data_studio.core.orchestrator import _safe_stem
+        self.assertEqual(_safe_stem(""), "dataset")
+        self.assertEqual(_safe_stem("..."), "dataset")
+        self.assertEqual(_safe_stem("///"), "dataset")
+
+    def test_out_path_rejects_escaping_filename(self):
+        from ai_data_studio.core.orchestrator import _out_path
+        with self.assertRaises(ValueError):
+            _out_path(self.out_dir, "../outside/pwned.py")
+
+    def test_out_path_accepts_plain_filename(self):
+        from ai_data_studio.core.orchestrator import _out_path
+        target = _out_path(self.out_dir, "job_1_domain.csv")
+        self.assertEqual(target.parent.resolve(), self.out_dir.resolve())
+
+    def test_hostile_domain_writes_stay_inside_output_dir(self):
+        """Uctan uca: dusmanca bir domain ile yazilan hicbir dosya disari cikmaz."""
+        import pandas as pd
+        from ai_data_studio.core.orchestrator import _safe_stem, _write_table_files
+
+        hostile = "../../outside/pwned"
+        df = pd.DataFrame({"a": [1, 2], "b": [3.0, 4.0]})
+        stem = "job_%d_%s" % (7, _safe_stem(hostile))
+        paths = _write_table_files(df, self.out_dir, stem, ["csv", "json"])
+
+        for path in paths.values():
+            self.assertEqual(Path(path).resolve().parent, self.out_dir.resolve())
+        self.assertEqual(list(self.outside.iterdir()), [])
+
+
 class TestProvenanceOutputs(unittest.TestCase):
     """CSV, Parquet ve JSON provenance / yasal şerh çıktı testleri."""
 

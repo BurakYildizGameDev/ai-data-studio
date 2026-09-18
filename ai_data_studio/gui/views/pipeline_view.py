@@ -638,7 +638,12 @@ class PipelineView(ctk.CTkFrame):
 
         res = self._last_result
         output_dir = Path(os.path.dirname(self._result_paths.get("csv") or next(iter(self._result_paths.values()), ".")))
-        target_pdf = output_dir / f"job_{res.job_id}_{res.schema.domain}_audit_report.pdf"
+        from ...core.orchestrator import _out_path, _safe_stem
+        # domain serbest metindir; sanitize edilmeden dosya adina girdiginde
+        # ``../..`` ile cikti dizininin disina yazdiriyordu.
+        target_pdf = _out_path(
+            output_dir,
+            f"job_{res.job_id}_{_safe_stem(res.schema.domain)}_audit_report.pdf")
 
         from ...reporting import generate_pdf_report, is_pdf_available
         if not is_pdf_available():
