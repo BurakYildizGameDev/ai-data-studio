@@ -882,6 +882,8 @@ MESSAGES = {
     "license.status.clock_tampered": "लाइसेंस घड़ी जाँच विफल: सिस्टम घड़ी पहले दर्ज की गई तिथि से पीछे है। सिस्टम समय ठीक करके पुनः प्रारंभ करें।",
     "license.status.bad_expiry": "लाइसेंस समाप्ति तिथि पढ़ी नहीं जा सकी",
     "license.status.not_persisted": "लाइसेंस सत्यापित हुआ पर सहेजा नहीं जा सका; पुनः प्रारंभ पर खो जाएगा",
+    "pipeline.warn.pdf_requires_license": "ऑडिट PDF नहीं लिखा गया: इसके लिए सक्रिय Pro या Enterprise लाइसेंस चाहिए।",
+    "pipeline.warn.pdf_failed": "ऑडिट PDF नहीं लिखा जा सका: {error}",
     "license.status.expired": "लाइसेंस {date} को समाप्त हो गया",
     "license.status.valid": "सक्रिय और सत्यापित",
     "license.tier.community": "कम्युनिटी संस्करण",

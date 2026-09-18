@@ -321,7 +321,10 @@ def generate_pdf_report(
     story = []
 
     # 1. Title Block
-    now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S UTC")
+    # Saat dilimi acikca UTC: onceki surum yerel saati alip yanina "UTC"
+    # yaziyordu, yani hukuki bir belgede yanlis zaman damgasi uretiyordu.
+    now_str = datetime.datetime.now(
+        datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
     story.append(Paragraph("Data Quality & Privacy Compliance Audit Report", title_style))
     story.append(Spacer(1, 4))
     story.append(

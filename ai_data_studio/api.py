@@ -40,11 +40,51 @@ __all__ = [
     "compile_dataset",
     "compile_schema",
     "build_config",
+    "read_output",
     "ENGINE_LLM",
     "ENGINE_PARAMETRIC",
     "ENGINE_AUTO",
 ]
 
+
+
+def read_output(path) -> "pd.DataFrame":
+    """Studio'nun yazdigi bir cikti dosyasini formatindan bagimsiz okur.
+
+    Provenance serhi acikken CSV dosyasi ``# PROVENANCE: ...`` yorum
+    satirlariyla basliyor ve ``pandas.read_csv`` bunlari VARSAYILAN OLARAK
+    atlamiyor: olculdu, ``comment='#'`` verilmeden okuma ParserError ile
+    dusuyor ("Expected 1 fields ... saw 2"). Excel de serh satirlarini veri
+    sanip ilk satiri baslik yapiyor. JSON ciktisi da serh acikken ``{"_provenance": ..., "data":
+    [...]}`` sarmalayicisina giriyor.
+
+    Bu yardimci ikisini de seffaf sekilde cozer; disa aktarilan veriyi geri
+    okumanin desteklenen yolu budur.
+
+    Parameters
+    ----------
+    path : str | Path
+        ``.csv``, ``.json`` veya ``.parquet`` cikti dosyasi.
+    """
+    import json as _json
+    from pathlib import Path as _Path
+
+    import pandas as pd
+
+    target = _Path(path)
+    suffix = target.suffix.lower()
+
+    if suffix == ".parquet":
+        return pd.read_parquet(target)
+
+    if suffix == ".json":
+        payload = _json.loads(target.read_text(encoding="utf-8"))
+        if isinstance(payload, dict) and "data" in payload:
+            payload = payload["data"]
+        return pd.DataFrame(payload)
+
+    # CSV: serh varsa yorum satirlari atlanir, yoksa davranis degismez.
+    return pd.read_csv(target, encoding="utf-8", comment="#")
 
 def build_config(
     domain: str,

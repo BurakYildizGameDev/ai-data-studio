@@ -384,21 +384,19 @@ def _check_correlation_transitivity(
     for rule in schema.correlations:
         columns_in_rules.update(rule.columns)
 
-    checked: Set[frozenset] = set()
-    for col_a in sorted(columns_in_rules):
-        for col_b in sorted(columns_in_rules):
-            if col_a >= col_b:
-                continue
+    # sorted() bir kez: eskiden ic ice donguler her yinelemede listeyi
+    # yeniden siraliyordu (200 kolonda ~40.000 sıralama).
+    ordered = sorted(columns_in_rules)
+    for i, col_a in enumerate(ordered):
+        for j in range(i + 1, len(ordered)):
+            col_b = ordered[j]
             edge_ab = edges.get(frozenset({col_a, col_b}))
             if not edge_ab:
                 continue
-            for col_c in sorted(columns_in_rules):
-                if col_c <= col_b:
-                    continue
-                triple_key = frozenset({col_a, col_b, col_c})
-                if triple_key in checked:
-                    continue
-                checked.add(triple_key)
+            for k in range(j + 1, len(ordered)):
+                col_c = ordered[k]
+                # a < b < c siralamasi her ucluyu zaten bir kez uretir,
+                # ayrica "checked" kumesine gerek yok.
 
                 edge_ac = edges.get(frozenset({col_a, col_c}))
                 edge_bc = edges.get(frozenset({col_b, col_c}))

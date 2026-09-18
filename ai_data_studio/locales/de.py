@@ -901,6 +901,8 @@ MESSAGES = {
     "license.status.clock_tampered": "Lizenz-Zeitprüfung fehlgeschlagen: Die Systemuhr liegt vor einem zuvor aufgezeichneten Datum. Korrigieren Sie die Systemzeit und starten Sie neu.",
     "license.status.bad_expiry": "Ablaufdatum der Lizenz konnte nicht gelesen werden",
     "license.status.not_persisted": "Lizenz geprüft, konnte aber nicht gespeichert werden; sie geht beim Neustart verloren",
+    "pipeline.warn.pdf_requires_license": "Das Audit-PDF wurde nicht geschrieben: Es erfordert eine aktive Pro- oder Enterprise-Lizenz.",
+    "pipeline.warn.pdf_failed": "Das Audit-PDF konnte nicht geschrieben werden: {error}",
     "license.status.expired": "Lizenz ist am {date} abgelaufen",
     "license.status.valid": "Aktiv und verifiziert",
     "license.tier.community": "Community Edition",

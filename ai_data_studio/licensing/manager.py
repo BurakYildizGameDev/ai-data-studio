@@ -33,7 +33,12 @@ log = logging.getLogger(__name__)
 # licenses. The matching private key now lives only in the release secret store
 # and must never appear in this repository or its tests.
 DEFAULT_PUBLIC_KEY = "o66ER5nGBFNT7Ks12CLne1sViJHwH+P2O6jKwFkbimE="
-KEYRING_SERVICE = "ai_data_studio"
+# Uygulamanin geri kalani config.KEYRING_SERVICE ("AIDataStudio") kullaniyor.
+# Lisans modulu kendi adini tasiyordu, yani kullanicinin kimlik deposunda
+# iki ayri giris olusuyordu ve bir "tum verileri sil" akisi birini kaciriyordu.
+KEYRING_SERVICE = config.KEYRING_SERVICE
+# 2.0.0 oncesi surumlerin yazdigi ad; okurken hala denenir ve tasinir.
+LEGACY_KEYRING_SERVICE = "ai_data_studio"
 KEYRING_LICENSE_KEY = "license_token"
 SETTINGS_LICENSE_KEY = "license_token"
 
@@ -112,6 +117,28 @@ LICENSE_SEEN_PATH = Path(config.APP_DATA_DIR) / ".license_seen"
 CLOCK_SKEW_TOLERANCE = datetime.timedelta(hours=24)
 # Onbellek omru: calisirken dolan bir lisans sonsuza kadar gecerli kalmasin.
 CACHE_TTL = datetime.timedelta(minutes=15)
+
+
+def _migrate_legacy_keyring_entry(kr: Any) -> Optional[str]:
+    """Eski servis adi altinda duran lisansi yeni ada tasir.
+
+    2.0.0 oncesinde lisans "ai_data_studio" altinda saklaniyordu; adi
+    config.KEYRING_SERVICE ile birlestirirken mevcut kullanicilarin
+    lisansini kaybetmemesi icin eski giris okunur ve tasinir.
+    """
+    try:
+        token = kr.get_password(LEGACY_KEYRING_SERVICE, KEYRING_LICENSE_KEY)
+    except Exception:
+        return None
+    if not token:
+        return None
+    try:
+        kr.set_password(KEYRING_SERVICE, KEYRING_LICENSE_KEY, token)
+        kr.delete_password(LEGACY_KEYRING_SERVICE, KEYRING_LICENSE_KEY)
+        log.info("Migrated license from legacy keyring entry")
+    except Exception as exc:  # pragma: no cover - keyring arka ucuna bagli
+        log.warning("Could not migrate legacy keyring entry: %s", exc)
+    return token
 
 
 def _write_private(path: Path, content: str) -> None:
@@ -365,6 +392,11 @@ class LicenseManager:
             except Exception:
                 pass
 
+            try:
+                kr.delete_password(LEGACY_KEYRING_SERVICE, KEYRING_LICENSE_KEY)
+            except Exception:
+                pass
+
         try:
             if LICENSE_FILE_PATH.exists():
                 LICENSE_FILE_PATH.unlink()
@@ -390,6 +422,8 @@ class LicenseManager:
                 token = kr.get_password(KEYRING_SERVICE, KEYRING_LICENSE_KEY)
             except Exception:
                 pass
+            if not token:
+                token = _migrate_legacy_keyring_entry(kr)
 
         if not token and LICENSE_FILE_PATH.exists():
             try:

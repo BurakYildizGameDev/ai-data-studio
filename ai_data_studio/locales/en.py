@@ -1262,6 +1262,8 @@ MESSAGES = {
     "license.status.clock_tampered": "License clock check failed: the system clock is behind a previously recorded date. Correct the system time and restart.",
     "license.status.bad_expiry": "License expiry date could not be read",
     "license.status.not_persisted": "License verified but could not be saved; it will be lost on restart",
+    "pipeline.warn.pdf_requires_license": "The audit PDF was not written: it needs an active Pro or Enterprise licence.",
+    "pipeline.warn.pdf_failed": "The audit PDF could not be written: {error}",
     "license.status.expired": "License expired on {date}",
     "license.status.valid": "Active and verified",
     "license.tier.community": "Community Edition",

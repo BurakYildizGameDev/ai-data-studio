@@ -337,6 +337,66 @@ class TestLicenseFilePermissions(unittest.TestCase):
             self.assertEqual(info.status, LicenseStatus.VALID)
             self.assertIn("restart", info.status_message.lower())
 
+
+class TestKeyringServiceName(unittest.TestCase):
+    """Lisans, uygulamanin geri kalaniyla ayni keyring servisini kullanmali.
+
+    Lisans modulu kendi adini ("ai_data_studio") tasiyordu; kullanicinin
+    kimlik deposunda iki ayri giris olusuyor ve bir "tum verileri sil" akisi
+    birini kaciriyordu.
+    """
+
+    class FakeKeyring:
+        def __init__(self):
+            self.store = {}
+
+        def get_password(self, service, account):
+            return self.store.get((service, account))
+
+        def set_password(self, service, account, value):
+            self.store[(service, account)] = value
+
+        def delete_password(self, service, account):
+            self.store.pop((service, account), None)
+
+    def setUp(self):
+        self.mgr, self.private_key = ephemeral_manager()
+        self.kr = self.FakeKeyring()
+        self.token = generate_signed_license(
+            {"key": "OLD", "tier": "pro", "expires_at": "lifetime"},
+            self.private_key)
+
+    def test_service_name_matches_the_rest_of_the_app(self):
+        from ai_data_studio import config
+
+        self.assertEqual(manager.KEYRING_SERVICE, config.KEYRING_SERVICE)
+
+    def test_legacy_entry_is_read_and_migrated(self):
+        self.kr.store[(manager.LEGACY_KEYRING_SERVICE,
+                       manager.KEYRING_LICENSE_KEY)] = self.token
+
+        with mock.patch("ai_data_studio.config._keyring", return_value=self.kr):
+            info = self.mgr.get_active_license(force_reload=True)
+
+        self.assertEqual(info.key, "OLD")
+        self.assertEqual(
+            self.kr.store.get((manager.KEYRING_SERVICE,
+                               manager.KEYRING_LICENSE_KEY)), self.token)
+        self.assertNotIn((manager.LEGACY_KEYRING_SERVICE,
+                          manager.KEYRING_LICENSE_KEY), self.kr.store)
+
+    def test_remove_license_clears_both_names(self):
+        self.kr.store[(manager.KEYRING_SERVICE,
+                       manager.KEYRING_LICENSE_KEY)] = self.token
+        self.kr.store[(manager.LEGACY_KEYRING_SERVICE,
+                       manager.KEYRING_LICENSE_KEY)] = self.token
+
+        with mock.patch("ai_data_studio.config._keyring", return_value=self.kr):
+            self.mgr.remove_license()
+
+        self.assertEqual(self.kr.store, {})
+
+
 class TestWebhooks(unittest.TestCase):
     """LemonSqueezy ve Polar.sh webhook imza dogrulama testleri."""
 

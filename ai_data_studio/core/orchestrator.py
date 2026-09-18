@@ -1485,6 +1485,12 @@ def _write_table_files(df: pd.DataFrame, out_dir: Path, stem: str,
     durumunu da tasir.
     """
     written: Dict[str, str] = {}
+    # Dizini burada aciyoruz: serhli yol kendi mkdir'ini yapiyordu, serhsiz
+    # yol yapmiyordu, yani ayni cagri provenance bayragina gore basarili ya
+    # da OSError oluyordu. Uretimde _write_outputs zaten aciyor; bu, dogrudan
+    # cagiranlar icin tutarlilik.
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
     if provenance and provenance_fields is None:
         provenance_fields = _provenance_fields(df)
     if "csv" in formats:
@@ -1580,6 +1586,7 @@ def _write_outputs(tables: Dict[str, pd.DataFrame], contract: DatasetContract,
     paths.update(_write_privacy_reports(report, contract, out_dir, stem, job_id))
 
     if cfg.export_pdf or "pdf" in formats:
+        from ..licensing import ProFeatureRequiredError
         from ..reporting import generate_pdf_report, is_pdf_available
         if is_pdf_available():
             pdf_path = _out_path(out_dir, stem + "_audit_report.pdf")
@@ -1594,8 +1601,17 @@ def _write_outputs(tables: Dict[str, pd.DataFrame], contract: DatasetContract,
                     enforce_pro=True,
                 )
                 paths["pdf"] = str(pdf_path)
+            except ProFeatureRequiredError:
+                # Lisans eksikligi sessizce gecilmemeli: kullanici PDF'i
+                # isaretliyor, kosu basariyla bitiyor, dosya yok ve hicbir
+                # yerde sebebi yazmiyordu.
+                message = t("pipeline.warn.pdf_requires_license")
+                log.warning("%s", message)
+                report.setdefault("warnings", []).append(message)
             except Exception as exc:
-                log.warning("PDF denetim raporu üretilemedi: %s", exc)
+                message = t("pipeline.warn.pdf_failed", error=exc)
+                log.error("%s", message)
+                report.setdefault("warnings", []).append(message)
 
     if contract.is_relational:
         manifest_path = _out_path(out_dir, stem + "_manifest.json")

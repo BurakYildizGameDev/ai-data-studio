@@ -1294,6 +1294,122 @@ class TestProjectPlannerPipeline(unittest.TestCase):
 import pandas as pd
 
 
+class TestPdfFailureIsVisible(unittest.TestCase):
+    """Lisans eksikligi yuzunden PDF yazilmadiginda kullanici bunu gormeli."""
+
+    def setUp(self):
+        import tempfile
+        from ai_data_studio.core.state_manager import StateManager
+
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.tmp = Path(self.temp_dir.name)
+        self.state = StateManager(self.tmp / "state.db")
+
+    def tearDown(self):
+        # Windows sqlite dosyasi acikken dizini silmiyor; dosyadaki diger
+        # pipeline testleri de once close() cagiriyor.
+        self.state.close()
+        self.temp_dir.cleanup()
+
+    def _run(self):
+        from ai_data_studio.core import orchestrator
+        from ai_data_studio.tests import fake_llm
+
+        cfg = orchestrator.PipelineConfig(
+            domain_prompt="x", provider="fake", row_count=120,
+            output_dir=self.tmp / "out", write_outputs=True,
+            export_formats=["csv"], export_pdf=True)
+        iterator = orchestrator.run_pipeline(
+            cfg, threading.Event(), self.state,
+            llm_client=fake_llm.FakeLLMClient())
+        while True:
+            try:
+                next(iterator)
+            except StopIteration as stop:
+                return stop.value
+
+    def test_missing_licence_is_reported_not_swallowed(self):
+        """Eskiden yalnizca log.warning vardi: kosu basarili, PDF yok, sebep yok."""
+        result = self._run()
+        warnings = result.report.get("warnings") or []
+        self.assertTrue(warnings, "hicbir uyari kaydedilmedi")
+        self.assertTrue(
+            any("licen" in w.lower() or "lisans" in w.lower() for w in warnings),
+            "lisans uyarisi yok: %r" % warnings)
+        self.assertNotIn("pdf", result.output_paths)
+
+
+class TestReadOutputHelper(unittest.TestCase):
+    """api.read_output serhli ve serhsiz ciktilari seffaf okumali.
+
+    Serhli CSV'yi duz ``pandas.read_csv`` ile okumak ParserError veriyor;
+    bu yardimci disa aktarilan veriyi geri okumanin desteklenen yolu.
+    """
+
+    def setUp(self):
+        import tempfile
+        import pandas as pd
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.tmp = Path(self.temp_dir.name)
+        self.df = pd.DataFrame({"n": [1, 2, 3], "u": ["ab", "cd", "ef"]})
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def test_round_trips_every_format_with_and_without_provenance(self):
+        import ai_data_studio.api as api
+        from ai_data_studio.core.orchestrator import _write_table_files
+
+        for provenance in (True, False):
+            paths = _write_table_files(
+                self.df, self.tmp / ("p_%s" % provenance), "f",
+                ["csv", "json", "parquet"], provenance=provenance)
+            for kind, path in paths.items():
+                with self.subTest(format=kind, provenance=provenance):
+                    back = api.read_output(path)
+                    self.assertEqual(len(back), 3)
+                    self.assertEqual(list(back.columns), ["n", "u"])
+
+    def test_raw_read_csv_on_a_provenance_file_still_fails(self):
+        """Tuzagin gercek oldugunu sabitler; yardimci bu yuzden var."""
+        import pandas as pd
+        from ai_data_studio.core.orchestrator import _write_table_files
+
+        path = _write_table_files(self.df, self.tmp / "raw", "f", ["csv"],
+                                  provenance=True)["csv"]
+        with self.assertRaises(Exception):
+            pd.read_csv(path)
+
+
+class TestWriteTableFilesCreatesOutputDir(unittest.TestCase):
+    """Dizin olusturma iki yolda da ayni olmali.
+
+    Serhli yol kendi mkdir'ini yapiyordu, serhsiz yol yapmiyordu: ayni cagri
+    provenance bayragina gore basarili ya da OSError oluyordu.
+    """
+
+    def setUp(self):
+        import tempfile
+        import pandas as pd
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.tmp = Path(self.temp_dir.name)
+        self.df = pd.DataFrame({"a": [1, 2]})
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def test_missing_directory_is_created_either_way(self):
+        from ai_data_studio.core.orchestrator import _write_table_files
+
+        for provenance in (True, False):
+            with self.subTest(provenance=provenance):
+                target = self.tmp / ("new_%s" % provenance) / "deeper"
+                self.assertFalse(target.exists())
+                paths = _write_table_files(self.df, target, "f", ["csv"],
+                                           provenance=provenance)
+                self.assertTrue(Path(paths["csv"]).exists())
+
+
 class TestProvenanceBinding(unittest.TestCase):
     """Serhin veri setine baglandigini ve gizlilik beyaninin durust oldugunu dogrular.
 

@@ -1269,6 +1269,8 @@ MESSAGES = {
     "license.status.clock_tampered": "Lisans saat denetimi başarısız: sistem saati daha önce kaydedilen tarihin gerisinde. Sistem saatini düzeltip yeniden başlatın.",
     "license.status.bad_expiry": "Lisans bitiş tarihi okunamadı",
     "license.status.not_persisted": "Lisans doğrulandı ancak kaydedilemedi; yeniden başlatınca kaybolacak",
+    "pipeline.warn.pdf_requires_license": "Denetim PDF'i yazılmadı: etkin bir Pro veya Enterprise lisansı gerekiyor.",
+    "pipeline.warn.pdf_failed": "Denetim PDF'i yazılamadı: {error}",
     "license.status.expired": "Lisans süresi {date} tarihinde doldu",
     "license.status.valid": "Aktif ve doğrulandı",
     "license.tier.community": "Topluluk Sürümü",

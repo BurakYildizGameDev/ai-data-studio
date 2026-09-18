@@ -901,6 +901,8 @@ MESSAGES = {
     "license.status.clock_tampered": "Проверка часов не пройдена: системное время раньше ранее записанной даты. Исправьте системное время и перезапустите приложение.",
     "license.status.bad_expiry": "Не удалось прочитать дату окончания лицензии",
     "license.status.not_persisted": "Лицензия проверена, но не сохранена; она будет потеряна при перезапуске",
+    "pipeline.warn.pdf_requires_license": "PDF-отчёт аудита не записан: требуется активная лицензия Pro или Enterprise.",
+    "pipeline.warn.pdf_failed": "Не удалось записать PDF-отчёт аудита: {error}",
     "license.status.expired": "Срок действия лицензии истек {date}",
     "license.status.valid": "Активно и проверено",
     "license.tier.community": "Community Edition",

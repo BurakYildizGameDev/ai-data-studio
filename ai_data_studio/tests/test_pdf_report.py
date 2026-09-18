@@ -352,6 +352,18 @@ class TestPDFReportTruthfulness(unittest.TestCase):
         self.assertIn("A privacy audit was run", text)
         self.assertNotIn("No privacy audit was run", text)
 
+    def test_timestamp_is_actually_utc(self):
+        """Etiket "UTC" diyorsa deger de UTC olmali."""
+        import datetime
+        import re
+
+        text = self._text({"rows_in": 20, "rows_out": 20})
+        match = re.search(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) UTC", text)
+        self.assertIsNotNone(match, "PDF'te zaman damgasi yok")
+        printed = datetime.datetime.strptime(match.group(1), "%Y-%m-%d %H:%M:%S")
+        now_utc = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+        self.assertLess(abs((printed - now_utc).total_seconds()), 300)
+
     def test_footer_does_not_claim_certification(self):
         text = self._text({"rows_in": 20, "rows_out": 20})
         self.assertNotIn("Provenance Certified", text)
