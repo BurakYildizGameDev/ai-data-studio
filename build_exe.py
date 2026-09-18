@@ -3,7 +3,19 @@
 Kullanım:
     .venv\\Scripts\\python.exe build_exe.py            # --onefile (varsayılan)
     .venv\\Scripts\\python.exe build_exe.py --onedir   # Klasör çıktısı (hızlı açılış)
+    .venv\\Scripts\\python.exe build_exe.py --both     # İkisini birden
     .venv\\Scripts\\python.exe build_exe.py --console  # Hata ayıklama için konsollu
+
+İki dağıtım profili, ikisi de aynı koddan:
+
+  --onefile  dist/AIDataStudio.exe  - tek dosya, e-postayla gönderilir.
+             Bedeli açılış süresi: bootloader her çalıştırmada arşivin tamamını
+             %TEMP%\\_MEIxxxxx altına açar, uygulama kapanınca siler.
+  --onedir   dist/AIDataStudio/     - klasör, zip'lenip ya da kurulumla dağıtılır.
+             Açılışta hiçbir şey açılmaz; süre yalnızca kütüphane import'u kadardır.
+
+İkisi farklı adlara yazar, bu yüzden yan yana durabilirler; temizlik de yalnızca
+derlenen profilin kendi çıktısını siler.
 
 Neden --collect-all: scipy / sklearn / numpy / pandas C uzantılı kütüphanelerdir.
 Standart pyinstaller çağrısı veri dosyalarını ve dinamik DLL bağımlılıklarını
@@ -82,11 +94,18 @@ def build(onefile: bool = True, console: bool = False, clean: bool = True) -> in
         return 1
 
     if clean:
-        for folder in ("build", "dist"):
-            path = ROOT / folder
-            if path.exists():
+        # Yalnizca BU profilin ciktisi silinir. Eskiden dist/ komple gidiyordu,
+        # yani onedir derlemesi onefile exe'sini de goturuyordu ve ikisini
+        # karsilastirmak icin her seferinde ikisini birden derlemek gerekiyordu.
+        targets = [ROOT / "build", ROOT / "dist" / (APP_NAME + ".exe")
+                   if onefile else ROOT / "dist" / APP_NAME]
+        for path in targets:
+            if path.is_dir():
                 print("Temizleniyor: %s" % path)
                 shutil.rmtree(path, ignore_errors=True)
+            elif path.exists():
+                print("Temizleniyor: %s" % path)
+                path.unlink()
 
     cmd = [
         sys.executable, "-m", "PyInstaller",
@@ -137,6 +156,13 @@ def build(onefile: bool = True, console: bool = False, clean: bool = True) -> in
                 else sum(f.stat().st_size for f in target.rglob("*") if f.is_file()))
         print("Boyut: %.1f MB" % (size / 1024 / 1024))
     print("=" * 70)
+    if onefile:
+        print("Profil: --onefile (tek dosya). Acilis suresi bootloader'in arsivi")
+        print("        %TEMP%\\_MEIxxxxx altina acmasini da icerir.")
+    else:
+        print("Profil: --onedir (klasor). Acilista arsiv acilmaz; dagitirken")
+        print("        klasorun TAMAMI gonderilmelidir, tek basina exe calismaz.")
+
     print("\nSONRAKI ADIM - bu testi atlamayin:")
     print("  1. dist/ ciktisini Python KURULU OLMAYAN temiz bir Windows makineye kopyalayin")
     print("  2. Calistirin; pencere aciliyor mu, Ayarlar sekmesi yukleniyor mu bakin")
@@ -150,11 +176,20 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="AI Data Studio .exe builder")
     parser.add_argument("--onedir", action="store_true",
                         help="Tek dosya yerine klasor cikti (daha hizli acilir)")
+    parser.add_argument("--both", action="store_true",
+                        help="Her iki profili de derle (once onefile, sonra onedir)")
     parser.add_argument("--console", action="store_true",
                         help="Konsol penceresini birak (hata ayiklama)")
     parser.add_argument("--no-clean", action="store_true",
                         help="build/ ve dist/ dizinlerini silme")
     args = parser.parse_args()
+    if args.both:
+        for onefile in (True, False):
+            code = build(onefile=onefile, console=args.console,
+                         clean=not args.no_clean)
+            if code != 0:
+                return code
+        return 0
     return build(onefile=not args.onedir, console=args.console, clean=not args.no_clean)
 
 

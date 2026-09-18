@@ -2004,7 +2004,7 @@ def check_auth() -> int:
         ok_any = True
     else:
         print("[--]  %-12s %s" % (config.PROVIDER_OLLAMA,
-                                    t("cli.auth.ollama_down", host=config.OLLAMA_HOST)))
+                                    t("cli.auth.ollama_down", host=config.ollama_host())))
 
     print("-" * 72)
     if not ok_any:

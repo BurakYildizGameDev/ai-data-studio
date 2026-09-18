@@ -6,10 +6,12 @@ her birinin boyutunu tek ekranda görür; indirme ilerlemesi canlı akar.
 from __future__ import annotations
 
 import threading
+import webbrowser
 from typing import Callable, Dict, List, Optional
 
 import customtkinter as ctk
 
+from ... import config
 from ...i18n import t
 
 from ...services import ollama_service
@@ -20,6 +22,11 @@ WARN_COLOR = "#ffb74d"
 ERR_COLOR = "#e57373"
 INFO_COLOR = "#4fc3f7"
 MUTED = "#8a8a8a"
+
+DOWNLOAD_URL = "https://ollama.com/download"
+# Kurulumdan sonra cekilecek ilk model. 7B varsayilan ama ilk adim icin 1.5B
+# oneriliyor: olculdu, dusuk donanimda calisan ve ise yarayan en kucuk model bu.
+FIRST_MODEL = "qwen2.5-coder:1.5b"
 
 
 class OllamaDialog(ctk.CTkToplevel):
@@ -34,8 +41,10 @@ class OllamaDialog(ctk.CTkToplevel):
         self._busy = False
 
         self.title("Ollama modelleri")
-        self.geometry("720x580")
-        self.minsize(640, 500)
+        # Sunucu adresi satiri baslikta ~60px yer tutuyor; liste alani ayni
+        # kalsin diye pencere o kadar buyutuldu.
+        self.geometry("720x640")
+        self.minsize(640, 560)
         self.transient(master)
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(2, weight=1)
@@ -48,6 +57,28 @@ class OllamaDialog(ctk.CTkToplevel):
         self.daemon_label.grid(row=0, column=0, sticky="ew")
         ctk.CTkButton(header, text=t("history.refresh"), width=80, command=self.refresh).grid(
             row=0, column=1)
+
+        # --- sunucu adresi ------------------------------------------------ #
+        # Ollama baska bir makinede kosuyor olabilir (tek GPU'lu makineyi
+        # paylasmanin en ucuz yolu). Adres ONCEDEN yalnizca OLLAMA_HOST ortam
+        # degiskeniyle verilebiliyordu; exe'ye cift tiklayan kullanicinin
+        # ulasamayacagi bir yer.
+        host_row = ctk.CTkFrame(header, fg_color="transparent")
+        host_row.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        host_row.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(host_row, text=t("ollama.host.label"), anchor="w",
+                     font=ctk.CTkFont(size=11)).grid(row=0, column=0, padx=(0, 8))
+        self.host_entry = ctk.CTkEntry(
+            host_row, placeholder_text=config.OLLAMA_HOST_DEFAULT)
+        self.host_entry.insert(0, config.ollama_host())
+        self.host_entry.grid(row=0, column=1, sticky="ew", padx=(0, 8))
+        self.host_entry.bind("<Return>", lambda _event: self._save_host())
+        ctk.CTkButton(host_row, text=t("ollama.host.save"), width=90,
+                      command=self._save_host).grid(row=0, column=2)
+        ctk.CTkLabel(host_row, text=t("ollama.host.remote_hint"), anchor="w",
+                     font=ctk.CTkFont(size=10), text_color=MUTED,
+                     wraplength=640, justify="left").grid(
+            row=1, column=0, columnspan=3, sticky="ew", pady=(4, 0))
 
         ctk.CTkLabel(self, text=t("ollama.legend"),
                      font=ctk.CTkFont(size=11), text_color=MUTED, anchor="w").grid(
@@ -116,10 +147,12 @@ class OllamaDialog(ctk.CTkToplevel):
 
     def _render(self, available: bool, version, entries: List[Dict]) -> None:
         if not available:
-            self.daemon_label.configure(text=t("settings.ollama.down"),
-                                        text_color=ERR_COLOR)
+            self.daemon_label.configure(
+                text=t("settings.ollama.down_host", host=config.ollama_host()),
+                text_color=ERR_COLOR)
             ctk.CTkLabel(self.list_frame, text=t("ollama.list_unavailable"),
-                         text_color=MUTED).grid(row=0, column=0, pady=30)
+                         text_color=MUTED).grid(row=0, column=0, pady=(24, 4))
+            self._render_install_help(row=1)
             return
 
         installed = [e for e in entries if e["installed"]]
@@ -140,6 +173,80 @@ class OllamaDialog(ctk.CTkToplevel):
             row += 1
             for entry in subset:
                 row = self._render_entry(entry, row)
+
+    def _render_install_help(self, row: int) -> int:
+        """Daemon yoksa: indirme baglantisi + ilk modeli ceken komut.
+
+        "Ollama calismiyor" demek, kurulu olmayan kullaniciya hicbir sey
+        soylemiyordu. Burada ne indirecegi ve kurduktan sonra hangi komutu
+        yazacagi tek ekranda duruyor.
+        """
+        help_card = ctk.CTkFrame(self.list_frame)
+        help_card.grid(row=row, column=0, sticky="ew", padx=4, pady=6)
+        help_card.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(help_card, text=t("ollama.install.hint"), anchor="w",
+                     wraplength=600, justify="left",
+                     font=ctk.CTkFont(size=12)).grid(
+            row=0, column=0, columnspan=2, sticky="ew", padx=12, pady=(12, 8))
+
+        ctk.CTkButton(help_card, text=t("ollama.install.download"), width=160,
+                      command=self._open_download).grid(
+            row=1, column=0, sticky="w", padx=12, pady=(0, 10))
+
+        command_row = ctk.CTkFrame(help_card)
+        command_row.grid(row=2, column=0, columnspan=2, sticky="ew",
+                         padx=12, pady=(0, 12))
+        command_row.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(command_row, text="ollama pull " + FIRST_MODEL, anchor="w",
+                     font=ctk.CTkFont(size=12, family="Consolas")).grid(
+            row=0, column=0, sticky="ew", padx=(10, 8), pady=8)
+        ctk.CTkButton(command_row, text=t("ollama.copy"), width=90,
+                      command=self._copy_pull_command).grid(
+            row=0, column=1, padx=(0, 10), pady=8)
+        return row + 1
+
+    def _open_download(self) -> None:
+        try:
+            webbrowser.open(DOWNLOAD_URL)
+        except Exception as exc:  # pragma: no cover - tarayici yoksa
+            self.status.configure(text=str(exc), text_color=ERR_COLOR)
+
+    def _copy_pull_command(self) -> None:
+        command = "ollama pull " + FIRST_MODEL
+        try:
+            self.clipboard_clear()
+            self.clipboard_append(command)
+            self.update_idletasks()
+            self.status.configure(text=t("ollama.copied", text=command),
+                                  text_color=OK_COLOR)
+        except Exception as exc:  # pragma: no cover - pano yoksa
+            self.status.configure(text=str(exc), text_color=ERR_COLOR)
+
+    def _save_host(self) -> None:
+        """Adresi ayarlara yazar ve baglantiyi yeniden dener.
+
+        Bos birakmak "ayarlanmadi" demektir: OLLAMA_HOST ortam degiskeni ya da
+        varsayilan localhost yeniden gecerli olur.
+        """
+        raw = self.host_entry.get().strip()
+        normalised = config.normalise_ollama_host(raw)
+        if raw and not normalised:
+            self.status.configure(text=t("ollama.host.invalid", value=raw),
+                                  text_color=ERR_COLOR)
+            return
+
+        try:
+            config.save_settings({"ollama_host": normalised})
+        except Exception as exc:
+            self.status.configure(text=str(exc), text_color=ERR_COLOR)
+            return
+
+        self.host_entry.delete(0, "end")
+        self.host_entry.insert(0, config.ollama_host())
+        self.status.configure(text=t("ollama.host.saved", host=config.ollama_host()),
+                              text_color=OK_COLOR)
+        self.refresh()
 
     def _render_entry(self, entry: Dict, row: int) -> int:
         card = ctk.CTkFrame(self.list_frame)

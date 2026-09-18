@@ -95,7 +95,50 @@ MODEL_PRICING_USD_PER_MTOK = {
     "gemini-2.5-flash": (0.30, 2.50),
 }
 
-OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
+OLLAMA_HOST_DEFAULT = "http://localhost:11434"
+# Ortam degiskeninden gelen deger. ollama_host() bunu kullanir; dogrudan okuyan
+# eski cagrilar da calissin diye sabit kaldi.
+OLLAMA_HOST = os.getenv("OLLAMA_HOST", OLLAMA_HOST_DEFAULT)
+
+
+def normalise_ollama_host(raw: Any) -> str:
+    """Kullanicinin yazdigi adresi kullanilabilir bir URL'ye cevirir.
+
+    "192.168.1.20" gibi bir giris tek basina calismaz; sema ve port eklenir.
+    Port EKLENMEZ eger adres zaten bir port ya da yol tasiyorsa: 80'de duran bir
+    ters vekil ("http://ollama.lan/") bozulmasin diye. Bos giris "ayarlanmadi"
+    demektir ve ortam degiskenine geri dusulur.
+    """
+    value = str(raw or "").strip()
+    if not value:
+        return ""
+    if "://" not in value:
+        value = "http://" + value
+    scheme, _, rest = value.partition("://")
+    if not rest:
+        return ""
+    netloc, slash, path = rest.partition("/")
+    if not netloc:
+        return ""
+    has_port = ":" in netloc.rsplit("]", 1)[-1]
+    if not has_port and not slash:
+        netloc += ":11434"
+    return scheme + "://" + netloc + (slash + path if slash else "")
+
+
+def ollama_host() -> str:
+    """Kullanilacak Ollama adresi: ayar -> ortam degiskeni -> varsayilan.
+
+    Arayuzde yazilan adres ONCELIKLI, cunku kullanicinin gorebildigi ve
+    degistirebildigi tek yer orasi. Ayar bos birakilirsa OLLAMA_HOST ortam
+    degiskeni gecerli kalir - bu davranis surum oncesinde de boyleydi, kimsenin
+    kurulumu guncellemeyle bozulmasin.
+    """
+    try:
+        stored = normalise_ollama_host(load_settings().get("ollama_host"))
+    except Exception:  # pragma: no cover - ayar dosyasi okunamiyorsa
+        stored = ""
+    return (stored or OLLAMA_HOST).rstrip("/")
 
 
 def _resolve_ollama_num_ctx(default: int = 16384) -> int:
@@ -194,6 +237,10 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     # yeniden baslatma ister, widget metinleri canli degistirilmiyor.
     "language": "en",
     "gemini_backend": GEMINI_BACKEND_AISTUDIO,
+    # Bos = ayarlanmadi; ollama_host() o zaman OLLAMA_HOST ortam degiskenine
+    # duser. Baska bir makinedeki Ollama'ya baglanmak icin buraya
+    # "http://192.168.1.20:11434" yazmak yeter.
+    "ollama_host": "",
     # Uretim / zenginlestirme motorlari (bkz. core/orchestrator ENGINES).
     # Deger olarak motor ADI saklanir, arayuz etiketi degil.
     "engine": "llm",

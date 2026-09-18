@@ -83,7 +83,7 @@ class OllamaUnavailableError(LLMNotConfiguredError):
 
 
 def _url(path: str, host: Optional[str] = None) -> str:
-    return (host or config.OLLAMA_HOST).rstrip("/") + path
+    return (host or config.ollama_host()).rstrip("/") + path
 
 
 # --------------------------------------------------------------------------- #
@@ -115,7 +115,7 @@ def list_models(host: Optional[str] = None) -> List[Dict[str, Any]]:
         payload = r.json()
     except requests.RequestException as exc:
         raise OllamaUnavailableError(
-            t("service.error.ollama_unreachable", host=host or config.OLLAMA_HOST)
+            t("service.error.ollama_unreachable", host=host or config.ollama_host())
         ) from exc
     except ValueError as exc:
         raise LLMError(t("service.error.ollama_bad_json_tags")) from exc
@@ -254,7 +254,7 @@ class OllamaClient(BaseLLMClient):
     def __init__(self, model: Optional[str] = None, host: Optional[str] = None,
                  auto_pull: bool = False, **kwargs):
         super().__init__(model or config.DEFAULT_MODELS[config.PROVIDER_OLLAMA], **kwargs)
-        self.host = host or config.OLLAMA_HOST
+        self.host = host or config.ollama_host()
         # Model dusunen (reasoning) bir model mi? Ilk cagrida /api/show'dan ogrenilir.
         self._thinks: Optional[bool] = None
         if not is_available(self.host):

@@ -943,5 +943,73 @@ class TestMultiTableDatasetCard(unittest.TestCase):
             "| Table | Rows | Primary key | Columns | In this repo |", ""))
 
 
+class TestOllamaHostResolution(unittest.TestCase):
+    """Adres cozumleme: ayar -> ortam degiskeni -> varsayilan.
+
+    Onceden adres yalnizca OLLAMA_HOST ortam degiskeniyle verilebiliyordu; exe'ye
+    cift tiklayan kullanicinin ulasamayacagi bir yer. Ayar oncelikli ama BOS
+    birakilirsa ortam degiskeni gecerli kalmali - mevcut kurulumlar guncellemeyle
+    bozulmasin.
+    """
+
+    def test_an_empty_setting_falls_back_to_the_environment_variable(self):
+        with mock.patch.object(config, "load_settings", return_value={"ollama_host": ""}), \
+             mock.patch.object(config, "OLLAMA_HOST", "http://from-env:11434"):
+            self.assertEqual(config.ollama_host(), "http://from-env:11434")
+
+    def test_a_stored_address_wins_over_the_environment_variable(self):
+        with mock.patch.object(config, "load_settings",
+                               return_value={"ollama_host": "http://192.168.1.20:11434"}), \
+             mock.patch.object(config, "OLLAMA_HOST", "http://from-env:11434"):
+            self.assertEqual(config.ollama_host(), "http://192.168.1.20:11434")
+
+    def test_an_unreadable_settings_file_does_not_break_resolution(self):
+        with mock.patch.object(config, "load_settings", side_effect=OSError("disk")), \
+             mock.patch.object(config, "OLLAMA_HOST", "http://from-env:11434"):
+            self.assertEqual(config.ollama_host(), "http://from-env:11434")
+
+    def test_the_service_asks_for_the_configured_address_on_every_call(self):
+        """Adres degistiginde yeniden baslatma gerekmemeli."""
+        with mock.patch.object(config, "ollama_host", return_value="http://box:11434"):
+            self.assertEqual(ollama_service._url("/api/tags"),
+                             "http://box:11434/api/tags")
+        with mock.patch.object(config, "ollama_host", return_value="http://other:11434"):
+            self.assertEqual(ollama_service._url("/api/tags"),
+                             "http://other:11434/api/tags")
+
+    def test_an_explicit_host_argument_still_wins(self):
+        with mock.patch.object(config, "ollama_host", return_value="http://box:11434"):
+            self.assertEqual(ollama_service._url("/api/tags", "http://explicit:11434"),
+                             "http://explicit:11434/api/tags")
+
+
+class TestOllamaHostNormalisation(unittest.TestCase):
+    """Kullanici "192.168.1.20" yazarsa da calismali."""
+
+    def test_scheme_and_port_are_added_when_missing(self):
+        for raw, expected in (
+            ("192.168.1.20", "http://192.168.1.20:11434"),
+            ("localhost", "http://localhost:11434"),
+            ("10.0.0.5:11434", "http://10.0.0.5:11434"),
+            ("http://[::1]", "http://[::1]:11434"),
+        ):
+            with self.subTest(raw=raw):
+                self.assertEqual(config.normalise_ollama_host(raw), expected)
+
+    def test_an_address_with_a_path_is_left_alone(self):
+        """80'de duran ters vekile ":11434" eklemek onu bozardi."""
+        self.assertEqual(config.normalise_ollama_host("http://ollama.lan/"),
+                         "http://ollama.lan/")
+
+    def test_an_explicit_port_is_preserved(self):
+        self.assertEqual(config.normalise_ollama_host("https://ollama.example.com:443"),
+                         "https://ollama.example.com:443")
+
+    def test_empty_input_means_not_configured(self):
+        for raw in ("", "   ", None, "http://"):
+            with self.subTest(raw=raw):
+                self.assertEqual(config.normalise_ollama_host(raw), "")
+
+
 if __name__ == "__main__":
     unittest.main()

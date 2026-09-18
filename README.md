@@ -153,13 +153,31 @@ install it with `sudo apt install python3-tk`.
 
 | Provider | Authentication | Notes |
 | --- | --- | --- |
-| **Ollama** (local) | none | Runs offline. `--hardware` suggests a model size for your machine |
+| **Ollama** (local or on your network) | none | Runs offline. `--hardware` suggests a model size for your machine. Ollama can also run on another machine: set its address in the model manager, or in `OLLAMA_HOST` |
 | **Google Gemini** | AI Studio key (`GEMINI_API_KEY`), or an Antigravity CLI login | The CLI login needs no key, but every call spends about 3–4 minutes starting the CLI; use a key for anything beyond a small single-table run |
 | **Anthropic Claude** | API key (`ANTHROPIC_API_KEY`), or an existing Claude Code login | The Claude Code login runs on your subscription and expires after a few hours; `claude setup-token` creates a long-lived token |
 
 Keys can also be saved to the operating system's credential store from the desktop studio's
 Settings tab. `python -m ai_data_studio.core.orchestrator --check-auth` prints which
 credentials each provider can use.
+
+### Authentication and privacy
+
+The app runs on your machine and there is no server of ours for it to talk to. Credentials are
+read from three places, in this order: your operating system's credential store (keyring,
+service name `AIDataStudio`), the environment, and `settings.json` in your app-data directory.
+None of them is copied into generated data, into a report, or into the built executable — the
+shipped `.exe` carries no key-shaped string, no `settings.json` and no credentials file, which
+is checked against the build rather than assumed.
+
+If you choose the Claude Code login, the app reads `~/.claude/.credentials.json` — your own
+file, on your own machine — and reuses that session instead of asking for a key. The Antigravity
+CLI login for Gemini works the same way. Neither file is read unless you pick that method, and
+neither is copied anywhere.
+
+A key or token is only ever sent to the provider it belongs to, as part of the API call you
+asked for; that is what authenticating to Anthropic or Google means. Choose a local Ollama model
+or `--engine parametric` and nothing leaves the machine at all.
 
 ---
 

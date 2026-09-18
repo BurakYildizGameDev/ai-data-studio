@@ -1020,6 +1020,110 @@ class TestAuthAndOllamaDialogs(unittest.TestCase):
         dialog.destroy()
 
 
+    # --- sunucu adresi ------------------------------------------------- #
+    # Adres onceden yalnizca OLLAMA_HOST ortam degiskeniyle verilebiliyordu;
+    # exe'ye cift tiklayan kullanicinin ulasamayacagi bir yer.
+
+    def _dead_daemon_dialog(self, saved):
+        """Daemon'a hic gitmeyen bir diyalog kurar."""
+        from unittest import mock
+
+        from ai_data_studio import config
+        from ai_data_studio.gui.components.ollama_dialog import OllamaDialog
+        from ai_data_studio.services import ollama_service
+
+        patches = [
+            mock.patch.object(ollama_service, "is_available", return_value=False),
+            mock.patch.object(config, "save_settings",
+                              side_effect=lambda values: saved.update(values)),
+            mock.patch.object(config, "ollama_host",
+                              return_value="http://localhost:11434"),
+        ]
+        for patch in patches:
+            patch.start()
+            self.addCleanup(patch.stop)
+
+        dialog = OllamaDialog(self.root)
+        dialog._render(False, None, [])
+        self.root.update_idletasks()
+        self.addCleanup(lambda: dialog.winfo_exists() and dialog.destroy())
+        return dialog
+
+    def test_ollama_dialog_host_entry_starts_at_the_configured_address(self):
+        dialog = self._dead_daemon_dialog({})
+
+        self.assertEqual(dialog.host_entry.get(), "http://localhost:11434")
+
+    def test_ollama_dialog_saves_a_bare_address_as_a_usable_url(self):
+        saved = {}
+        dialog = self._dead_daemon_dialog(saved)
+
+        dialog.host_entry.delete(0, "end")
+        dialog.host_entry.insert(0, "192.168.1.20")
+        dialog._save_host()
+
+        self.assertEqual(saved["ollama_host"], "http://192.168.1.20:11434")
+
+    def test_ollama_dialog_clearing_the_host_clears_the_setting(self):
+        """Bos birakmak "ayarlanmadi" demek: OLLAMA_HOST yeniden gecerli olur."""
+        saved = {}
+        dialog = self._dead_daemon_dialog(saved)
+
+        dialog.host_entry.delete(0, "end")
+        dialog._save_host()
+
+        self.assertEqual(saved["ollama_host"], "")
+
+    def test_ollama_dialog_refuses_an_unreadable_address(self):
+        saved = {}
+        dialog = self._dead_daemon_dialog(saved)
+
+        dialog.host_entry.delete(0, "end")
+        dialog.host_entry.insert(0, "http://")
+        dialog._save_host()
+
+        self.assertEqual(saved, {})
+        self.assertTrue(dialog.status.cget("text"))
+
+    def test_ollama_dialog_shows_install_help_when_the_daemon_is_missing(self):
+        """"Calismiyor" demek, Ollama'yi hic kurmamis kullaniciya bir sey soylemiyordu."""
+        from ai_data_studio.i18n import t
+
+        dialog = self._dead_daemon_dialog({})
+
+        labels = _all_text(dialog.list_frame)
+        self.assertIn("ollama pull qwen2.5-coder:1.5b", labels)
+        self.assertIn(t("ollama.install.download"), labels)
+        # Hangi adrese bakildigi da yaziyor olmali.
+        self.assertIn("http://localhost:11434", dialog.daemon_label.cget("text"))
+
+    def test_ollama_dialog_copies_the_pull_command(self):
+        import tkinter as _tk
+
+        dialog = self._dead_daemon_dialog({})
+
+        dialog._copy_pull_command()
+
+        self.assertIn("ollama pull qwen2.5-coder:1.5b", dialog.status.cget("text"))
+        try:
+            clipboard = dialog.clipboard_get()
+        except _tk.TclError:  # pragma: no cover - panosuz ortam
+            return
+        self.assertEqual(clipboard, "ollama pull qwen2.5-coder:1.5b")
+
+    def test_ollama_dialog_download_button_opens_the_official_page(self):
+        from unittest import mock
+
+        from ai_data_studio.gui.components import ollama_dialog
+
+        dialog = self._dead_daemon_dialog({})
+
+        with mock.patch.object(ollama_dialog.webbrowser, "open") as opened:
+            dialog._open_download()
+
+        opened.assert_called_once_with("https://ollama.com/download")
+
+
 def _all_text(widget) -> str:
     """Bir widget agacindaki tüm metinleri tek stringde toplar."""
     parts = []

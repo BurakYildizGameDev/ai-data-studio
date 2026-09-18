@@ -191,6 +191,37 @@ CI'da bekleyen kırılgan test düzeltildi.
 
 860 test geçiyor, 4 atlanıyor.
 
+### 8. Dağıtım ve erişilebilirlik (19 Eylül, gece)
+
+- [x] **GUI'de Ollama sunucu adresi.** Model yöneticisi diyaloğunun başlığına adres
+      kutusu + "Kaydet" eklendi; `settings.json`'a yazılıyor. Çözümleme sırası:
+      ayar → `OLLAMA_HOST` ortam değişkeni → `http://localhost:11434`. Kutu boşsa
+      ortam değişkeni geçerli kalıyor, yani mevcut kurulumlar bozulmuyor.
+      "192.168.1.20" gibi yarım bir giriş şema ve port eklenerek tamamlanıyor;
+      yol taşıyan adrese (80'de ters vekil) dokunulmuyor. `_url()` her çağrıda
+      adresi yeniden okuyor — değiştirince yeniden başlatma gerekmiyor.
+- [x] **Ollama yoksa yönlendirme.** Daemon'a ulaşılamadığında hangi adrese
+      bakıldığı yazıyor, `ollama.com/download` düğmesi ve tek tıkla kopyalanan
+      `ollama pull qwen2.5-coder:1.5b` komutu gösteriliyor.
+- [x] **İki derleme profili.** `build_exe.py` artık `--both` alıyor ve temizlik
+      yalnızca kendi çıktısını siliyor, yani `dist/AIDataStudio.exe` (onefile) ile
+      `dist/AIDataStudio/` (onedir) yan yana durabiliyor.
+      **Ölçüldü, pencere açılana kadar:** onefile 8.4 / 8.8 / 9.0 sn — onedir
+      3.0 / 2.2 / 2.5 sn. Fark açılışta %TEMP% altına açılan 384 MB.
+      Boyut: onefile 187 MB tek dosya, onedir 442 MB klasör.
+- [x] **README'ye "Authentication and privacy" bölümü.** Kimlik bilgilerinin
+      nerede durduğu, `~/.claude/.credentials.json`'ın yalnızca o yol seçilirse
+      ve yalnızca yerelde okunduğu, anahtarın sadece ait olduğu sağlayıcıya
+      gittiği yazıldı. Derlemeye karşı doğrulandı: onedir çıktısındaki 9080
+      dosya (442 MB) tarandı — API anahtarı, e-posta, kullanıcı dizini, özel
+      anahtar yok; tek PEM eşleşmesi `pyarrow/arrow.dll` içindeki biçim
+      sabitleri (`DecodePem`), anahtar değil.
+- [x] **Negatif tutar kuralı doğrulandı.** Gerçek benchmark CSV'si üzerinde:
+      düzeltilmiş sözleşmeyle `transaction_amount` için 71 satır eleniyor
+      (66 negatif + 5 boş), min -538.62'den 1.24'e çıkıyor.
+
+876 test geçiyor, 4 atlanıyor.
+
 ---
 
 ## Açık bırakılan, bilinçli kararlar
