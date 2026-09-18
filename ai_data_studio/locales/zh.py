@@ -869,6 +869,7 @@ MESSAGES = {
 
     # --- Schema Sanity Checker ------------------------------------------- #
     "sanity.report.clean": "模式合理性检查通过——未检测到语义问题。",
+    "sanity.correlation.ambiguous_pair": "{col_a} 与 {col_b} 属于正相关可能正确的领域组合；未作更改 - 请自行核对。",
     "sanity.correlation.risk_asset_inverted": (
         "疑似语义反转：'{col_a}'（{cat_a}）↔ '{col_b}'（{cat_b}）"
         "应具有负相关，但指定了正相关。"

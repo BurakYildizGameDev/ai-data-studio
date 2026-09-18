@@ -866,6 +866,7 @@ MESSAGES = {
     "web.more_sources": "(+{count} स्रोत)",
     "hipaa.category.unique_key": "विशिष्ट (Unique) कुंजी",
     "sanity.report.clean": "स्कीमा सैनिटी चेक (sanity check) पास हुआ — कोई सिमेंटिक (semantic) समस्या नहीं मिली।",
+    "sanity.correlation.ambiguous_pair": "{col_a} और {col_b} एक डोमेन जोड़ी है जहाँ धनात्मक सहसंबंध सही हो सकता है; अपरिवर्तित छोड़ा गया - स्वयं जाँचें।",
     "sanity.correlation.risk_asset_inverted": "सिमेंटिक इनवर्शन का संदेह: '{col_a}' ({cat_a}) ↔ '{col_b}' ({cat_b}) में NEGATIVE सहसंबंध होना चाहिए, लेकिन POSITIVE निर्दिष्ट किया गया था।",
     "sanity.correlation.positive_pair_inverted": "सिमेंटिक इनवर्शन का संदेह: '{col_a}' ↔ '{col_b}' एक ज्ञात सकारात्मक (positive) जोड़ी है, लेकिन NEGATIVE सहसंबंध निर्दिष्ट किया गया था।",
     "sanity.monotonicity.asset_risk_inverted": "एकदिष्टता (monotonicity) इनवर्शन का संदेह: '{col_x}' (एसेट) ↑ → '{col_y}' (जोखिम) DECREASING होना चाहिए, लेकिन INCREASING निर्दिष्ट किया गया था।",

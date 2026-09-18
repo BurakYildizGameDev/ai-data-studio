@@ -21,6 +21,7 @@ Design rules:
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -75,22 +76,103 @@ POSITIVE_PAIRS: Set[frozenset] = {
 }
 
 
+# Ayni koke sahip ama ters anlamli kolonlar. Substring eslesmesi bunlari
+# yanlis siniflandiriyordu: "annual_return" bir getiri (asset) ama "return"
+# iade (risk) listesinde; "default_currency" bir ayar ama "default" temerrut.
+# Olculdu: bu dordu de mesru korelasyonlari ters cevirtiyordu.
+_CONTEXT_OVERRIDES: Dict[str, Optional[str]] = {
+    "annual_return": "asset",
+    "total_return": "asset",
+    "rate_of_return": "asset",
+    "expected_return": "asset",
+    "return_on": "asset",           # return_on_equity, return_on_assets
+    "default_currency": None,
+    "default_value": None,
+    "default_language": None,
+    "default_locale": None,
+}
+
+# Risk <-> asset ciftinin NEGATIF olmasi beklentisinin gecerli olmadigi,
+# bilinen alan istisnalari. Burada uyari verilir ama otomatik duzeltme
+# YAPILMAZ: sigortacilikta yuksek riskli musteri yuksek prim oder, yani
+# premium ile claim arasindaki pozitif iliski dogrudur.
+AMBIGUOUS_PAIRS: Set[frozenset] = {
+    frozenset({"premium", "claim"}),
+    frozenset({"premium_paid", "claim"}),
+    frozenset({"coverage", "claim"}),
+    frozenset({"balance", "loss"}),
+    frozenset({"revenue", "refund"}),
+    frozenset({"revenue", "return"}),
+}
+
+
+# Basit cekim ekleri: "default" gostergesi "defaulted"i, "claim" "claims"i,
+# "return" "returned"i de yakalasin. Tam kok eslesmesi bunlari kaciriyordu.
+_SUFFIXES = ("", "s", "es", "d", "ed", "ing")
+
+
+def _normalise(name: str) -> str:
+    """Kolon adini snake_case'e indirger.
+
+    camelCase bolmesi ORIJINAL ad uzerinde yapilmalidir; once kucultmek
+    "totalReturn"u tek parcaya indirip bağlam istisnalarini kacirtiyordu.
+    """
+    spaced = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", name)
+    return re.sub(r"[^a-z0-9]+", "_", spaced.lower()).strip("_")
+
+
+def _tokens(name: str) -> Set[str]:
+    """Kolon adini kelime parcalarina ayirir (snake_case ve camelCase)."""
+    return {tok for tok in _normalise(name).split("_") if tok}
+
+
+def _matches(indicators: Set[str], lower: str, toks: Set[str]) -> bool:
+    """Cok kelimeli gosterge icin tam ifade, tek kelimelik icin token eslesmesi.
+
+    Substring yerine kelime siniri kullanilir: aksi halde "default" ->
+    "default_currency_rate" ve "return" -> "annual_return" gibi yanlis
+    pozitifler olusuyordu.
+    """
+    for indicator in indicators:
+        if "_" in indicator:
+            if indicator in lower:
+                return True
+            continue
+        for tok in toks:
+            if any(tok == indicator + suffix for suffix in _SUFFIXES):
+                return True
+    return False
+
+
 def _classify_column(name: str) -> Optional[str]:
-    """Returns 'risk', 'asset', or None based on substring matching."""
-    lower = name.lower().replace("-", "_")
-    for indicator in RISK_INDICATORS:
-        if indicator in lower:
-            return "risk"
-    for indicator in ASSET_INDICATORS:
-        if indicator in lower:
-            return "asset"
+    """Kolonu 'risk', 'asset' ya da None olarak siniflar."""
+    lower = _normalise(name)
+    for phrase, override in _CONTEXT_OVERRIDES.items():
+        if phrase in lower:
+            return override
+
+    toks = _tokens(name)
+    if _matches(RISK_INDICATORS, lower, toks):
+        return "risk"
+    if _matches(ASSET_INDICATORS, lower, toks):
+        return "asset"
     return None
+
+
+def _is_ambiguous_pair(col_a: str, col_b: str) -> bool:
+    """Risk<->asset beklentisinin alan bilgisiyle celistigi bilinen ciftler."""
+    a, b = _normalise(col_a), _normalise(col_b)
+    for pair in AMBIGUOUS_PAIRS:
+        x, y = tuple(pair)
+        if (x in a and y in b) or (y in a and x in b):
+            return True
+    return False
 
 
 def _is_positive_pair(col_a: str, col_b: str) -> bool:
     """Check if two columns are a known positive-correlation pair."""
-    a_lower = col_a.lower().replace("-", "_")
-    b_lower = col_b.lower().replace("-", "_")
+    a_lower = _normalise(col_a)
+    b_lower = _normalise(col_b)
     for pair in POSITIVE_PAIRS:
         items = list(pair)
         if (items[0] in a_lower and items[1] in b_lower) or \
@@ -161,8 +243,26 @@ def _check_correlation_semantics(
         if cat_a is None or cat_b is None:
             continue
 
-        # Check for known positive pairs first
-        if _is_positive_pair(col_a, col_b):
+        # Alan bilgisinin risk<->asset beklentisiyle celistigi bilinen ciftler:
+        # uyari verilir, otomatik duzeltme yapilmaz. Sigortacilikta yuksek
+        # riskli musteri yuksek prim oder; premium <-> claim pozitif olmalidir.
+        if _is_ambiguous_pair(col_a, col_b):
+            findings.append(SanityFinding(
+                severity="INFO",
+                category="ambiguous_pair",
+                message=t("sanity.correlation.ambiguous_pair",
+                          col_a=col_a, col_b=col_b),
+                auto_corrected=False,
+                details={"columns": [col_a, col_b],
+                         "expected_sign": rule.expected_sign},
+            ))
+            continue
+
+        # Pozitif-cift kisayolu, kolonlardan biri RISK siniflandirmasi aldiysa
+        # UYGULANMAZ: "satisfaction" <-> "loyalty_churn_rate" eskiden dogru
+        # negatif korelasyonu pozitife ceviriyordu, cunku "loyalty" pozitif
+        # ciftle eslesip risk mantigini atliyordu.
+        if _is_positive_pair(col_a, col_b) and "risk" not in (cat_a, cat_b):
             if rule.expected_sign == "negative":
                 msg = t("sanity.correlation.positive_pair_inverted",
                         col_a=col_a, col_b=col_b)

@@ -869,6 +869,7 @@ MESSAGES = {
 
     # --- Schema Sanity Checker ------------------------------------------- #
     "sanity.report.clean": "Vérification de cohérence du schéma réussie — aucun problème sémantique détecté.",
+    "sanity.correlation.ambiguous_pair": "{col_a} et {col_b} forment une paire métier où une corrélation positive peut être correcte ; laissée telle quelle - à vérifier vous-même.",
     "sanity.correlation.risk_asset_inverted": (
         "Inversion sémantique suspectée : '{col_a}' ({cat_a}) ↔ '{col_b}' ({cat_b}) "
         "devrait avoir une corrélation NÉGATIVE, mais POSITIVE a été spécifiée."

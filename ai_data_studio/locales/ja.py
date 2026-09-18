@@ -869,6 +869,7 @@ MESSAGES = {
 
     # --- Schema Sanity Checker ------------------------------------------- #
     "sanity.report.clean": "スキーマの健全性チェックに合格しました — 意味的な問題は検出されませんでした。",
+    "sanity.correlation.ambiguous_pair": "{col_a} と {col_b} は正の相関が正しい場合があるドメインの組です。変更していません - ご自身で確認してください。",
     "sanity.correlation.risk_asset_inverted": (
         "意味的な反転の疑い：'{col_a}'（{cat_a}）↔ '{col_b}'（{cat_b}）は"
         "負の相関を持つべきですが、正の相関が指定されています。"

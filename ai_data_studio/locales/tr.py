@@ -1237,6 +1237,7 @@ MESSAGES = {
 
     # --- Schema Sanity Checker ------------------------------------------- #
     "sanity.report.clean": "Şema sağlamlık denetimi geçti — anlamsal sorun bulunamadı.",
+    "sanity.correlation.ambiguous_pair": "{col_a} ile {col_b} pozitif korelasyonun doğru olabileceği bir alan çifti; değiştirilmedi - kendiniz gözden geçirin.",
     "sanity.correlation.risk_asset_inverted": (
         "Olası anlamsal terslik: '{col_a}' ({cat_a}) ↔ '{col_b}' ({cat_b}) "
         "arasında NEGATİF korelasyon beklenir, ancak POZİTİF tanımlanmış."

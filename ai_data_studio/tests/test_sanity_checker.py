@@ -343,5 +343,120 @@ class TestFromDictIntegration(unittest.TestCase):
         self.assertGreaterEqual(len(sanity_warnings), 1)
 
 
+
+class TestNoOverCorrection(unittest.TestCase):
+    """Mesru korelasyonlarin ezilmedigini dogrular.
+
+    Substring eslesmesi ve pozitif-cift kisayolu birlikte, kullanicinin
+    bilerek istedigi dogru korelasyonlari ters cevirebiliyordu. Asagidaki
+    dordu de olculmus gercek vakalardir.
+    """
+
+    def _corrected_sign(self, col_a, col_b, wanted, auto_correct=True):
+        rule = CorrelationRule(columns=[col_a, col_b],
+                               expected_sign=wanted, min_r=0.5)
+        check_schema_sanity(_raw_schema(correlations=[rule]),
+                            auto_correct=auto_correct)
+        return rule.expected_sign
+
+    def test_satisfaction_vs_churn_stays_negative(self):
+        """'loyalty' pozitif cifte esleyip risk mantigini atliyordu."""
+        self.assertEqual(
+            self._corrected_sign("customer_satisfaction", "loyalty_churn_rate",
+                                 "negative"),
+            "negative")
+
+    def test_insurance_premium_vs_claim_stays_positive(self):
+        """Yuksek riskli musteri yuksek prim oder; bu cift zorlanmamali."""
+        self.assertEqual(
+            self._corrected_sign("premium_paid", "claim_amount", "positive"),
+            "positive")
+
+    def test_investment_return_is_not_a_risk_column(self):
+        """'return' iade anlamiyla risk listesinde; getiri ile karistirilmamali."""
+        self.assertEqual(_classify_column("annual_return"), "asset")
+        self.assertEqual(_classify_column("return_on_equity"), "asset")
+        self.assertEqual(
+            self._corrected_sign("investment_amount", "annual_return", "positive"),
+            "positive")
+
+    def test_default_currency_is_not_a_default_risk(self):
+        self.assertIsNone(_classify_column("default_currency_rate"))
+        self.assertEqual(
+            self._corrected_sign("balance", "default_currency_rate", "positive"),
+            "positive")
+
+    def test_genuine_inversion_is_still_corrected(self):
+        """Modulun asil isi kaybolmamali: income up -> default up yanlistir."""
+        self.assertEqual(
+            self._corrected_sign("annual_income", "default_rate", "positive"),
+            "negative")
+
+    def test_ambiguous_pair_is_reported_but_not_changed(self):
+        rule = CorrelationRule(columns=["premium_paid", "claim_amount"],
+                               expected_sign="positive", min_r=0.5)
+        report = check_schema_sanity(_raw_schema(correlations=[rule]),
+                                     auto_correct=True)
+        self.assertEqual(rule.expected_sign, "positive")
+        self.assertEqual(report.corrections_applied, 0)
+        self.assertTrue(any(f.category == "ambiguous_pair" for f in report.findings))
+
+    def test_auto_correct_false_warns_without_changing_rules(self):
+        self.assertEqual(
+            self._corrected_sign("annual_income", "default_rate", "positive",
+                                 auto_correct=False),
+            "positive")
+
+
+class TestClassifierWordBoundaries(unittest.TestCase):
+    """Siniflandirmanin substring degil kelime siniri kullandigini dogrular."""
+
+    def test_inflected_forms_are_still_detected(self):
+        for name in ("customer_returned", "defaulted_loans", "claims_count",
+                     "churn_rate", "losses_total"):
+            with self.subTest(column=name):
+                self.assertEqual(_classify_column(name), "risk")
+
+    def test_camel_case_is_split(self):
+        self.assertEqual(_classify_column("creditScore"), "asset")
+        self.assertEqual(_classify_column("totalReturn"), "asset")
+        self.assertIsNone(_classify_column("defaultCurrency"))
+
+    def test_unknown_columns_still_pass_through(self):
+        for name in ("widget_id", "shipping_city", "timestamp"):
+            with self.subTest(column=name):
+                self.assertIsNone(_classify_column(name))
+
+
+class TestSanityAutoCorrectIsConfigurable(unittest.TestCase):
+    """from_dict uzerinden otomatik duzeltme kapatilabilmeli."""
+
+    PAYLOAD = {
+        "domain": "insurance",
+        "row_count_target": 100,
+        "columns": [
+            {"name": "annual_income", "type": "float", "min": 0, "max": 200000},
+            {"name": "default_rate", "type": "float", "min": 0, "max": 1},
+        ],
+        "correlations": [{"columns": ["annual_income", "default_rate"],
+                          "expected_sign": "positive", "min_r": 0.4}],
+    }
+
+    def test_default_still_auto_corrects(self):
+        contract = SchemaContract.from_dict(dict(self.PAYLOAD))
+        self.assertEqual(contract.correlations[0].expected_sign, "negative")
+
+    def test_opt_out_leaves_the_rule_alone_but_warns(self):
+        contract = SchemaContract.from_dict(dict(self.PAYLOAD),
+                                            sanity_auto_correct=False)
+        self.assertEqual(contract.correlations[0].expected_sign, "positive")
+        self.assertTrue(contract.warnings)
+
+    def test_from_json_passes_the_flag_through(self):
+        import json
+        contract = SchemaContract.from_json(json.dumps(self.PAYLOAD),
+                                            sanity_auto_correct=False)
+        self.assertEqual(contract.correlations[0].expected_sign, "positive")
+
 if __name__ == "__main__":
     unittest.main()

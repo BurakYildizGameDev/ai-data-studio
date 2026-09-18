@@ -609,8 +609,14 @@ class SchemaContract:
 
     # -- kurulum ---------------------------------------------------------- #
     @classmethod
-    def from_dict(cls, data: Any) -> "SchemaContract":
-        """Ham dict'i doğrular ve sozlesmeye çevirir. Hatada SchemaValidationError."""
+    def from_dict(cls, data: Any, *,
+                  sanity_auto_correct: bool = True) -> "SchemaContract":
+        """Ham dict'i doğrular ve sozlesmeye çevirir. Hatada SchemaValidationError.
+
+        *sanity_auto_correct* False verilirse heuristic sanity checker yalnizca
+        uyarir, kurallari degistirmez. Kullanicinin bilerek istedigi ters yonlu
+        korelasyonlari (sigortacilik, getiri modelleri) sessizce ezmemek icin.
+        """
         if not isinstance(data, dict):
             raise SchemaValidationError(
                 t("schema.error.contract_object", got=type(data).__name__)
@@ -694,14 +700,16 @@ class SchemaContract:
         # Heuristic sanity check: küçük modellerin (1.5B) ürettiği anlamsal
         # terslikleri (ör. income↑ → default↑) otomatik düzeltir ve uyarı verir.
         from .schema_sanity_checker import check_schema_sanity
-        check_schema_sanity(contract, auto_correct=True)
+        check_schema_sanity(contract, auto_correct=sanity_auto_correct)
 
         return contract
 
     @classmethod
-    def from_json(cls, text: str) -> "SchemaContract":
+    def from_json(cls, text: str, *,
+                  sanity_auto_correct: bool = True) -> "SchemaContract":
         """Ham LLM yanitindan (açıklama metni sarilmis olabilir) sozlesme üretir."""
-        return cls.from_dict(extract_json_block(text))
+        return cls.from_dict(extract_json_block(text),
+                             sanity_auto_correct=sanity_auto_correct)
 
     @property
     def table_name(self) -> str:

@@ -1230,6 +1230,7 @@ MESSAGES = {
 
     # --- Schema Sanity Checker ------------------------------------------- #
     "sanity.report.clean": "Schema sanity check passed — no semantic issues detected.",
+    "sanity.correlation.ambiguous_pair": "{col_a} and {col_b} form a domain pair where a positive correlation can be correct; left unchanged - review it yourself.",
     "sanity.correlation.risk_asset_inverted": (
         "Suspected semantic inversion: '{col_a}' ({cat_a}) ↔ '{col_b}' ({cat_b}) "
         "should have a NEGATIVE correlation, but POSITIVE was specified."

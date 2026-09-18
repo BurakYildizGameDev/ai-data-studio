@@ -869,6 +869,7 @@ MESSAGES = {
 
     # --- Schema Sanity Checker ------------------------------------------- #
     "sanity.report.clean": "Schema-Plausibilitätsprüfung bestanden — keine semantischen Probleme erkannt.",
+    "sanity.correlation.ambiguous_pair": "{col_a} und {col_b} bilden ein Fachpaar, bei dem eine positive Korrelation richtig sein kann; unverändert gelassen - bitte selbst prüfen.",
     "sanity.correlation.risk_asset_inverted": (
         "Vermutete semantische Umkehrung: '{col_a}' ({cat_a}) ↔ '{col_b}' ({cat_b}) "
         "sollte eine NEGATIVE Korrelation haben, aber POSITIV wurde angegeben."

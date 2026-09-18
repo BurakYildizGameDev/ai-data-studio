@@ -866,6 +866,7 @@ MESSAGES = {
     "web.more_sources": "(+{count} fuentes)",
     "hipaa.category.unique_key": "Clave única",
     "sanity.report.clean": "Prueba de cordura del esquema superada — no se detectaron problemas semánticos.",
+    "sanity.correlation.ambiguous_pair": "{col_a} y {col_b} forman un par de dominio donde una correlación positiva puede ser correcta; sin cambios: revíselo usted.",
     "sanity.correlation.risk_asset_inverted": "Posible inversión semántica: '{col_a}' ({cat_a}) ↔ '{col_b}' ({cat_b}) debería tener una correlación NEGATIVA, pero se especificó POSITIVA.",
     "sanity.correlation.positive_pair_inverted": "Posible inversión semántica: '{col_a}' ↔ '{col_b}' son un par positivo conocido, pero se especificó una correlación NEGATIVA.",
     "sanity.monotonicity.asset_risk_inverted": "Posible inversión de monotonicidad: '{col_x}' (activo) ↑ → '{col_y}' (riesgo) debería ser DECRECIENTE, pero se especificó CRECIENTE.",
