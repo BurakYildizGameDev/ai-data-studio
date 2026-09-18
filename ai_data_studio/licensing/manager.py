@@ -12,7 +12,6 @@ import hashlib
 import hmac
 import json
 import logging
-import os
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -33,7 +32,6 @@ log = logging.getLogger(__name__)
 # licenses. The matching private key now lives only in the release secret store
 # and must never appear in this repository or its tests.
 DEFAULT_PUBLIC_KEY = "o66ER5nGBFNT7Ks12CLne1sViJHwH+P2O6jKwFkbimE="
-ENV_PUBLIC_KEY = "AI_DATA_STUDIO_LICENSE_PUBKEY"
 KEYRING_SERVICE = "ai_data_studio"
 KEYRING_LICENSE_KEY = "license_token"
 SETTINGS_LICENSE_KEY = "license_token"
@@ -111,11 +109,12 @@ class LicenseManager:
     """Manages offline license validation, storage, and feature gating."""
 
     def __init__(self, public_key_b64: Optional[str] = None):
-        self._pubkey_b64 = (
-            public_key_b64
-            or os.getenv(ENV_PUBLIC_KEY)
-            or DEFAULT_PUBLIC_KEY
-        )
+        # The trust anchor is the compiled-in key and nothing else. Reading it
+        # from the environment made the signature check decorative: setting one
+        # variable to a self-generated public key was enough to have the client
+        # accept self-signed Enterprise tokens, with no patching involved.
+        # public_key_b64 exists for tests, which pass an ephemeral key.
+        self._pubkey_b64 = public_key_b64 or DEFAULT_PUBLIC_KEY
         self._public_key = self._load_public_key(self._pubkey_b64)
         self._cached_license: Optional[LicenseInfo] = None
 

@@ -12,10 +12,12 @@ Tests:
 from __future__ import annotations
 
 import datetime
+import os
 import unittest
 from unittest import mock
 
 from ai_data_studio.licensing.manager import (
+    LicenseManager,
     LicenseStatus,
     LicenseTier,
     ProFeatureRequiredError,
@@ -26,7 +28,7 @@ from ai_data_studio.licensing.manager import (
     verify_lemonsqueezy_webhook,
     verify_polar_webhook,
 )
-from ai_data_studio.tests.license_keys import ephemeral_manager
+from ai_data_studio.tests.license_keys import ephemeral_keypair, ephemeral_manager
 
 
 class TestLicensingEngine(unittest.TestCase):
@@ -136,6 +138,34 @@ class TestLicensingEngine(unittest.TestCase):
             mock_lic.return_value.is_active = True
             # Should not raise
             self.mgr.require_pro("Audit PDF")
+
+    def test_public_key_cannot_be_overridden_by_environment(self):
+        """An attacker-supplied public key in the environment is ignored.
+
+        The manager used to read AI_DATA_STUDIO_LICENSE_PUBKEY, so generating a
+        key pair and exporting one variable was enough to have a self-signed
+        Enterprise token accepted. The trust anchor is now compiled in.
+        """
+        attacker_private, attacker_public = ephemeral_keypair()
+        forged = generate_signed_license(
+            {
+                "key": "FORGED-0001",
+                "email": "attacker@example.invalid",
+                "tier": "enterprise",
+                "features": ["*"],
+                "expires_at": "lifetime",
+                "seats": 9999,
+            },
+            attacker_private,
+        )
+
+        for var in ("AI_DATA_STUDIO_LICENSE_PUBKEY",
+                    "AI_DATA_STUDIO_LICENSE_PUBKEY_TEST"):
+            with mock.patch.dict(os.environ, {var: attacker_public}):
+                info = LicenseManager().verify_token(forged)
+                self.assertEqual(info.status, LicenseStatus.INVALID)
+                self.assertFalse(info.is_active)
+                self.assertFalse(info.is_enterprise)
 
     def test_license_installation_and_removal(self):
         """Persisting and removing license via settings / keyring."""
