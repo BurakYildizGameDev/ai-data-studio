@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import datetime
 import io
+import json
 import logging
 from pathlib import Path
 from xml.sax.saxutils import escape as _xml_escape
@@ -57,6 +58,22 @@ from ..i18n import t
 from ..licensing import get_license_manager
 
 log = logging.getLogger(__name__)
+
+
+def _build_signed_provenance(dataframe, schema, report: Dict[str, Any]) -> Dict[str, Any]:
+    """Rapora gomulecek, imzalanmis serh blogunu uretir.
+
+    Orchestrator ile AYNI alanlari ve ayni imzalama yolunu kullanir; boylece
+    veri dosyasindaki serh ile PDF'teki serh ayni ozet uzerinde anlasir.
+    """
+    try:
+        from ..core.orchestrator import _provenance_fields
+
+        contract = schema if getattr(schema, "random_seed", None) is not None else None
+        return _provenance_fields(dataframe, contract, report)
+    except Exception as exc:  # pragma: no cover - serh raporu dusurmemeli
+        log.warning("Could not build provenance block for the PDF: %s", exc)
+        return {}
 
 
 def _verdict(ok: Optional[bool], good: str, bad: str) -> str:
@@ -253,9 +270,20 @@ def generate_pdf_report(
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
+    # M-1: serh blogu PDF'in Subject alanina JSON olarak gomulur, boylece
+    # "ai-data-studio verify-report rapor.pdf" onu makine tarafindan
+    # okunabilir sekilde bulur. Gomulen tek lisans parcasi public_token'dir:
+    # ozel anahtar asla rapora girmez, yani imzali bir raporu denetciye
+    # vermek lisansi vermek anlamina gelmez.
+    provenance_block = _build_signed_provenance(dataframe, schema, report)
+
     doc = SimpleDocTemplate(
         str(output_path),
         pagesize=letter,
+        subject=json.dumps(provenance_block, sort_keys=True,
+                           separators=(",", ":"), ensure_ascii=False),
+        title="Data Quality & Privacy Compliance Audit Report",
+        author="AI Synthetic Data Studio",
         leftMargin=54,
         rightMargin=54,
         topMargin=54,

@@ -11,10 +11,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from ai_data_studio.licensing.manager import (
-    generate_signed_license,
-    get_license_manager,
-)
+from ai_data_studio.licensing.manager import get_license_manager
+from tools.license_admin import generate_signed_license
 from ai_data_studio.tests.license_keys import (
     install_ephemeral_global_manager,
     restore_global_manager,

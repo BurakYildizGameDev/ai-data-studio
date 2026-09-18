@@ -1329,6 +1329,8 @@ _PROVENANCE_COMPLIANCE = "EU AI Act Art. 50 / Non-Personal Data"
 _PROVENANCE_GENERATOR = "ai-data-studio"
 # CSV yorum satirlarinda kullanilan eski basliklar.
 _CSV_KEY_ALIASES = {"notice": "PROVENANCE", "compliance": "COMPLIANCE"}
+_CSV_KEY_ALIASES_INVERSE = {v.lower(): k
+                            for k, v in _CSV_KEY_ALIASES.items()}
 
 
 def _dataframe_digest(df: pd.DataFrame) -> str:
@@ -1383,6 +1385,20 @@ def _provenance_fields(df: pd.DataFrame,
     else:
         fields["privacy_audit"] = str(
             audit.get("overall_privacy_status") or "unknown").lower()
+
+    # M-1: etkin lisans varsa serh imzalanir. Lisans yoksa ya da eski (v1)
+    # bir token'sa alanlar imzasiz doner - sahte bir imza uretmeyiz.
+    # M-2: seats ve machine_id katı bir engelleme degil, manifeste yazilan
+    # birer BEYAN. Gelistirici laptop ile masaustu arasinda gecerken arac
+    # calismayi reddetmez.
+    try:
+        from ..licensing import get_license_manager, sign_provenance
+        info = get_license_manager().get_active_license()
+        if info.is_active:
+            fields["license_seats"] = str(info.seats)
+        fields = sign_provenance(fields, info)
+    except Exception as exc:  # pragma: no cover - lisans katmani opsiyonel
+        log.warning("Provenance could not be signed: %s", exc)
     return fields
 # JSON govdesi bu satir sayisinda bloklar halinde yazilir.
 _JSON_CHUNK_ROWS = 50_000
@@ -1438,13 +1454,25 @@ def _write_parquet_with_provenance(df: pd.DataFrame, path: Path,
     pq.write_table(table, str(path))
 
 
+def _json_default(value: Any) -> Any:
+    """numpy skalerlerini stdlib json'in anlayacagi tiplere cevirir."""
+    item = getattr(value, "item", None)
+    if callable(item):
+        return item()
+    raise TypeError("JSON olarak yazilamayan tip: %s" % type(value).__name__)
+
+
 def _write_json_with_provenance(df: pd.DataFrame, path: Path,
                                 fields: Optional[Dict[str, str]] = None) -> None:
     """JSON dosyasina ust duzey ``_provenance`` anahtari ekler.
 
-    Serh elle yazilir, govde pandas tarafindan dogrudan dosyaya akitilir.
-    Onceki surum to_json -> json.loads -> json.dumps turu yapiyordu; bu,
-    veri setinin dort ayri temsilini ayni anda bellekte tutuyordu.
+    Serh elle yazilir, govde blok blok akitilir. Onceki surum
+    to_json -> json.loads -> json.dumps turu yapiyordu ve veri setinin
+    dort ayri temsilini ayni anda bellekte tutuyordu.
+
+    Govde standart kutuphane json'i ile yazilir: pandas to_json float64'u
+    kayipli yazdigi icin geri okunan veri yazilanla ayni cikmiyor ve serh
+    imzasindaki icerik ozeti dogrulanamiyordu.
     """
     import json as _json
 
@@ -1455,15 +1483,27 @@ def _write_json_with_provenance(df: pd.DataFrame, path: Path,
         handle.write('  \"_provenance\": ')
         handle.write(_json.dumps(header, ensure_ascii=False, indent=2))
         handle.write(',\n  \"data\": [')
-        # Blok blok yaziyoruz: pandas to_json bir dosya tutamagi verilse
-        # bile tum metni once bellekte kuruyor. Olculdu (300k satir,
-        # 11 MB veri): tek seferde 53.6 MB tepe, 50k bloklarla 10.6 MB.
+        # Blok blok ve standart kutuphane json'i ile yaziyoruz.
+        #
+        # Neden pandas to_json degil: olculdu, to_json float64'u hicbir
+        # double_precision ayarinda tam yazmiyor, yani dosyadan geri okunan
+        # veri yazilanla ayni olmuyor ve icerik ozeti dogrulanamiyordu.
+        # stdlib json float.__repr__ kullanir ve tam gidip gelir. Bedeli
+        # ~6 kat yavas yazim; yalnizca serh istendiginde odenir.
+        #
+        # Blok blok: tum metni bellekte kurmamak icin (bkz. _JSON_CHUNK_ROWS).
+        has_nulls = bool(df.isna().to_numpy().any())
         first = True
         for start in range(0, len(df), _JSON_CHUNK_ROWS):
-            block = df.iloc[start:start + _JSON_CHUNK_ROWS].to_json(
-                orient="records", force_ascii=False)
+            block = df.iloc[start:start + _JSON_CHUNK_ROWS]
+            if has_nulls:
+                # NaN yerine null: stdlib json NaN yazardi ve bu, katı JSON
+                # ayristiricilarinda (ornegin tarayici) gecersizdir.
+                block = block.astype(object).where(block.notna(), None)
+            body = _json.dumps(block.to_dict("records"),
+                               ensure_ascii=False, default=_json_default)
             # Blok "[...]" gelir; dis parantezleri atip araya virgul koyariz.
-            handle.write(("" if first else ",") + block[1:-1])
+            handle.write(("" if first else ",") + body[1:-1])
             first = False
         handle.write("]\n}\n")
 
@@ -1749,6 +1789,85 @@ def _help(key: str) -> str:
     return t(key).replace("%", "%%")
 
 
+def _read_provenance(path: Path) -> Tuple[Dict[str, Any], Optional[str]]:
+    """Bir cikti dosyasindan serh blogunu ve icerik ozetini cikarir.
+
+    Donen ikili: (serh alanlari, yeniden hesaplanan ozet). Ozet yalnizca
+    veriyi okuyabildigimizde hesaplanir; PDF icin None doner, cunku PDF
+    verinin kendisi degil onun raporudur.
+    """
+    suffix = path.suffix.lower()
+
+    if suffix == ".json":
+        payload = json.loads(config.read_text(path))
+        if isinstance(payload, dict) and "_provenance" in payload:
+            frame = pd.DataFrame(payload.get("data") or [])
+            return payload["_provenance"], _dataframe_digest(frame)
+        return {}, None
+
+    if suffix == ".csv":
+        fields: Dict[str, Any] = {}
+        with path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                if not line.startswith("#"):
+                    break
+                label, _, value = line[1:].partition(":")
+                label = label.strip().lower()
+                if label:
+                    fields[_CSV_KEY_ALIASES_INVERSE.get(label, label)] = value.strip()
+        if not fields:
+            return {}, None
+        # float_precision="round_trip": pandas'in varsayilan CSV float
+        # ayristiricisi kayiplidir (192.01837376109242 -> ...0924), bu da
+        # icerik ozetini dogrulanamaz kiliyordu.
+        return fields, _dataframe_digest(
+            pd.read_csv(path, comment="#", float_precision="round_trip"))
+
+    if suffix == ".parquet":
+        import pyarrow.parquet as pq
+        meta = pq.read_schema(str(path)).metadata or {}
+        fields = {k.decode("utf-8"): v.decode("utf-8")
+                  for k, v in meta.items() if k != b"pandas"}
+        fields.pop("provenance", None)   # notice'in kopyasi
+        if not fields:
+            return {}, None
+        return fields, _dataframe_digest(pd.read_parquet(path))
+
+    if suffix == ".pdf":
+        # Serh blogu PDF'in Subject alanina JSON olarak yazilir.
+        raw = path.read_bytes()
+        marker = b"/Subject ("
+        start = raw.find(marker)
+        if start == -1:
+            return {}, None
+        start += len(marker)
+        depth, i = 1, start
+        while i < len(raw) and depth:
+            if raw[i:i + 1] == b"\\":
+                i += 2
+                continue
+            if raw[i:i + 1] == b"(":
+                depth += 1
+            elif raw[i:i + 1] == b")":
+                depth -= 1
+            i += 1
+        blob = raw[start:i - 1].replace(b"\\(", b"(").replace(b"\\)", b")")
+        try:
+            return json.loads(blob.decode("utf-8")), None
+        except Exception:
+            return {}, None
+
+    return {}, None
+
+
+def verify_output_file(path: Path):
+    """Bir cikti dosyasinin serhini tamamen cevrimdisi dogrular."""
+    from ..licensing import verify_provenance
+
+    fields, digest = _read_provenance(Path(path))
+    return verify_provenance(fields, actual_digest=digest)
+
+
 def _build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="python -m ai_data_studio.core.orchestrator",
@@ -1771,6 +1890,8 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--web-seed", action="store_true", help=_help("cli.help.web_seed"))
     p.add_argument("--web-query", default="", help=_help("cli.help.web_query"))
     p.add_argument("--formats", default="csv,parquet", help=_help("cli.help.formats"))
+    p.add_argument("--verify-report", nargs="+", metavar="FILE",
+                   help=_help("cli.help.verify_report"))
     p.add_argument("--provenance", action="store_true",
                    help=_help("cli.help.provenance"))
     p.add_argument("--export-pdf", action="store_true",
@@ -1896,6 +2017,30 @@ def check_auth() -> int:
     return 0
 
 
+def _run_verify_report(paths: List[str]) -> int:
+    """``verify-report`` alt komutu: ciktilari cevrimdisi dogrular."""
+    exit_code = 0
+    for raw in paths:
+        target = Path(raw)
+        print("%s" % target)
+        if not target.exists():
+            print("  FAIL  %s" % t("cli.verify.missing_file"))
+            exit_code = 1
+            continue
+        try:
+            result = verify_output_file(target)
+        except Exception as exc:
+            print("  FAIL  %s" % exc)
+            exit_code = 1
+            continue
+        for line in result.summary_lines():
+            print("  %s" % line)
+        if not result.ok:
+            exit_code = 1
+        print("")
+    return exit_code
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     # Turkce yardim/hata metinleri cp437 gibi konsollarda cokmesin diye
     # argparse devreye girmeden once stdio'yu UTF-8'e sabitle.
@@ -1907,6 +2052,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.gemini_backend:
         os.environ[config.GEMINI_BACKEND_ENV] = args.gemini_backend
 
+    # Dogrulama domain/project gerektirmez: denetci yalnizca dosyayi verir.
+    if args.verify_report:
+        return _run_verify_report(args.verify_report)
     if args.check_auth:
         return check_auth()
     if args.hardware:

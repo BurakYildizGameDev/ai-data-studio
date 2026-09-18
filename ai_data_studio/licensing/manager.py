@@ -75,6 +75,16 @@ class LicenseInfo:
     status: LicenseStatus = LicenseStatus.MISSING
     status_message: str = ""
     seats: int = 1
+    # M-2: bagli makine parmak izi. Varsayilan "*" = bagsiz. Katı bir
+    # engelleme degil; manifest ve denetim icin beyan edilir.
+    machine_id: str = "*"
+    # M-1: musteriye ozel rapor imzalama anahtari. Public yarisi ana
+    # anahtarla imzalanmis payload'in icinde, private yarisi token'in
+    # ucuncu parcasinda ve ASLA rapora gomulmez.
+    report_public_key: str = ""
+    report_private_key: str = ""
+    # Rapora gomulebilen kisim: payload + ana imza. Ozel anahtar icermez.
+    public_token: str = ""
 
     @property
     def is_active(self) -> bool:
@@ -100,12 +110,50 @@ class LicenseInfo:
         except Exception:
             return None
 
+    @property
+    def can_sign_reports(self) -> bool:
+        """Bu lisans dogrulanabilir rapor imzalayabilir mi?
+
+        Token v1 (tek imzali, rapor anahtari olmayan) lisanslar hala
+        gecerlidir; yalnizca imzasiz serh uretirler.
+        """
+        return bool(self.is_active and self.report_private_key
+                    and self.report_public_key)
+
     def has_feature(self, feature_name: str) -> bool:
         if not self.is_active:
             return False
         if self.tier == LicenseTier.ENTERPRISE:
             return True
         return feature_name in self.features or "*" in self.features
+
+
+# Iptal listesi paketle birlikte gelir: 7/24 sunucu tutmadan calisan
+# offline-first bir CRL. Sizan bir anahtar sonraki surumde buraya girer.
+REVOCATION_LIST_PATH = Path(__file__).resolve().parent / "revoked_keys.json"
+
+
+def load_revoked_keys() -> Set[str]:
+    """Paketle gelen iptal listesini okur.
+
+    Liste okunamazsa BOS kume doner: bozuk bir dosya yuzunden butun
+    lisanslari kilitlemek, iptal edilmis tek bir anahtari kabul etmekten
+    daha kotu bir arizadir.
+    """
+    try:
+        data = json.loads(config.read_text(REVOCATION_LIST_PATH))
+    except Exception:
+        return set()
+    entries = data.get("revoked") if isinstance(data, dict) else data
+    if not isinstance(entries, list):
+        return set()
+    keys = set()
+    for entry in entries:
+        if isinstance(entry, str):
+            keys.add(entry)
+        elif isinstance(entry, dict) and entry.get("key"):
+            keys.add(str(entry["key"]))
+    return keys
 
 
 LICENSE_FILE_PATH = Path(config.APP_DATA_DIR) / ".license"
@@ -240,14 +288,17 @@ class LicenseManager:
         if raw_token.startswith("ADS-"):
             raw_token = raw_token[4:]
 
+        # v1: <payload>.<master_sig>
+        # v2: <payload>.<master_sig>.<report_private_key>
         parts = raw_token.split(".")
-        if len(parts) != 2:
+        if len(parts) not in (2, 3):
             return LicenseInfo(
                 status=LicenseStatus.INVALID,
                 status_message=t("license.status.invalid_format"),
             )
 
-        payload_b64, sig_b64 = parts
+        payload_b64, sig_b64 = parts[0], parts[1]
+        report_private_key = parts[2] if len(parts) == 3 else ""
         try:
             payload_bytes = base64.urlsafe_b64decode(payload_b64.encode("ascii"))
             sig_bytes = base64.urlsafe_b64decode(sig_b64.encode("ascii"))
@@ -287,6 +338,9 @@ class LicenseManager:
             LicenseTier.PRO if tier_str == "pro" else LicenseTier.COMMUNITY
         )
         features = list(data.get("features", []))
+        machine_id = str(data.get("machine_id", "*") or "*")
+        report_public_key = str(data.get("report_public_key", "") or "")
+        public_token = "%s.%s" % (payload_b64, sig_b64)
         issued_at = data.get("issued_at")
         expires_at = data.get("expires_at")
         try:
@@ -307,7 +361,16 @@ class LicenseManager:
                 status=status,
                 status_message=message,
                 seats=seats,
+                machine_id=machine_id,
+                report_public_key=report_public_key,
+                public_token=public_token,
             )
+
+        # Iptal denetimi imzadan SONRA: iptal edilmis bir anahtar
+        # kriptografik olarak gecerli olsa da kabul edilmez.
+        if key and key in load_revoked_keys():
+            return _fail(LicenseStatus.INVALID,
+                         t("license.status.revoked", license_key=key))
 
         # Sadece ACIK "suresiz" gosterimleri sonsuz sayilir. Onceki kosul
         # falsy olan her seyi (bos liste, 0, False) suresiz kabul ediyordu;
@@ -349,6 +412,10 @@ class LicenseManager:
             status=LicenseStatus.VALID,
             status_message=t("license.status.valid"),
             seats=seats,
+            machine_id=machine_id,
+            report_public_key=report_public_key,
+            report_private_key=report_private_key,
+            public_token=public_token,
         )
 
     def install_license(self, token: str) -> LicenseInfo:
@@ -457,115 +524,15 @@ class LicenseManager:
 # Helper / Server utilities (for LemonSqueezy / Polar.sh / Test key generation)
 # --------------------------------------------------------------------------- #
 
-def generate_signed_license(payload: Dict[str, Any], private_key_b64: str) -> str:
-    """Generate a cryptographically signed ADS license token using Ed25519.
-
-    Used by LemonSqueezy / Polar.sh webhook handlers or CLI admin scripts.
-    """
-    priv_bytes = base64.b64decode(private_key_b64)
-    priv_key = ed25519.Ed25519PrivateKey.from_private_bytes(priv_bytes)
-
-    payload_json = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-    payload_bytes = payload_json.encode("utf-8")
-
-    signature = priv_key.sign(payload_bytes)
-
-    p_b64 = base64.urlsafe_b64encode(payload_bytes).decode("ascii")
-    s_b64 = base64.urlsafe_b64encode(signature).decode("ascii")
-    return f"ADS-{p_b64}.{s_b64}"
-
-
-WEBHOOK_TOLERANCE_S = 300
-
-
-def _within_replay_window(timestamp: Any, tolerance_s: int) -> bool:
-    """Webhook zaman damgasinin tekrar oynatma penceresinde oldugunu dogrular.
-
-    Zaman damgasi denetlenmedigi surece yakalanan bir istek sonsuza kadar
-    yeniden gonderilebilir; her seferinde yeni bir lisans uretilir.
-    """
-    try:
-        sent = int(timestamp)
-    except (TypeError, ValueError):
-        return False
-    now = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
-    return abs(now - sent) <= tolerance_s
-
-
-def verify_lemonsqueezy_webhook(
-    payload_bytes: bytes,
-    signature_header: str,
-    webhook_secret: str,
-    *,
-    timestamp: Optional[Any] = None,
-    tolerance_s: int = WEBHOOK_TOLERANCE_S,
-) -> bool:
-    """LemonSqueezy webhook HMAC-SHA256 imzasini dogrular.
-
-    *timestamp* verilirse (X-Event-Timestamp gibi bir basliktan) tekrar
-    oynatma penceresi de denetlenir. Imza dogru olsa bile bir isteği
-    yalnizca bir kez islemek cagiranin sorumlulugundadir: event id'yi
-    kalici bir "islendi" tablosunda tutun.
-    """
-    if not signature_header or not webhook_secret:
-        return False
-    if timestamp is not None and not _within_replay_window(timestamp, tolerance_s):
-        return False
-
-    mac = hmac.new(webhook_secret.encode("utf-8"), msg=payload_bytes,
-                   digestmod=hashlib.sha256)
-    return hmac.compare_digest(mac.hexdigest(), signature_header)
-
-
-def verify_polar_webhook(
-    payload_bytes: bytes,
-    signature_header: str,
-    webhook_secret: str,
-    *,
-    msg_id: str,
-    timestamp: Any,
-    tolerance_s: int = WEBHOOK_TOLERANCE_S,
-) -> bool:
-    """Polar.sh (Svix) webhook imzasini dogrular.
-
-    Svix ``{id}.{timestamp}.{body}`` uzerini imzalar, sonucu base64 olarak
-    verir ve anahtar rotasyonu sirasinda baslikta bosluk ayracli birden cok
-    imza tasiyabilir (``v1,aaa v1,bbb``).
-
-    Onceki surum govdenin hexdigest'ini alip basliktan ``"v1,"`` dizisini
-    cikariyordu: bu sema Svix'in imzaladigi seyle ortusmedigi icin gercek bir
-    Polar webhook'unu hicbir zaman dogrulayamazdi - ve "calismiyor" diye
-    gevsetilmeye en acik koddu.
-    """
-    if not signature_header or not webhook_secret or not msg_id:
-        return False
-    if not _within_replay_window(timestamp, tolerance_s):
-        return False
-
-    secret = webhook_secret
-    if secret.startswith("whsec_"):
-        secret = secret[len("whsec_"):]
-    try:
-        key = base64.b64decode(secret)
-    except Exception:
-        return False
-    if not key:
-        return False
-
-    signed = b".".join((str(msg_id).encode("utf-8"),
-                        str(timestamp).encode("utf-8"),
-                        payload_bytes))
-    expected = base64.b64encode(
-        hmac.new(key, msg=signed, digestmod=hashlib.sha256).digest()
-    ).decode("ascii")
-
-    matched = False
-    for candidate in signature_header.split():
-        version, _, value = candidate.partition(",")
-        if version == "v1" and hmac.compare_digest(expected, value):
-            # break yok: sabit zamanli kalmak icin tum adaylar taranir.
-            matched = True
-    return matched
+# Lisans URETIMI ve webhook dogrulama artik bu pakette DEGIL.
+#
+# generate_signed_license() ve webhook dogrulayicilari tools/license_admin.py
+# altina tasindi: satici tarafina ait kod, musteriye giden pakette durmamali.
+# Ozel anahtar zaten burada degildi, yani bir sizinti yoktu; ama test edilmis,
+# hazir bir token uretme araci dagitmak, bir sekilde anahtari ele geciren
+# saldirgana ihtiyaci olan son parcayi veriyordu.
+#
+# Istemci yalnizca DOGRULAR: verify_token() ve licensing.provenance.
 
 
 # Singleton instance

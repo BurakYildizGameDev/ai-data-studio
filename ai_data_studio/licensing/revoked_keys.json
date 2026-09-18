@@ -1,0 +1,5 @@
+{
+  "_comment": "Offline certificate revocation list. A leaked or refunded licence key is added here and ships with the next release; the client refuses it even though its signature is still cryptographically valid. Entries may be a bare key string or an object with key/reason/revoked_at.",
+  "updated_at": "2026-09-18",
+  "revoked": []
+}

@@ -53,6 +53,8 @@ HIDDEN_IMPORTS = [
     "ai_data_studio.reporting",
     "ai_data_studio.reporting.pdf_report",
     "ai_data_studio.gui.components.license_dialog",
+    # NOT: tools/license_admin.py BILEREK yok - lisans uretimi
+    # satici tarafina ait, musteri paketine girmez.
     "reportlab",
     "runpy",
 ]

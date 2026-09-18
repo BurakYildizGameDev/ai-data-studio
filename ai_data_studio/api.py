@@ -41,6 +41,7 @@ __all__ = [
     "compile_schema",
     "build_config",
     "read_output",
+    "verify_provenance",
     "ENGINE_LLM",
     "ENGINE_PARAMETRIC",
     "ENGINE_AUTO",
@@ -84,7 +85,42 @@ def read_output(path) -> "pd.DataFrame":
         return pd.DataFrame(payload)
 
     # CSV: serh varsa yorum satirlari atlanir, yoksa davranis degismez.
-    return pd.read_csv(target, encoding="utf-8", comment="#")
+    # float_precision="round_trip": varsayilan ayristirici son basamagi
+    # kaybediyor, yani geri okunan veri yazilanla birebir ayni olmuyordu.
+    return pd.read_csv(target, encoding="utf-8", comment="#",
+                       float_precision="round_trip")
+
+
+def verify_provenance(path):
+    """Uretilmis bir dosyanin provenance imzasini TAMAMEN CEVRIMDISI dogrular.
+
+    Denetcinin bir sunucuya baglanmasina gerek yoktur; guven zinciri
+    istemciye gomulu ana public key ile baslar:
+
+        ana anahtar -> lisans payload'i -> rapor public key'i
+                    -> serh imzasi -> veri ozeti
+
+    Parameters
+    ----------
+    path : str | Path
+        ``.csv``, ``.json``, ``.parquet`` ya da ``.pdf`` cikti dosyasi.
+
+    Returns
+    -------
+    ProvenanceVerification
+        ``ok`` alani tum denetimlerin sonucudur; ``summary_lines()`` insan
+        tarafindan okunacak ozeti verir.
+
+    Examples
+    --------
+    >>> result = verify_provenance("outputs/job_1_finance.csv")
+    >>> result.ok
+    True
+    """
+    from .core.orchestrator import verify_output_file
+    from pathlib import Path as _Path
+
+    return verify_output_file(_Path(path))
 
 def build_config(
     domain: str,
