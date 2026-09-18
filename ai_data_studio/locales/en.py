@@ -575,6 +575,8 @@ MESSAGES = {
     "cli.help.web_seed": "Collect real reference (seed) data from the web",
     "cli.help.web_query": "Web search query, or a direct URL",
     "cli.help.formats": "Comma separated: csv,parquet,json",
+    "cli.help.provenance": "Add legal provenance disclaimer header to CSV/Parquet outputs",
+    "cli.help.export_pdf": "Generate executive PDF Data Quality & Privacy Audit Report (Pro)",
     "cli.help.push_to_hub": "Upload the clean data to this HF repo_id",
     "cli.help.public": "Create the HF repo as public",
     "cli.help.contamination": "IsolationForest anomaly rate (0 = off, the default). E.g. 0.05",
@@ -1225,4 +1227,61 @@ MESSAGES = {
     "plan.summary.split": "split: {kind}",
     "web.more_sources": "(+{count} sources)",
     "hipaa.category.unique_key": "Unique key",
+
+    # --- Schema Sanity Checker ------------------------------------------- #
+    "sanity.report.clean": "Schema sanity check passed — no semantic issues detected.",
+    "sanity.correlation.risk_asset_inverted": (
+        "Suspected semantic inversion: '{col_a}' ({cat_a}) ↔ '{col_b}' ({cat_b}) "
+        "should have a NEGATIVE correlation, but POSITIVE was specified."
+    ),
+    "sanity.correlation.positive_pair_inverted": (
+        "Suspected semantic inversion: '{col_a}' ↔ '{col_b}' are a known positive pair, "
+        "but NEGATIVE correlation was specified."
+    ),
+    "sanity.monotonicity.asset_risk_inverted": (
+        "Suspected monotonicity inversion: '{col_x}' (asset) ↑ → '{col_y}' (risk) "
+        "should be DECREASING, but INCREASING was specified."
+    ),
+    "sanity.monotonicity.risk_asset_inverted": (
+        "Suspected monotonicity inversion: '{col_x}' (risk) ↑ → '{col_y}' (asset) "
+        "should be DECREASING, but INCREASING was specified."
+    ),
+    "sanity.transitivity.violation": (
+        "Correlation transitivity conflict: {col_a}~{col_b} ({sign_ab}), "
+        "{col_b}~{col_c} ({sign_bc}) implies {col_a}~{col_c} should be "
+        "{sign_ab}×{sign_bc}, but ({sign_ac}) was specified."
+    ),
+    # --- Licensing & Pro Edition ----------------------------------------- #
+    "license.error.pro_required": "An active Pro or Enterprise license is required to use {feature}.",
+    "license.status.missing": "No license installed (Community Edition)",
+    "license.status.invalid_format": "Invalid license key format",
+    "license.status.invalid_encoding": "Malformed license encoding",
+    "license.status.signature_failed": "Invalid cryptographic signature",
+    "license.status.invalid_payload": "Corrupted license data",
+    "license.status.expired": "License expired on {date}",
+    "license.status.valid": "Active and verified",
+    "license.tier.community": "Community Edition",
+    "license.tier.pro": "Pro Edition",
+    "license.tier.enterprise": "Enterprise Edition",
+    # --- GUI License & Edition Management -------------------------------- #
+    "app.header.license_community": "Community",
+    "app.header.license_pro": "PRO",
+    "app.header.license_enterprise": "ENTERPRISE",
+    "settings.license.title": "License & Edition",
+    "settings.license.note": "AI Synthetic Data Studio is open-core. Activate Pro for Executive PDF Audit Reports and advanced compliance tools.",
+    "settings.license.tier": "Current Edition: {tier}",
+    "settings.license.activate": "Activate License...",
+    "settings.license.deactivate": "Deactivate",
+    "settings.license.deactivate_confirm": "Are you sure you want to remove the current license?",
+    "settings.license.key_placeholder": "Paste your ADS-... license key here",
+    "pipeline.button.export_pdf": "Audit Report (PDF)",
+    "pipeline.export.pdf_checkbox": "Generate Executive PDF Audit Report (Pro)",
+    "license.dialog.title": "License & Edition Activation",
+    "license.dialog.heading": "Unlock Pro & Enterprise Features",
+    "license.dialog.subheading": "Air-gapped offline validation • Executive PDF Reports • Compliance Certification",
+    "license.dialog.enter_key": "Enter License Key",
+    "license.dialog.activate_btn": "Activate License",
+    "license.dialog.buy_btn": "Get a License Key",
+    "license.dialog.success": "License successfully activated! Welcome to {tier}.",
+    "license.dialog.activated_details": "Registered to: {email} • Tier: {tier} • Expiry: {expiry}",
 }

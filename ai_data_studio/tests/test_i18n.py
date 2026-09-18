@@ -16,7 +16,9 @@ from typing import Dict, Set
 from ai_data_studio import i18n
 from ai_data_studio.locales import de as de_catalog
 from ai_data_studio.locales import en as en_catalog
+from ai_data_studio.locales import es as es_catalog
 from ai_data_studio.locales import fr as fr_catalog
+from ai_data_studio.locales import hi as hi_catalog
 from ai_data_studio.locales import ja as ja_catalog
 from ai_data_studio.locales import ru as ru_catalog
 from ai_data_studio.locales import tr as tr_catalog
@@ -29,6 +31,8 @@ OTHER_CATALOGS = {
     "ru": ru_catalog,
     "zh": zh_catalog,
     "ja": ja_catalog,
+    "es": es_catalog,
+    "hi": hi_catalog,
 }
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
@@ -158,8 +162,16 @@ class TestTranslationLookup(unittest.TestCase):
     def test_available_languages(self):
         self.assertEqual(
             sorted(i18n.available_languages()),
-            ["de", "en", "fr", "ja", "ru", "tr", "zh"],
+            ["de", "en", "es", "fr", "hi", "ja", "ru", "tr", "zh"],
         )
+
+    def test_spanish_lookup(self):
+        i18n.set_language("es")
+        self.assertEqual(i18n.t("settings.defaults.theme"), "Tema")
+
+    def test_hindi_lookup(self):
+        i18n.set_language("hi")
+        self.assertEqual(i18n.t("settings.defaults.theme"), "थीम")
 
     def test_language_override_is_scoped_and_thread_local(self):
         """GUI işçi iş parçacığında İngilizce üretirken arayüz Türkçe kalmalı."""

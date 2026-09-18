@@ -436,6 +436,8 @@ MESSAGES = {
     "cli.help.web_seed": "Web から実際の参照 (シード) データを収集する",
     "cli.help.web_query": "Web 検索クエリ、または直接 URL",
     "cli.help.formats": "カンマ区切り: csv、parquet、json",
+    "cli.help.provenance": "CSV/Parquet 出力に法的出所免責ヘッダーを追加する",
+    "cli.help.export_pdf": "エグゼクティブ向け PDF データ品質・プライバシー監査レポートを生成 (Pro)",
     "cli.help.push_to_hub": "クリーンなデータをこの HF repo_id にアップロードします",
     "cli.help.public": "HF リポジトリをパブリックとして作成する",
     "cli.help.contamination": "IsolationForest の異常率 (0 = オフ、デフォルト)。例えば。 0.05",
@@ -864,4 +866,61 @@ MESSAGES = {
     "plan.summary.split": "分割: {kind}",
     "web.more_sources": "（他 {count} 件のソース）",
     "hipaa.category.unique_key": "一意キー",
+
+    # --- Schema Sanity Checker ------------------------------------------- #
+    "sanity.report.clean": "スキーマの健全性チェックに合格しました — 意味的な問題は検出されませんでした。",
+    "sanity.correlation.risk_asset_inverted": (
+        "意味的な反転の疑い：'{col_a}'（{cat_a}）↔ '{col_b}'（{cat_b}）は"
+        "負の相関を持つべきですが、正の相関が指定されています。"
+    ),
+    "sanity.correlation.positive_pair_inverted": (
+        "意味的な反転の疑い：'{col_a}' ↔ '{col_b}' は既知の正の相関ペアですが、"
+        "負の相関が指定されています。"
+    ),
+    "sanity.monotonicity.asset_risk_inverted": (
+        "単調性反転の疑い：'{col_x}'（資産）↑ → '{col_y}'（リスク）は"
+        "減少であるべきですが、増加が指定されています。"
+    ),
+    "sanity.monotonicity.risk_asset_inverted": (
+        "単調性反転の疑い：'{col_x}'（リスク）↑ → '{col_y}'（資産）は"
+        "減少であるべきですが、増加が指定されています。"
+    ),
+    "sanity.transitivity.violation": (
+        "相関の推移律の矛盾：{col_a}~{col_b}（{sign_ab}）、"
+        "{col_b}~{col_c}（{sign_bc}）は {col_a}~{col_c} が "
+        "{sign_ab}×{sign_bc} であることを示唆しますが、（{sign_ac}）が指定されています。"
+    ),
+    # --- Licensing & Pro Edition ----------------------------------------- #
+    "license.error.pro_required": "{feature} を使用するには、アクティブな Pro または Enterprise ライセンスが必要です。",
+    "license.status.missing": "ライセンスがインストールされていません（コミュニティ版）",
+    "license.status.invalid_format": "無効なライセンスキー形式です",
+    "license.status.invalid_encoding": "ライセンスのエンコードが不正です",
+    "license.status.signature_failed": "無効な暗号署名です",
+    "license.status.invalid_payload": "ライセンスデータが破損しています",
+    "license.status.expired": "ライセンスは {date} に期限切れとなりました",
+    "license.status.valid": "アクティブで検証済み",
+    "license.tier.community": "コミュニティ版",
+    "license.tier.pro": "Pro版",
+    "license.tier.enterprise": "Enterprise版",
+    # --- GUI License & Edition Management -------------------------------- #
+    "app.header.license_community": "コミュニティ",
+    "app.header.license_pro": "PRO",
+    "app.header.license_enterprise": "エンタープライズ",
+    "settings.license.title": "ライセンスとエディション",
+    "settings.license.note": "AI Synthetic Data Studioはオープンコアです。エグゼクティブPDF監査レポートと高度なコンプライアンスツールのためにProを有効化してください。",
+    "settings.license.tier": "現在のエディション: {tier}",
+    "settings.license.activate": "ライセンスを有効化...",
+    "settings.license.deactivate": "無効化",
+    "settings.license.deactivate_confirm": "現在のライセンスを削除してもよろしいですか？",
+    "settings.license.key_placeholder": "ここに ADS-... ライセンスキーを貼り付けてください",
+    "pipeline.button.export_pdf": "監査レポート (PDF)",
+    "pipeline.export.pdf_checkbox": "エグゼクティブ向け PDF 監査レポートを生成 (Pro)",
+    "license.dialog.title": "ライセンスとエディションの有効化",
+    "license.dialog.heading": "ProおよびEnterprise機能をアンロック",
+    "license.dialog.subheading": "完全オフライン検証 • エグゼクティブPDFレポート • コンプライアンス認証",
+    "license.dialog.enter_key": "ライセンスキーを入力",
+    "license.dialog.activate_btn": "ライセンスを有効化",
+    "license.dialog.buy_btn": "ライセンスキーを取得",
+    "license.dialog.success": "ライセンスが正常に有効化されました！{tier}へようこそ。",
+    "license.dialog.activated_details": "登録先: {email} • エディション: {tier} • 有効期限: {expiry}",
 }

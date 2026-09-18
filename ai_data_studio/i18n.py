@@ -55,6 +55,8 @@ LANGUAGE_NAMES: Dict[str, str] = {
     "ru": "Русский",
     "zh": "简体中文",
     "ja": "日本語",
+    "es": "Español",
+    "hi": "हिन्दी",
 }
 
 _LOCALE_PREFIX_MAP = {
@@ -64,6 +66,8 @@ _LOCALE_PREFIX_MAP = {
     "ru": "ru", "russian": "ru",
     "zh": "zh", "chinese": "zh",
     "ja": "ja", "japanese": "ja",
+    "es": "es", "spanish": "es",
+    "hi": "hi", "hindi": "hi",
     "en": "en", "english": "en",
 }
 

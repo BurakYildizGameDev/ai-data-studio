@@ -573,6 +573,8 @@ MESSAGES = {
     "cli.help.web_seed": "Web'den gerçek referans (seed) veri topla",
     "cli.help.web_query": "Web arama sorgusu veya doğrudan URL",
     "cli.help.formats": "Virgülle ayrılmış: csv,parquet,json",
+    "cli.help.provenance": "CSV/Parquet çıktılarına yasal provenance şerhi ekle",
+    "cli.help.export_pdf": "Yönetici özeti PDF Veri Kalitesi & Gizlilik Denetim Raporu üret (Pro)",
     "cli.help.push_to_hub": "Temiz veriyi bu HF repo_id'ye yükle",
     "cli.help.public": "HF repo'yu herkese açık oluştur",
     "cli.help.contamination": "IsolationForest anomali oranı (0 = kapalı, varsayılan). Örn: 0.05",
@@ -1232,4 +1234,61 @@ MESSAGES = {
     "plan.summary.split": "bölme: {kind}",
     "web.more_sources": "(+{count} kaynak)",
     "hipaa.category.unique_key": "Benzersiz Anahtar",
+
+    # --- Schema Sanity Checker ------------------------------------------- #
+    "sanity.report.clean": "Şema sağlamlık denetimi geçti — anlamsal sorun bulunamadı.",
+    "sanity.correlation.risk_asset_inverted": (
+        "Olası anlamsal terslik: '{col_a}' ({cat_a}) ↔ '{col_b}' ({cat_b}) "
+        "arasında NEGATİF korelasyon beklenir, ancak POZİTİF tanımlanmış."
+    ),
+    "sanity.correlation.positive_pair_inverted": (
+        "Olası anlamsal terslik: '{col_a}' ↔ '{col_b}' bilinen bir pozitif çifttir, "
+        "ancak NEGATİF korelasyon tanımlanmış."
+    ),
+    "sanity.monotonicity.asset_risk_inverted": (
+        "Olası monotonluk terslikleri: '{col_x}' (varlık) ↑ → '{col_y}' (risk) "
+        "AZALAN olmalı, ancak ARTAN olarak tanımlanmış."
+    ),
+    "sanity.monotonicity.risk_asset_inverted": (
+        "Olası monotonluk terslikleri: '{col_x}' (risk) ↑ → '{col_y}' (varlık) "
+        "AZALAN olmalı, ancak ARTAN olarak tanımlanmış."
+    ),
+    "sanity.transitivity.violation": (
+        "Korelasyon geçişlilik çelişkisi: {col_a}~{col_b} ({sign_ab}), "
+        "{col_b}~{col_c} ({sign_bc}) durumunda {col_a}~{col_c} için beklenen "
+        "{sign_ab}×{sign_bc}, ancak ({sign_ac}) tanımlanmış."
+    ),
+    # --- Licensing & Pro Edition ----------------------------------------- #
+    "license.error.pro_required": "{feature} özelliğini kullanmak için aktif bir Pro veya Enterprise lisansı gereklidir.",
+    "license.status.missing": "Lisans yüklü değil (Topluluk Sürümü)",
+    "license.status.invalid_format": "Geçersiz lisans anahtarı formatı",
+    "license.status.invalid_encoding": "Hatalı lisans kodlaması",
+    "license.status.signature_failed": "Geçersiz kriptografik imza",
+    "license.status.invalid_payload": "Bozuk lisans verisi",
+    "license.status.expired": "Lisans süresi {date} tarihinde doldu",
+    "license.status.valid": "Aktif ve doğrulandı",
+    "license.tier.community": "Topluluk Sürümü",
+    "license.tier.pro": "Pro Sürüm",
+    "license.tier.enterprise": "Kurumsal Sürüm",
+    # --- GUI License & Edition Management -------------------------------- #
+    "app.header.license_community": "Topluluk",
+    "app.header.license_pro": "PRO",
+    "app.header.license_enterprise": "KURUMSAL",
+    "settings.license.title": "Lisans & Sürüm",
+    "settings.license.note": "AI Synthetic Data Studio açık çekirdeklidir. Yönetici Özeti PDF Denetim Raporları ve gelişmiş uyumluluk araçları için Pro'yu etkinleştirin.",
+    "settings.license.tier": "Mevcut Sürüm: {tier}",
+    "settings.license.activate": "Lisans Etkinleştir...",
+    "settings.license.deactivate": "Devre Dışı Bırak",
+    "settings.license.deactivate_confirm": "Mevcut lisansı kaldırmak istediğinizden emin misiniz?",
+    "settings.license.key_placeholder": "ADS-... lisans anahtarınızı buraya yapıştırın",
+    "pipeline.button.export_pdf": "Denetim Raporu (PDF)",
+    "pipeline.export.pdf_checkbox": "Yönetici Özeti PDF Denetim Raporu Üret (Pro)",
+    "license.dialog.title": "Lisans & Sürüm Etkinleştirme",
+    "license.dialog.heading": "Pro & Kurumsal Özelliklerin Kilidini Açın",
+    "license.dialog.subheading": "Çevrimdışı doğrulama • Yönetici PDF Raporları • Uyumluluk Sertifikasyonu",
+    "license.dialog.enter_key": "Lisans Anahtarını Girin",
+    "license.dialog.activate_btn": "Lisansı Etkinleştir",
+    "license.dialog.buy_btn": "Lisans Anahtarı Alın",
+    "license.dialog.success": "Lisans başarıyla etkinleştirildi! {tier} sürümüne hoş geldiniz.",
+    "license.dialog.activated_details": "Kayıtlı kullanıcı: {email} • Sürüm: {tier} • Bitiş: {expiry}",
 }

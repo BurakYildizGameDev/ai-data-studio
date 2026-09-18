@@ -436,6 +436,8 @@ MESSAGES = {
     "cli.help.web_seed": "Collectez des données de référence réelles (graines) à partir du Web",
     "cli.help.web_query": "Requête de recherche sur le Web ou URL directe",
     "cli.help.formats": "Séparés par des virgules : csv, parquet, json",
+    "cli.help.provenance": "Ajouter un avis de provenance légale aux sorties CSV/Parquet",
+    "cli.help.export_pdf": "Générer un rapport d'audit exécutif PDF sur la qualité et la confidentialité (Pro)",
     "cli.help.push_to_hub": "Téléchargez les données propres sur ce repo_id HF",
     "cli.help.public": "Créer le dépôt HF en tant que public",
     "cli.help.contamination": "Taux d’anomalies IsolationForest (0 = désactivé, valeur par défaut). Par ex. 0,05",
@@ -864,4 +866,61 @@ MESSAGES = {
     "plan.summary.split": "division : {kind}",
     "web.more_sources": "(+{count} sources)",
     "hipaa.category.unique_key": "Clé unique",
+
+    # --- Schema Sanity Checker ------------------------------------------- #
+    "sanity.report.clean": "Vérification de cohérence du schéma réussie — aucun problème sémantique détecté.",
+    "sanity.correlation.risk_asset_inverted": (
+        "Inversion sémantique suspectée : '{col_a}' ({cat_a}) ↔ '{col_b}' ({cat_b}) "
+        "devrait avoir une corrélation NÉGATIVE, mais POSITIVE a été spécifiée."
+    ),
+    "sanity.correlation.positive_pair_inverted": (
+        "Inversion sémantique suspectée : '{col_a}' ↔ '{col_b}' forment une paire positive connue, "
+        "mais une corrélation NÉGATIVE a été spécifiée."
+    ),
+    "sanity.monotonicity.asset_risk_inverted": (
+        "Inversion de monotonicité suspectée : '{col_x}' (actif) ↑ → '{col_y}' (risque) "
+        "devrait être DÉCROISSANTE, mais CROISSANTE a été spécifiée."
+    ),
+    "sanity.monotonicity.risk_asset_inverted": (
+        "Inversion de monotonicité suspectée : '{col_x}' (risque) ↑ → '{col_y}' (actif) "
+        "devrait être DÉCROISSANTE, mais CROISSANTE a été spécifiée."
+    ),
+    "sanity.transitivity.violation": (
+        "Conflit de transitivité des corrélations : {col_a}~{col_b} ({sign_ab}), "
+        "{col_b}~{col_c} ({sign_bc}) implique que {col_a}~{col_c} devrait être "
+        "{sign_ab}×{sign_bc}, mais ({sign_ac}) a été spécifié."
+    ),
+    # --- Licensing & Pro Edition ----------------------------------------- #
+    "license.error.pro_required": "Une licence Pro ou Enterprise active est requise pour utiliser {feature}.",
+    "license.status.missing": "Aucune licence installée (Community Edition)",
+    "license.status.invalid_format": "Format de clé de licence non valide",
+    "license.status.invalid_encoding": "Encodage de licence malformé",
+    "license.status.signature_failed": "Signature cryptographique non valide",
+    "license.status.invalid_payload": "Données de licence corrompues",
+    "license.status.expired": "Licence expirée le {date}",
+    "license.status.valid": "Actif et vérifié",
+    "license.tier.community": "Édition Communautaire",
+    "license.tier.pro": "Édition Pro",
+    "license.tier.enterprise": "Édition Entreprise",
+    # --- GUI License & Edition Management -------------------------------- #
+    "app.header.license_community": "Communauté",
+    "app.header.license_pro": "PRO",
+    "app.header.license_enterprise": "ENTREPRISE",
+    "settings.license.title": "Licence et édition",
+    "settings.license.note": "AI Synthetic Data Studio est open-core. Activez Pro pour les rapports d'audit PDF exécutifs et les outils de conformité avancés.",
+    "settings.license.tier": "Édition actuelle : {tier}",
+    "settings.license.activate": "Activer la licence...",
+    "settings.license.deactivate": "Désactiver",
+    "settings.license.deactivate_confirm": "Êtes-vous sûr de vouloir supprimer la licence actuelle ?",
+    "settings.license.key_placeholder": "Collez votre clé de licence ADS-... ici",
+    "pipeline.button.export_pdf": "Rapport d'audit (PDF)",
+    "pipeline.export.pdf_checkbox": "Générer un rapport d'audit exécutif PDF (Pro)",
+    "license.dialog.title": "Activation de licence et d'édition",
+    "license.dialog.heading": "Débloquez les fonctionnalités Pro et Entreprise",
+    "license.dialog.subheading": "Validation hors ligne • Rapports PDF exécutifs • Certification de conformité",
+    "license.dialog.enter_key": "Entrez la clé de licence",
+    "license.dialog.activate_btn": "Activer la licence",
+    "license.dialog.buy_btn": "Obtenir une clé de licence",
+    "license.dialog.success": "Licence activée avec succès ! Bienvenue sur {tier}.",
+    "license.dialog.activated_details": "Enregistré pour : {email} • Édition : {tier} • Expiration : {expiry}",
 }

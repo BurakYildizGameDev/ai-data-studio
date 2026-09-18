@@ -436,6 +436,8 @@ MESSAGES = {
     "cli.help.web_seed": "Sammeln Sie echte Referenzdaten (Seed-Daten) aus dem Internet",
     "cli.help.web_query": "Web-Suchanfrage oder eine direkte URL",
     "cli.help.formats": "Durch Kommas getrennt: csv,parkett,json",
+    "cli.help.provenance": "Rechtlichen Herkunftshinweis zu CSV/Parquet-Ausgaben hinzufügen",
+    "cli.help.export_pdf": "Executive PDF-Datenqualitäts- und Datenschutz-Prüfbericht erstellen (Pro)",
     "cli.help.push_to_hub": "Laden Sie die sauberen Daten auf diese HF repo_id hoch",
     "cli.help.public": "Erstellen Sie das HF-Repo als öffentlich",
     "cli.help.contamination": "IsolationForest-Anomalierate (0 = aus, Standard). Z.B. 0,05",
@@ -864,4 +866,61 @@ MESSAGES = {
     "plan.summary.split": "Aufteilung: {kind}",
     "web.more_sources": "(+{count} Quellen)",
     "hipaa.category.unique_key": "Eindeutiger Schlüssel",
+
+    # --- Schema Sanity Checker ------------------------------------------- #
+    "sanity.report.clean": "Schema-Plausibilitätsprüfung bestanden — keine semantischen Probleme erkannt.",
+    "sanity.correlation.risk_asset_inverted": (
+        "Vermutete semantische Umkehrung: '{col_a}' ({cat_a}) ↔ '{col_b}' ({cat_b}) "
+        "sollte eine NEGATIVE Korrelation haben, aber POSITIV wurde angegeben."
+    ),
+    "sanity.correlation.positive_pair_inverted": (
+        "Vermutete semantische Umkehrung: '{col_a}' ↔ '{col_b}' sind ein bekanntes positives Paar, "
+        "aber NEGATIVE Korrelation wurde angegeben."
+    ),
+    "sanity.monotonicity.asset_risk_inverted": (
+        "Vermutete Monotonie-Umkehrung: '{col_x}' (Vermögen) ↑ → '{col_y}' (Risiko) "
+        "sollte ABNEHMEND sein, aber ZUNEHMEND wurde angegeben."
+    ),
+    "sanity.monotonicity.risk_asset_inverted": (
+        "Vermutete Monotonie-Umkehrung: '{col_x}' (Risiko) ↑ → '{col_y}' (Vermögen) "
+        "sollte ABNEHMEND sein, aber ZUNEHMEND wurde angegeben."
+    ),
+    "sanity.transitivity.violation": (
+        "Korrelations-Transitivitätskonflikt: {col_a}~{col_b} ({sign_ab}), "
+        "{col_b}~{col_c} ({sign_bc}) impliziert {col_a}~{col_c} sollte "
+        "{sign_ab}×{sign_bc} sein, aber ({sign_ac}) wurde angegeben."
+    ),
+    # --- Licensing & Pro Edition ----------------------------------------- #
+    "license.error.pro_required": "Eine aktive Pro- oder Enterprise-Lizenz ist erforderlich, um {feature} zu nutzen.",
+    "license.status.missing": "Keine Lizenz installiert (Community Edition)",
+    "license.status.invalid_format": "Ungültiges Lizenzschlüsselformat",
+    "license.status.invalid_encoding": "Fehlerhafte Lizenzkodierung",
+    "license.status.signature_failed": "Ungültige kryptografische Signatur",
+    "license.status.invalid_payload": "Beschädigte Lizenzdaten",
+    "license.status.expired": "Lizenz ist am {date} abgelaufen",
+    "license.status.valid": "Aktiv und verifiziert",
+    "license.tier.community": "Community Edition",
+    "license.tier.pro": "Pro Edition",
+    "license.tier.enterprise": "Enterprise Edition",
+    # --- GUI License & Edition Management -------------------------------- #
+    "app.header.license_community": "Community",
+    "app.header.license_pro": "PRO",
+    "app.header.license_enterprise": "ENTERPRISE",
+    "settings.license.title": "Lizenz & Edition",
+    "settings.license.note": "AI Synthetic Data Studio ist Open-Core. Aktivieren Sie Pro für Executive PDF-Prüfberichte und erweiterte Compliance-Tools.",
+    "settings.license.tier": "Aktuelle Edition: {tier}",
+    "settings.license.activate": "Lizenz aktivieren...",
+    "settings.license.deactivate": "Deaktivieren",
+    "settings.license.deactivate_confirm": "Möchten Sie die aktuelle Lizenz wirklich entfernen?",
+    "settings.license.key_placeholder": "Fügen Sie hier Ihren ADS-... Lizenzschlüssel ein",
+    "pipeline.button.export_pdf": "Audit-Bericht (PDF)",
+    "pipeline.export.pdf_checkbox": "Executive PDF-Prüfbericht erstellen (Pro)",
+    "license.dialog.title": "Lizenz- und Editionsaktivierung",
+    "license.dialog.heading": "Pro- & Enterprise-Funktionen freischalten",
+    "license.dialog.subheading": "Offline-Validierung • Executive PDF-Berichte • Compliance-Zertifizierung",
+    "license.dialog.enter_key": "Lizenzschlüssel eingeben",
+    "license.dialog.activate_btn": "Lizenz aktivieren",
+    "license.dialog.buy_btn": "Lizenzschlüssel erwerben",
+    "license.dialog.success": "Lizenz erfolgreich aktiviert! Willkommen bei {tier}.",
+    "license.dialog.activated_details": "Registriert für: {email} • Edition: {tier} • Ablauf: {expiry}",
 }

@@ -436,6 +436,8 @@ MESSAGES = {
     "cli.help.web_seed": "Собирайте реальные справочные (исходные) данные из Интернета.",
     "cli.help.web_query": "Поисковый запрос в Интернете или прямой URL-адрес",
     "cli.help.formats": "Через запятую: csv, паркет, json.",
+    "cli.help.provenance": "Добавить юридическое уведомление о происхождении в файлы CSV/Parquet",
+    "cli.help.export_pdf": "Создать исполнительный PDF-отчет о качестве и конфиденциальности данных (Pro)",
     "cli.help.push_to_hub": "Загрузите чистые данные в этот HF repo_id.",
     "cli.help.public": "Создайте общедоступный репозиторий HF.",
     "cli.help.contamination": "Частота аномалий IsolationForest (0 = выключено, значение по умолчанию). Например. 0,05",
@@ -864,4 +866,61 @@ MESSAGES = {
     "plan.summary.split": "разбиение: {kind}",
     "web.more_sources": "(+{count} источн.)",
     "hipaa.category.unique_key": "Уникальный ключ",
+
+    # --- Schema Sanity Checker ------------------------------------------- #
+    "sanity.report.clean": "Проверка корректности схемы пройдена — семантических проблем не обнаружено.",
+    "sanity.correlation.risk_asset_inverted": (
+        "Подозрение на семантическую инверсию: '{col_a}' ({cat_a}) ↔ '{col_b}' ({cat_b}) "
+        "должны иметь ОТРИЦАТЕЛЬНУЮ корреляцию, но указана ПОЛОЖИТЕЛЬНАЯ."
+    ),
+    "sanity.correlation.positive_pair_inverted": (
+        "Подозрение на семантическую инверсию: '{col_a}' ↔ '{col_b}' — известная положительная пара, "
+        "но указана ОТРИЦАТЕЛЬНАЯ корреляция."
+    ),
+    "sanity.monotonicity.asset_risk_inverted": (
+        "Подозрение на инверсию монотонности: '{col_x}' (актив) ↑ → '{col_y}' (риск) "
+        "должна быть УБЫВАЮЩЕЙ, но указана ВОЗРАСТАЮЩАЯ."
+    ),
+    "sanity.monotonicity.risk_asset_inverted": (
+        "Подозрение на инверсию монотонности: '{col_x}' (риск) ↑ → '{col_y}' (актив) "
+        "должна быть УБЫВАЮЩЕЙ, но указана ВОЗРАСТАЮЩАЯ."
+    ),
+    "sanity.transitivity.violation": (
+        "Конфликт транзитивности корреляций: {col_a}~{col_b} ({sign_ab}), "
+        "{col_b}~{col_c} ({sign_bc}) подразумевает, что {col_a}~{col_c} должна быть "
+        "{sign_ab}×{sign_bc}, но указана ({sign_ac})."
+    ),
+    # --- Licensing & Pro Edition ----------------------------------------- #
+    "license.error.pro_required": "Для использования {feature} требуется активная лицензия Pro или Enterprise.",
+    "license.status.missing": "Лицензия не установлена (Community Edition)",
+    "license.status.invalid_format": "Неверный формат лицензионного ключа",
+    "license.status.invalid_encoding": "Некорректная кодировка лицензии",
+    "license.status.signature_failed": "Недействительная криптографическая подпись",
+    "license.status.invalid_payload": "Поврежденные данные лицензии",
+    "license.status.expired": "Срок действия лицензии истек {date}",
+    "license.status.valid": "Активно и проверено",
+    "license.tier.community": "Community Edition",
+    "license.tier.pro": "Pro Edition",
+    "license.tier.enterprise": "Enterprise Edition",
+    # --- GUI License & Edition Management -------------------------------- #
+    "app.header.license_community": "Сообщество",
+    "app.header.license_pro": "PRO",
+    "app.header.license_enterprise": "ENTERPRISE",
+    "settings.license.title": "Лицензия и редакция",
+    "settings.license.note": "AI Synthetic Data Studio имеет открытое ядро. Активируйте Pro для получения исполнительных PDF-отчетов и расширенных инструментов соответствия.",
+    "settings.license.tier": "Текущая редакция: {tier}",
+    "settings.license.activate": "Активировать лицензию...",
+    "settings.license.deactivate": "Деактивировать",
+    "settings.license.deactivate_confirm": "Вы уверены, что хотите удалить текущую лицензию?",
+    "settings.license.key_placeholder": "Вставьте сюда ваш лицензионный ключ ADS-...",
+    "pipeline.button.export_pdf": "Аудит-отчет (PDF)",
+    "pipeline.export.pdf_checkbox": "Создать исполнительный PDF-отчет (Pro)",
+    "license.dialog.title": "Активация лицензии и редакции",
+    "license.dialog.heading": "Разблокируйте функции Pro и Enterprise",
+    "license.dialog.subheading": "Автономная проверка • Исполнительные отчеты PDF • Сертификация соответствия",
+    "license.dialog.enter_key": "Введите лицензионный ключ",
+    "license.dialog.activate_btn": "Активировать лицензию",
+    "license.dialog.buy_btn": "Получить лицензионный ключ",
+    "license.dialog.success": "Лицензия успешно активирована! Добро пожаловать в {tier}.",
+    "license.dialog.activated_details": "Зарегистрировано на: {email} • Редакция: {tier} • Истекает: {expiry}",
 }

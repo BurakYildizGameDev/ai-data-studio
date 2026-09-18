@@ -436,6 +436,8 @@ MESSAGES = {
     "cli.help.web_seed": "从网络收集真实的参考（种子）数据",
     "cli.help.web_query": "Web 搜索查询，或直接 URL",
     "cli.help.formats": "逗号分隔：csv、parquet、json",
+    "cli.help.provenance": "向 CSV/Parquet 输出添加法律来源免责声明",
+    "cli.help.export_pdf": "生成高级 PDF 数据质量与隐私合规审计报告 (Pro)",
     "cli.help.push_to_hub": "将干净的数据上传到这个HF repo_id",
     "cli.help.public": "创建公开的 HF 存储库",
     "cli.help.contamination": "IsolationForest 异常率（0 = 关闭，默认值）。例如。 0.05",
@@ -864,4 +866,61 @@ MESSAGES = {
     "plan.summary.split": "划分：{kind}",
     "web.more_sources": "（另有 {count} 个来源）",
     "hipaa.category.unique_key": "唯一键",
+
+    # --- Schema Sanity Checker ------------------------------------------- #
+    "sanity.report.clean": "模式合理性检查通过——未检测到语义问题。",
+    "sanity.correlation.risk_asset_inverted": (
+        "疑似语义反转：'{col_a}'（{cat_a}）↔ '{col_b}'（{cat_b}）"
+        "应具有负相关，但指定了正相关。"
+    ),
+    "sanity.correlation.positive_pair_inverted": (
+        "疑似语义反转：'{col_a}' ↔ '{col_b}' 是已知的正相关对，"
+        "但指定了负相关。"
+    ),
+    "sanity.monotonicity.asset_risk_inverted": (
+        "疑似单调性反转：'{col_x}'（资产）↑ → '{col_y}'（风险）"
+        "应为递减，但指定为递增。"
+    ),
+    "sanity.monotonicity.risk_asset_inverted": (
+        "疑似单调性反转：'{col_x}'（风险）↑ → '{col_y}'（资产）"
+        "应为递减，但指定为递增。"
+    ),
+    "sanity.transitivity.violation": (
+        "相关性传递性冲突：{col_a}~{col_b}（{sign_ab}），"
+        "{col_b}~{col_c}（{sign_bc}）意味着 {col_a}~{col_c} 应为 "
+        "{sign_ab}×{sign_bc}，但指定了（{sign_ac}）。"
+    ),
+    # --- Licensing & Pro Edition ----------------------------------------- #
+    "license.error.pro_required": "使用 {feature} 需要有效的 Pro 或 Enterprise 许可证。",
+    "license.status.missing": "未安装许可证（社区版）",
+    "license.status.invalid_format": "无效的许可证密钥格式",
+    "license.status.invalid_encoding": "许可证编码格式错误",
+    "license.status.signature_failed": "加密签名无效",
+    "license.status.invalid_payload": "许可证数据损坏",
+    "license.status.expired": "许可证已于 {date} 到期",
+    "license.status.valid": "已激活并验证",
+    "license.tier.community": "社区版",
+    "license.tier.pro": "专业版",
+    "license.tier.enterprise": "企业版",
+    # --- GUI License & Edition Management -------------------------------- #
+    "app.header.license_community": "社区版",
+    "app.header.license_pro": "专业版",
+    "app.header.license_enterprise": "企业版",
+    "settings.license.title": "许可证与版本",
+    "settings.license.note": "AI Synthetic Data Studio 采用开放核心模式。激活 Pro 版以解锁高级 PDF 审计报告和合规工具。",
+    "settings.license.tier": "当前版本：{tier}",
+    "settings.license.activate": "激活许可证...",
+    "settings.license.deactivate": "停用",
+    "settings.license.deactivate_confirm": "您确定要移除当前的许可证吗？",
+    "settings.license.key_placeholder": "在此粘贴您的 ADS-... 许可证密钥",
+    "pipeline.button.export_pdf": "审计报告 (PDF)",
+    "pipeline.export.pdf_checkbox": "生成高级 PDF 审计报告 (Pro)",
+    "license.dialog.title": "许可证与版本激活",
+    "license.dialog.heading": "解锁专业版与企业版功能",
+    "license.dialog.subheading": "离线签名验证 • 高级 PDF 报告 • 合规认证",
+    "license.dialog.enter_key": "输入许可证密钥",
+    "license.dialog.activate_btn": "激活许可证",
+    "license.dialog.buy_btn": "获取许可证密钥",
+    "license.dialog.success": "许可证激活成功！欢迎使用 {tier}。",
+    "license.dialog.activated_details": "注册给：{email} • 版本：{tier} • 到期日：{expiry}",
 }
