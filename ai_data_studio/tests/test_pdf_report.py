@@ -333,6 +333,25 @@ class TestPDFReportTruthfulness(unittest.TestCase):
         self.assertIn("HIGH RISK", text)
         self.assertNotIn("LOW RISK", text)
 
+    def test_banner_does_not_draw_a_legal_conclusion(self):
+        """Arac neyi bildigini beyan eder; transfer izni verilip verilmeyecegini degil."""
+        text = self._text({"rows_in": 20, "rows_out": 20})
+        self.assertNotIn("Cleared for cross-border transfer", text)
+        self.assertIn("determination for the data controller", text)
+
+    def test_banner_states_when_no_privacy_audit_ran(self):
+        text = self._text({"rows_in": 20, "rows_out": 20})
+        self.assertIn("No privacy audit was run", text)
+
+    def test_banner_states_when_an_audit_did_run(self):
+        text = self._text({
+            "rows_in": 20, "rows_out": 20,
+            "privacy_audit": {"has_reference_data": True,
+                              "dcr": {"mean_dcr": 0.4, "risk_level": "LOW"}},
+        })
+        self.assertIn("A privacy audit was run", text)
+        self.assertNotIn("No privacy audit was run", text)
+
     def test_footer_does_not_claim_certification(self):
         text = self._text({"rows_in": 20, "rows_out": 20})
         self.assertNotIn("Provenance Certified", text)

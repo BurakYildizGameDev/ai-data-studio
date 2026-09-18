@@ -1294,6 +1294,102 @@ class TestProjectPlannerPipeline(unittest.TestCase):
 import pandas as pd
 
 
+class TestProvenanceBinding(unittest.TestCase):
+    """Serhin veri setine baglandigini ve gizlilik beyaninin durust oldugunu dogrular.
+
+    Serh duz metin bir yorum satiriydi: silinebilir, gercek PII iceren bir
+    dosyaya yapistirilabilirdi ve gizlilik denetimi hic kosmasa bile
+    kosulsuz "gercek kisisel veri icermez" diyordu.
+    """
+
+    def setUp(self):
+        import tempfile
+        import pandas as pd
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.out_dir = Path(self.temp_dir.name)
+        self.df = pd.DataFrame({"x": [1, 2, 3], "y": ["a", "b", "c"]})
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def test_digest_changes_with_the_data(self):
+        import pandas as pd
+        from ai_data_studio.core.orchestrator import _dataframe_digest
+
+        base = _dataframe_digest(self.df)
+        self.assertEqual(base, _dataframe_digest(self.df.copy()))
+        self.assertNotEqual(base, _dataframe_digest(
+            pd.DataFrame({"x": [1, 2, 4], "y": ["a", "b", "c"]})))
+        self.assertNotEqual(base, _dataframe_digest(
+            self.df.rename(columns={"x": "z"})))
+
+    def test_digest_is_independent_of_chunk_size(self):
+        import pandas as pd
+        from ai_data_studio.core import orchestrator
+
+        big = pd.DataFrame({"i": range(120)})
+        one_shot = orchestrator._dataframe_digest(big)
+        with mock.patch.object(orchestrator, "_DIGEST_CHUNK_ROWS", 7):
+            chunked = orchestrator._dataframe_digest(big)
+        self.assertEqual(one_shot, chunked)
+
+    def test_declared_digest_matches_the_written_file(self):
+        """Ucuncu taraf serhi dosyadan yeniden hesaplayip dogrulayabilmeli."""
+        import json
+        import pandas as pd
+        from ai_data_studio.core.orchestrator import (_dataframe_digest,
+                                                      _write_table_files)
+
+        paths = _write_table_files(self.df, self.out_dir, "bound",
+                                   ["csv", "json"], provenance=True)
+        declared = json.loads(
+            Path(paths["json"]).read_text(encoding="utf-8"))["_provenance"]
+        reread = pd.read_csv(paths["csv"], comment="#")
+        self.assertEqual(declared["content_sha256"], _dataframe_digest(reread))
+        self.assertEqual(declared["rows"], "3")
+
+    def test_privacy_status_reflects_what_actually_ran(self):
+        from ai_data_studio.core.orchestrator import _provenance_fields
+
+        cases = {
+            "not_performed": {},
+            "no_reference_data": {"privacy_audit": {"has_reference_data": False}},
+            "no_issues_found": {"privacy_audit": {
+                "has_reference_data": True,
+                "overall_privacy_status": "NO_ISSUES_FOUND"}},
+            "memorization_risk": {"privacy_audit": {
+                "has_reference_data": True,
+                "overall_privacy_status": "MEMORIZATION_RISK"}},
+        }
+        for expected, report in cases.items():
+            with self.subTest(status=expected):
+                fields = _provenance_fields(self.df, None, report)
+                self.assertEqual(fields["privacy_audit"], expected)
+
+    def test_csv_header_names_are_unchanged(self):
+        """Mevcut okuyucular '# PROVENANCE:' ve '# COMPLIANCE:' bekliyor."""
+        from ai_data_studio.core.orchestrator import _write_table_files
+
+        paths = _write_table_files(self.df, self.out_dir, "hdr", ["csv"],
+                                   provenance=True)
+        lines = Path(paths["csv"]).read_text(encoding="utf-8").splitlines()
+        self.assertTrue(lines[0].startswith("# PROVENANCE: 100% Synthetic Data"))
+        self.assertTrue(lines[1].startswith("# COMPLIANCE: EU AI Act Art. 50"))
+        self.assertTrue(any(line.startswith("# CONTENT_SHA256: ")
+                            for line in lines))
+
+    def test_parquet_keeps_the_legacy_metadata_key(self):
+        import pyarrow.parquet as pq
+        from ai_data_studio.core.orchestrator import _write_table_files
+
+        paths = _write_table_files(self.df, self.out_dir, "pq", ["parquet"],
+                                   provenance=True)
+        meta = pq.read_schema(paths["parquet"]).metadata
+        self.assertIn(b"provenance", meta)
+        self.assertIn(b"content_sha256", meta)
+        self.assertIn(b"privacy_audit", meta)
+
+
 class TestProvenanceStreaming(unittest.TestCase):
     """Provenance yazicilarinin veri setini bellege sermedigini dogrular.
 

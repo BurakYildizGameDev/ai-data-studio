@@ -18,6 +18,8 @@ Terminalden çalıştırma (GUI'siz):
 from __future__ import annotations
 
 import argparse
+import datetime
+import hashlib
 import json
 import logging
 import os
@@ -32,7 +34,7 @@ from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
 
 import pandas as pd
 
-from .. import config
+from .. import __version__, config
 from ..i18n import t
 from ..services.llm_base import BaseLLMClient, LLMError
 from . import relational_validator, validator
@@ -1325,11 +1327,71 @@ _PROVENANCE_TEXT = (
 )
 _PROVENANCE_COMPLIANCE = "EU AI Act Art. 50 / Non-Personal Data"
 _PROVENANCE_GENERATOR = "ai-data-studio"
+# CSV yorum satirlarinda kullanilan eski basliklar.
+_CSV_KEY_ALIASES = {"notice": "PROVENANCE", "compliance": "COMPLIANCE"}
+
+
+def _dataframe_digest(df: pd.DataFrame) -> str:
+    """Veri setinin icerik ozeti (sha256).
+
+    Serhi bu veri setine baglar: okuyan taraf ozeti yeniden hesaplayip
+    beyanin gercekten bu dosyaya ait olup olmadigini denetleyebilir.
+    Duz metin bir yorum satiri tek basina hicbir sey kanitlamiyordu -
+    silinebilir ve gercek PII iceren bir dosyaya yapistirilabilirdi.
+    """
+    hasher = hashlib.sha256()
+    hasher.update(("|".join(map(str, df.columns)) + "\n").encode("utf-8"))
+    for start in range(0, len(df), _DIGEST_CHUNK_ROWS):
+        block = df.iloc[start:start + _DIGEST_CHUNK_ROWS]
+        hasher.update(
+            pd.util.hash_pandas_object(block, index=False).values.tobytes())
+    return hasher.hexdigest()
+
+
+def _provenance_fields(df: pd.DataFrame,
+                       contract: Optional[Any] = None,
+                       report: Optional[Dict[str, Any]] = None,
+                       ) -> Dict[str, str]:
+    """Serhin dogrulanabilir alanlarini uretir.
+
+    ``privacy_audit`` alani kritik: gizlilik denetimi kosmadiysa bunu
+    ACIKCA soyler. Onceki surum, denetim hic kosmamis olsa bile kosulsuz
+    "gercek kisisel veri icermez" beyani basiyordu.
+
+    Not: bu alanlar IMZALI DEGILDIR. Ozet, serhi veri setine baglar ama
+    ikisini birden degistirmeyi engellemez; bunun icin sunucu tarafinda
+    imzalama gerekir.
+    """
+    fields: Dict[str, str] = {
+        "notice": _PROVENANCE_TEXT,
+        "compliance": _PROVENANCE_COMPLIANCE,
+        "generator": "%s %s" % (_PROVENANCE_GENERATOR, __version__),
+        "generated_at": datetime.datetime.now(
+            datetime.timezone.utc).replace(microsecond=0).isoformat(),
+        "rows": str(len(df)),
+        "columns": str(len(df.columns)),
+        "content_sha256": _dataframe_digest(df),
+    }
+    if contract is not None and getattr(contract, "random_seed", None) is not None:
+        fields["random_seed"] = str(contract.random_seed)
+
+    audit = (report or {}).get("privacy_audit") or {}
+    if not audit:
+        fields["privacy_audit"] = "not_performed"
+    elif not audit.get("has_reference_data"):
+        fields["privacy_audit"] = "no_reference_data"
+    else:
+        fields["privacy_audit"] = str(
+            audit.get("overall_privacy_status") or "unknown").lower()
+    return fields
 # JSON govdesi bu satir sayisinda bloklar halinde yazilir.
 _JSON_CHUNK_ROWS = 50_000
+# Icerik ozeti de ayni sekilde blok blok hesaplanir.
+_DIGEST_CHUNK_ROWS = 50_000
 
 
-def _write_csv_with_provenance(df: pd.DataFrame, path: Path) -> None:
+def _write_csv_with_provenance(df: pd.DataFrame, path: Path,
+                               fields: Optional[Dict[str, str]] = None) -> None:
     """CSV dosyasinin basina provenance yorum satiri ekler.
 
     ``pd.read_csv(..., comment='#')`` ile okunabilir.
@@ -1340,15 +1402,20 @@ def _write_csv_with_provenance(df: pd.DataFrame, path: Path) -> None:
     kapaliyken ayni yazim zaten dogrudan diske akiyordu.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
+    fields = fields or _provenance_fields(df)
     with path.open("w", encoding="utf-8", newline="") as handle:
-        handle.write("# PROVENANCE: %s\n" % _PROVENANCE_TEXT)
-        handle.write("# COMPLIANCE: %s\n" % _PROVENANCE_COMPLIANCE)
+        for key, value in fields.items():
+            # Ilk iki satirin adi korunur: mevcut okuyucular ve
+            # dokumantasyon '# PROVENANCE:' / '# COMPLIANCE:' bekliyor.
+            label = _CSV_KEY_ALIASES.get(key, key.upper())
+            handle.write("# %s: %s\n" % (label, value))
         # encoding, tutamakta zaten utf-8; proje kurali her to_csv'de
         # acikca belirtilmesini istiyor (test_all_file_writes_specify_utf8).
         df.to_csv(handle, index=False, encoding="utf-8")
 
 
-def _write_parquet_with_provenance(df: pd.DataFrame, path: Path) -> None:
+def _write_parquet_with_provenance(df: pd.DataFrame, path: Path,
+                                   fields: Optional[Dict[str, str]] = None) -> None:
     """Parquet dosyasina schema metadata olarak provenance ekler.
 
     Kolon yapisi bozulmaz; ``pd.read_parquet()`` normal okur.
@@ -1357,20 +1424,22 @@ def _write_parquet_with_provenance(df: pd.DataFrame, path: Path) -> None:
     import pyarrow as pa
     import pyarrow.parquet as pq
 
+    fields = fields or _provenance_fields(df)
+
     table = pa.Table.from_pandas(df)
     existing_meta = table.schema.metadata or {}
-    provenance_meta = {
-        b"provenance": _PROVENANCE_TEXT.encode("utf-8"),
-        b"compliance": _PROVENANCE_COMPLIANCE.encode("utf-8"),
-        b"generator": _PROVENANCE_GENERATOR.encode("utf-8"),
-    }
+    provenance_meta = {key.encode("utf-8"): value.encode("utf-8")
+                       for key, value in fields.items()}
+    # Eski anahtar adi korunur: mevcut okuyucular b"provenance" bekliyor.
+    provenance_meta[b"provenance"] = fields["notice"].encode("utf-8")
     merged = {**existing_meta, **provenance_meta}
     table = table.replace_schema_metadata(merged)
     path.parent.mkdir(parents=True, exist_ok=True)
     pq.write_table(table, str(path))
 
 
-def _write_json_with_provenance(df: pd.DataFrame, path: Path) -> None:
+def _write_json_with_provenance(df: pd.DataFrame, path: Path,
+                                fields: Optional[Dict[str, str]] = None) -> None:
     """JSON dosyasina ust duzey ``_provenance`` anahtari ekler.
 
     Serh elle yazilir, govde pandas tarafindan dogrudan dosyaya akitilir.
@@ -1379,11 +1448,7 @@ def _write_json_with_provenance(df: pd.DataFrame, path: Path) -> None:
     """
     import json as _json
 
-    header = {
-        "notice": _PROVENANCE_TEXT,
-        "compliance": _PROVENANCE_COMPLIANCE,
-        "generator": _PROVENANCE_GENERATOR,
-    }
+    header = fields or _provenance_fields(df)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8", newline="") as handle:
         handle.write("{\n")
@@ -1405,19 +1470,27 @@ def _write_json_with_provenance(df: pd.DataFrame, path: Path) -> None:
 
 def _write_table_files(df: pd.DataFrame, out_dir: Path, stem: str,
                        formats: List[str],
-                       provenance: bool = False) -> Dict[str, str]:
+                       provenance: bool = False,
+                       provenance_fields: Optional[Dict[str, str]] = None,
+                       ) -> Dict[str, str]:
     """Bir tablonun veri dosyalarini istenen formatlarda yazar.
 
     *provenance* True ise dosyalara yasal serh eklenir:
       - CSV: dosya basina ``# PROVENANCE: ...`` yorum satiri
       - Parquet: schema metadata (``provenance``, ``compliance``, ``generator``)
       - JSON: ust duzey ``_provenance`` anahtari
+
+    *provenance_fields* verilmezse veri setinden uretilir; cagiran
+    sozlesme ve raporu da gecerse serh random_seed ve gizlilik denetimi
+    durumunu da tasir.
     """
     written: Dict[str, str] = {}
+    if provenance and provenance_fields is None:
+        provenance_fields = _provenance_fields(df)
     if "csv" in formats:
         target = _out_path(out_dir, stem + ".csv")
         if provenance:
-            _write_csv_with_provenance(df, target)
+            _write_csv_with_provenance(df, target, provenance_fields)
         else:
             df.to_csv(target, index=False, encoding="utf-8")
         written["csv"] = str(target)
@@ -1425,7 +1498,7 @@ def _write_table_files(df: pd.DataFrame, out_dir: Path, stem: str,
         target = _out_path(out_dir, stem + ".parquet")
         try:
             if provenance:
-                _write_parquet_with_provenance(df, target)
+                _write_parquet_with_provenance(df, target, provenance_fields)
             else:
                 df.to_parquet(target, index=False)
             written["parquet"] = str(target)
@@ -1434,7 +1507,7 @@ def _write_table_files(df: pd.DataFrame, out_dir: Path, stem: str,
     if "json" in formats:
         target = _out_path(out_dir, stem + ".json")
         if provenance:
-            _write_json_with_provenance(df, target)
+            _write_json_with_provenance(df, target, provenance_fields)
         else:
             df.to_json(target, orient="records", force_ascii=False, indent=2)
         written["json"] = str(target)
@@ -1462,16 +1535,27 @@ def _write_outputs(tables: Dict[str, pd.DataFrame], contract: DatasetContract,
     if contract.is_relational:
         table_files: Dict[str, Dict[str, str]] = {}
         for name in contract.generation_order():
-            written = _write_table_files(tables[name], out_dir,
-                                         "job_%d_%s" % (job_id, _safe_stem(name)), formats,
-                                         provenance=cfg.provenance_header)
+            table_report = (report.get("tables") or {}).get(name) or report
+            written = _write_table_files(
+                tables[name], out_dir,
+                "job_%d_%s" % (job_id, _safe_stem(name)), formats,
+                provenance=cfg.provenance_header,
+                provenance_fields=(
+                    _provenance_fields(tables[name], contract, table_report)
+                    if cfg.provenance_header else None),
+            )
             table_files[name] = written
             for kind, path in written.items():
                 paths["%s:%s" % (kind, name)] = path
     else:
         table_files = {}
-        paths.update(_write_table_files(tables[contract.root_table], out_dir, stem, formats,
-                                        provenance=cfg.provenance_header))
+        paths.update(_write_table_files(
+            tables[contract.root_table], out_dir, stem, formats,
+            provenance=cfg.provenance_header,
+            provenance_fields=(
+                _provenance_fields(tables[contract.root_table], contract, report)
+                if cfg.provenance_header else None),
+        ))
 
     schema_json = contract.to_json() if contract.is_relational else schema.to_json()
     schema_path = _out_path(out_dir, stem + "_schema.json")

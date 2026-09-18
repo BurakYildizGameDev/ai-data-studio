@@ -314,6 +314,10 @@ def generate_pdf_report(
         textColor=colors.white,
     )
 
+    # Serh banner'i da gizlilik denetiminin durumuna bakiyor, o yuzden
+    # rapor alanlari story kurulmadan once cozulur.
+    privacy_audit: Dict[str, Any] = report.get("privacy_audit") or {}
+
     story = []
 
     # 1. Title Block
@@ -331,11 +335,29 @@ def generate_pdf_report(
     story.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor("#0284c7"), spaceAfter=12))
 
     # 2. Legal Provenance Banner (EU AI Act / GDPR)
+    # Arac neyi BILDIGINI beyan eder, hukuki sonuc cikarmaz. Onceki metin
+    # "Cleared for cross-border transfer ... and regulatory testing" diyordu:
+    # bu bir hukuki degerlendirmedir ve uretim araci bunu veremez. Gizlilik
+    # ifadesi de kosulsuzdu; artik denetimin kosup kosmadigina bagli.
+    audit_sentence = {
+        "measured": "A privacy audit was run against reference data for this "
+                    "dataset; its metrics are in section 4.",
+        "no_reference": "A privacy audit was requested but no reference dataset "
+                        "was available, so memorisation metrics could not be "
+                        "computed.",
+        "none": "No privacy audit was run for this dataset, so no memorisation "
+                "or leakage measurement supports this declaration.",
+    }[("measured" if privacy_audit.get("has_reference_data")
+       else "no_reference" if privacy_audit else "none")]
+
     prov_text = (
-        "<b>LEGAL PROVENANCE DECLARATION (EU AI Act Art. 50 / Non-PII)</b><br/>"
-        "This dataset was generated locally using mathematical copula and parametric synthesis models. "
-        "It contains 100% synthetic records and contains no authentic Personal Identifiable Information (PII). "
-        "Cleared for cross-border transfer, machine learning training, and regulatory testing."
+        "<b>PROVENANCE DECLARATION (EU AI Act Art. 50)</b><br/>"
+        "This dataset was generated locally from a schema contract using "
+        "mathematical copula and parametric synthesis models. No source records "
+        "were copied into the output. " + _rl(audit_sentence) + " "
+        "Whether the dataset may be transferred, published or relied on for a "
+        "given purpose is a determination for the data controller, not for this "
+        "tool."
     )
     banner_table = Table(
         [[Paragraph(prov_text, body_style)]],
@@ -367,8 +389,6 @@ def generate_pdf_report(
     rules_info: List[Dict[str, Any]] = list(report.get("business_rules") or [])
     corr_info: List[Dict[str, Any]] = list(report.get("correlations") or [])
     conformance: Dict[str, Any] = report.get("schema_conformance") or {}
-    privacy_audit: Dict[str, Any] = report.get("privacy_audit") or {}
-
     raw_rows = report.get("rows_in")
     cleaned_rows = report.get("rows_out", row_count)
     retention_pct = report.get("retention_pct")
