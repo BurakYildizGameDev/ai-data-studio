@@ -690,6 +690,12 @@ class SchemaContract:
         )
         contract._validate_keys()
         contract._cross_validate()
+
+        # Heuristic sanity check: küçük modellerin (1.5B) ürettiği anlamsal
+        # terslikleri (ör. income↑ → default↑) otomatik düzeltir ve uyarı verir.
+        from .schema_sanity_checker import check_schema_sanity
+        check_schema_sanity(contract, auto_correct=True)
+
         return contract
 
     @classmethod
