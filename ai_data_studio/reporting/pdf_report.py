@@ -124,7 +124,16 @@ def is_pdf_available() -> bool:
     return _REPORTLAB_AVAILABLE
 
 
-class NumberedCanvas(canvas.Canvas):
+# ReportLab kurulu degilse bu modul yine de import EDILEBILMELI: cagiranlar
+# is_pdf_available() ile soruyor, generate_pdf_report() ise nazik bir
+# RuntimeError veriyor. Asagidaki alt sinif ise taban sinifini modul
+# yuklenirken cozmek zorunda; olculdu, ciplak canvas.Canvas import'u
+# NameError ile dusuruyordu ve tum test toplamasi bu yuzden coktu. Bos taban
+# sinif bu yolu acik tutar; ReportLab yokken NumberedCanvas ornek verilmez.
+_CanvasBase = canvas.Canvas if _REPORTLAB_AVAILABLE else object
+
+
+class NumberedCanvas(_CanvasBase):
     """Two-pass canvas for 'Page X of Y' numbering and running running header/footer."""
 
     def __init__(self, *args, **kwargs):

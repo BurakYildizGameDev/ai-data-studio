@@ -19,9 +19,15 @@ huggingface_hub>=0.23
 psutil>=5.9
 keyring>=24.0
 tenacity>=8.2
+# Lisans ve serh imzalari (ed25519); licensing/ icinde modul duzeyinde import
+# edilir, yani opsiyonel degildir. Daha once yalnizca keyring/google-genai
+# uzerinden dolayli geliyordu ve temiz bir CI kurulumunda yoktu.
+cryptography>=42.0
 
 # Visualization
 matplotlib>=3.8
 pillow>=10.0
+# Denetim raporu PDF'i; build_exe.py da paketin icine katiyor.
+reportlab>=4.0
 
 # Tests and the Windows build: requirements-dev.txt
