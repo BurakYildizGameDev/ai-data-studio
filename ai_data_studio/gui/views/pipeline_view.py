@@ -6,6 +6,7 @@ pipeline iş parçacığını yönetme ve kuyruk dinleme sorumluluğu app_window
 from __future__ import annotations
 
 import os
+from pathlib import Path
 import subprocess
 import sys
 from typing import Any, Callable, Dict, List
@@ -326,6 +327,12 @@ class PipelineView(ctk.CTkFrame):
             ctk.CTkCheckBox(formats_frame, text=fmt, variable=var, width=60).grid(
                 row=0, column=i, padx=(0, 8))
             self.format_vars[fmt] = var
+        self.pdf_var = ctk.BooleanVar(value=bool(settings.get("export_pdf", False)))
+        self.pdf_check = ctk.CTkCheckBox(
+            formats_frame, text="pdf (pro)", variable=self.pdf_var, width=75,
+            command=self._on_pdf_check_toggled,
+        )
+        self.pdf_check.grid(row=0, column=3, padx=(0, 8))
 
         # --- Referans (Seed) Veri ---------------------------------------- #
         seed_frame = ctk.CTkFrame(left)
@@ -476,6 +483,12 @@ class PipelineView(ctk.CTkFrame):
             command=self._open_output_folder, state="disabled")
         self.open_folder_button.pack(side="left")
 
+        self.export_pdf_button = ctk.CTkButton(
+            actions, text="📄 " + t("pipeline.button.export_pdf"),
+            fg_color="#3a5a78", hover_color="#46698a",
+            command=self._on_export_pdf_click, state="disabled")
+        self.export_pdf_button.pack(side="left", padx=(8, 0))
+
         self.chart_panel = ChartPanel(self.tabs.tab(TAB_CHARTS))
         self.chart_panel.pack(fill="both", expand=True)
 
@@ -565,6 +578,89 @@ class PipelineView(ctk.CTkFrame):
         except Exception as exc:
             self.console.write(t("pipeline.error.folder_open", error=exc), "error")
 
+    def _open_file(self, filepath: str) -> None:
+        try:
+            if sys.platform == "win32":
+                os.startfile(filepath)  # noqa: S606
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", filepath])
+            else:
+                subprocess.Popen(["xdg-open", filepath])
+        except Exception as exc:
+            self.console.write(t("pipeline.error.folder_open", error=exc), "error")
+
+    def _on_pdf_check_toggled(self) -> None:
+        if self.pdf_var.get():
+            from ...licensing import get_license_manager
+            if not get_license_manager().get_active_license().is_active:
+                from ..components.license_dialog import LicenseDialog
+                LicenseDialog(
+                    self.winfo_toplevel(),
+                    highlight_feature="Executive PDF Audit Report",
+                    on_done=self.refresh_license_state,
+                )
+
+    def refresh_license_state(self) -> None:
+        from ...licensing import get_license_manager
+        is_active = get_license_manager().get_active_license().is_active
+        if not is_active and self.pdf_var.get():
+            self.pdf_var.set(False)
+
+    def _on_export_pdf_click(self) -> None:
+        from ...licensing import get_license_manager
+        mgr = get_license_manager()
+        info = mgr.get_active_license()
+        if not info.is_active:
+            from ..components.license_dialog import LicenseDialog
+            LicenseDialog(
+                self.winfo_toplevel(),
+                highlight_feature="Executive PDF Audit Report",
+                on_done=self._on_license_activated_then_export,
+            )
+            return
+        self._generate_and_open_pdf()
+
+    def _on_license_activated_then_export(self) -> None:
+        self.refresh_license_state()
+        from ...licensing import get_license_manager
+        if get_license_manager().get_active_license().is_active:
+            self._generate_and_open_pdf()
+
+    def _generate_and_open_pdf(self) -> None:
+        pdf_path = self._result_paths.get("pdf")
+        if pdf_path and os.path.exists(pdf_path):
+            self._open_file(pdf_path)
+            return
+
+        if not hasattr(self, "_last_result") or self._last_result is None:
+            self.console.write("No active result available to generate PDF.", "warning")
+            return
+
+        res = self._last_result
+        output_dir = Path(os.path.dirname(self._result_paths.get("csv") or next(iter(self._result_paths.values()), ".")))
+        target_pdf = output_dir / f"job_{res.job_id}_{res.schema.domain}_audit_report.pdf"
+
+        from ...reporting import generate_pdf_report, is_pdf_available
+        if not is_pdf_available():
+            self.console.write("ReportLab is not installed.", "error")
+            return
+
+        try:
+            generate_pdf_report(
+                dataframe=res.dataframe,
+                schema=res.schema,
+                report=res.report,
+                output_path=target_pdf,
+                job_id=res.job_id,
+                domain=res.schema.domain,
+                enforce_pro=True,
+            )
+            self._result_paths["pdf"] = str(target_pdf)
+            self.console.write(f"Audit PDF generated: {target_pdf.name}", "success")
+            self._open_file(str(target_pdf))
+        except Exception as exc:
+            self.console.write(f"PDF generation failed: {exc}", "error")
+
     # ------------------------------------------------------------------ #
     def _on_mode_change(self, mode: str) -> None:
         """Kip degisince ipucu metnini, satir etiketini ve - metin dokunulmamissa -
@@ -648,6 +744,7 @@ class PipelineView(ctk.CTkFrame):
             "random_seed": seed,
             "faker_locale": self.locale_menu.get(),
             "export_formats": formats,
+            "export_pdf": bool(self.pdf_var.get()),
             "use_hf_seed": bool(self.hf_seed_var.get()),
             "hf_seed_query": self.hf_query_entry.get().strip(),
             "use_web_seed": bool(self.web_seed_var.get()),
@@ -657,6 +754,7 @@ class PipelineView(ctk.CTkFrame):
     def show_result(self, result) -> None:
         """Pipeline sonucunu Sonuç sekmesinde özetler ve grafikleri çizer."""
         self._result_paths = dict(result.output_paths)
+        self._last_result = result
         report = result.report
         lines: List[str] = [
             "JOB #%d - %s" % (result.job_id, result.schema.domain),
@@ -747,6 +845,7 @@ class PipelineView(ctk.CTkFrame):
         self.result_box.insert("1.0", "\n".join(lines))
         self.result_box.configure(state="disabled")
         self.open_folder_button.configure(state="normal")
+        self.export_pdf_button.configure(state="normal")
 
         try:
             self.chart_panel.render(result.dataframe, result.schema, report,

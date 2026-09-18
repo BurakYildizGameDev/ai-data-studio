@@ -103,9 +103,25 @@ class AppWindow(ctk.CTk):
         ctk.CTkLabel(header, text="  AI Synthetic Data Studio",
                      font=ctk.CTkFont(size=18, weight="bold")).grid(
             row=0, column=0, sticky="w", padx=12, pady=12)
+        header_right = ctk.CTkFrame(header, fg_color="transparent")
+        header_right.grid(row=0, column=1, sticky="e", padx=16)
+
+        self.license_badge = ctk.CTkButton(
+            header_right,
+            text=t("app.header.license_community"),
+            width=90,
+            height=26,
+            corner_radius=13,
+            font=ctk.CTkFont(size=11, weight="bold"),
+            command=self._open_license_dialog,
+        )
+        self.license_badge.pack(side="left", padx=(0, 14))
+
         status_frame, self.header_dot, self.header_status = status_dot(
-            header, t("progress.status.ready"))
-        status_frame.grid(row=0, column=1, sticky="e", padx=16)
+            header_right, t("progress.status.ready"))
+        status_frame.pack(side="left")
+
+        self.refresh_license_badge()
 
         self.tabview = ctk.CTkTabview(self)
         self.tabview.grid(row=1, column=0, sticky="nsew", padx=10, pady=(6, 10))
@@ -142,8 +158,49 @@ class AppWindow(ctk.CTk):
         self.header_dot.configure(text_color=color)
         self.header_status.configure(text=text)
 
+    def refresh_license_badge(self) -> None:
+        """Sağ üstteki lisans rozetini mevcut lisansa göre günceller."""
+        from ..licensing import get_license_manager, LicenseTier
+        info = get_license_manager().get_active_license(force_reload=True)
+        if info.is_active:
+            if info.tier == LicenseTier.ENTERPRISE:
+                self.license_badge.configure(
+                    text="⚡ " + t("app.header.license_enterprise"),
+                    fg_color="#6a1b9a",
+                    hover_color="#7b1fa2",
+                    text_color="#ffffff",
+                )
+            else:
+                self.license_badge.configure(
+                    text="★ " + t("app.header.license_pro"),
+                    fg_color="#2e7d32",
+                    hover_color="#388e3c",
+                    text_color="#ffffff",
+                )
+        else:
+            self.license_badge.configure(
+                text=t("app.header.license_community"),
+                fg_color="#3a3a3a",
+                hover_color="#4a4a4a",
+                text_color="#bbbbbb",
+            )
+
+    def _open_license_dialog(self) -> None:
+        from .components.license_dialog import LicenseDialog
+        LicenseDialog(self, on_done=self._on_license_updated)
+
+    def _on_license_updated(self) -> None:
+        self.refresh_license_badge()
+        if hasattr(self, "settings_view"):
+            self.settings_view.refresh_license_status()
+        if hasattr(self, "pipeline_view"):
+            self.pipeline_view.refresh_license_state()
+
     def _on_settings_changed(self) -> None:
         self.pipeline_view.model_selector.refresh_models()
+        self.refresh_license_badge()
+        if hasattr(self, "pipeline_view"):
+            self.pipeline_view.refresh_license_state()
 
     # ------------------------------------------------------------------ #
     # Resume (Bolum 6.2)

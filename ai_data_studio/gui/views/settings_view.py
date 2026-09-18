@@ -197,8 +197,46 @@ class SettingsView(ctk.CTkScrollableFrame):
                                        font=ctk.CTkFont(family="Consolas", size=12))
         self.cost_label.grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 12))
 
+        # ================= Lisans / Sürüm =============================== #
+        license_frame = ctk.CTkFrame(self)
+        license_frame.grid(row=row, column=0, sticky="ew", padx=6, pady=(0, 10))
+        license_frame.grid_columnconfigure(1, weight=1)
+        row += 1
+
+        ctk.CTkLabel(license_frame, text=t("settings.license.title"),
+                     font=ctk.CTkFont(size=14, weight="bold")).grid(
+            row=0, column=0, columnspan=3, sticky="w", padx=12, pady=(12, 2))
+        ctk.CTkLabel(license_frame,
+                     text=t("settings.license.note"),
+                     font=ctk.CTkFont(size=11), text_color="#8a8a8a",
+                     wraplength=560, justify="left").grid(
+            row=1, column=0, columnspan=3, sticky="w", padx=12, pady=(0, 8))
+
+        self.license_tier_label = ctk.CTkLabel(
+            license_frame, text="", font=ctk.CTkFont(size=12, weight="bold"), anchor="w"
+        )
+        self.license_tier_label.grid(row=2, column=0, sticky="w", padx=12, pady=(0, 12))
+
+        self.license_details_label = ctk.CTkLabel(
+            license_frame, text="", font=ctk.CTkFont(size=11), text_color="#8a8a8a", anchor="w"
+        )
+        self.license_details_label.grid(row=2, column=1, sticky="ew", padx=(8, 8), pady=(0, 12))
+
+        license_btn_box = ctk.CTkFrame(license_frame, fg_color="transparent")
+        license_btn_box.grid(row=2, column=2, padx=(0, 12), pady=(0, 12))
+
+        self.license_activate_btn = ctk.CTkButton(
+            license_btn_box,
+            text=t("settings.license.activate"),
+            width=130,
+            command=self._open_license_dialog,
+        )
+        self.license_activate_btn.pack(side="right")
+
+        self.refresh_license_status()
         self.refresh_ollama()
         self._refresh_oauth_status()
+
 
     # ------------------------------------------------------------------ #
     def _refresh_key_status(self) -> None:
@@ -426,3 +464,45 @@ class SettingsView(ctk.CTkScrollableFrame):
                 cost="%.4f" % summary.get("cost_usd", 0.0),
             )
         )
+
+    # ------------------------------------------------------------------ #
+    def refresh_license_status(self) -> None:
+        """Mevcut lisans durumunu kart üzerinde günceller."""
+        from ...licensing import get_license_manager, LicenseTier
+        info = get_license_manager().get_active_license(force_reload=True)
+        if info.is_active:
+            tier_name = (
+                t("license.tier.enterprise")
+                if info.tier == LicenseTier.ENTERPRISE
+                else t("license.tier.pro")
+            )
+            color = "#ba68c8" if info.tier == LicenseTier.ENTERPRISE else "#81c784"
+            self.license_tier_label.configure(
+                text="● " + t("settings.license.tier", tier=tier_name),
+                text_color=color,
+            )
+            exp = info.expires_at or "Lifetime"
+            email = info.email or "Licensed"
+            self.license_details_label.configure(
+                text=f"{email} • {exp}",
+                text_color="#8a8a8a",
+            )
+        else:
+            self.license_tier_label.configure(
+                text="○ " + t("settings.license.tier", tier=t("license.tier.community")),
+                text_color="#8a8a8a",
+            )
+            self.license_details_label.configure(
+                text=info.status_message or t("license.status.missing"),
+                text_color="#ffb74d",
+            )
+
+    def _open_license_dialog(self) -> None:
+        from ..components.license_dialog import LicenseDialog
+        LicenseDialog(self.winfo_toplevel(), on_done=self._after_license_dialog)
+
+    def _after_license_dialog(self) -> None:
+        self.refresh_license_status()
+        if self.on_settings_changed is not None:
+            self.on_settings_changed()
+

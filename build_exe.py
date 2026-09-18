@@ -23,7 +23,7 @@ APP_NAME = "AIDataStudio"
 ENTRY = ROOT / "ai_data_studio" / "main.py"
 
 # Gerekli veri paketlerini ve gizli kütüphane bağımlılıklarını eksiksiz topla.
-COLLECT_ALL = ["scipy", "sklearn", "numpy", "pandas", "customtkinter", "faker", "pyarrow"]
+COLLECT_ALL = ["scipy", "sklearn", "numpy", "pandas", "customtkinter", "faker", "pyarrow", "reportlab"]
 
 # PyInstaller'in statik analizle bulamadigi, calisma aninda import edilen moduller.
 HIDDEN_IMPORTS = [
@@ -39,9 +39,21 @@ HIDDEN_IMPORTS = [
     "google.genai",
     "huggingface_hub",
     # Ceviri kataloglari importlib ile YUKLENIR (bkz. ai_data_studio/i18n.py);
-    # PyInstaller'in statik analizi bu cagriyi goremez, elle bildirmek sart.
     "ai_data_studio.locales.en",
     "ai_data_studio.locales.tr",
+    "ai_data_studio.locales.de",
+    "ai_data_studio.locales.fr",
+    "ai_data_studio.locales.ja",
+    "ai_data_studio.locales.ru",
+    "ai_data_studio.locales.zh",
+    "ai_data_studio.locales.es",
+    "ai_data_studio.locales.hi",
+    "ai_data_studio.licensing",
+    "ai_data_studio.licensing.manager",
+    "ai_data_studio.reporting",
+    "ai_data_studio.reporting.pdf_report",
+    "ai_data_studio.gui.components.license_dialog",
+    "reportlab",
     "runpy",
 ]
 
