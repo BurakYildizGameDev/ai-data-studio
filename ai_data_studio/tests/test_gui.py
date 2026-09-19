@@ -756,7 +756,26 @@ class TestChartPanelTableSelector(unittest.TestCase):
         self.panel = ChartPanel(self.root)
         self.panel.pack()
 
+        def _mock_render_charts(df, schema, report):
+            for widget in self.panel.scroll.winfo_children():
+                try:
+                    widget.destroy()
+                except Exception:
+                    pass
+            self.panel._images.clear()
+            self.panel._images.extend(["mock_img_1", "mock_img_2"])
+
+        self.panel._render_charts = _mock_render_charts
+
     def tearDown(self):
+        try:
+            for after_id in self.root.tk.eval("after info").split():
+                try:
+                    self.root.after_cancel(after_id)
+                except Exception:
+                    pass
+        except Exception:
+            pass
         try:
             self.root.destroy()
         except Exception:
