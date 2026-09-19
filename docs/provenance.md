@@ -14,8 +14,9 @@ claim yourself, on your own machine, without contacting anyone — including us.
 
 ## The check, in one command
 
-Verification is part of the MIT-licensed client. You do not need a licence key to verify
-someone else's file, and no network request is made at any point.
+Verification is part of the published client and the licence guarantees it stays free: you do
+not need a licence key to verify someone else's file, and no network request is made at any
+point.
 
 ```bash
 pip install ai-data-studio
