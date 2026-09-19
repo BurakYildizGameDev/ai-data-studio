@@ -1343,7 +1343,7 @@ MESSAGES = {
     "app.header.license_pro": "PRO",
     "app.header.license_enterprise": "KURUMSAL",
     "settings.license.title": "Lisans & Sürüm",
-    "settings.license.note": "AI Synthetic Data Studio açık çekirdeklidir. Yönetici Özeti PDF Denetim Raporları ve gelişmiş uyumluluk araçları için Pro'yu etkinleştirin.",
+    "settings.license.note": "AI Synthetic Data Studio'nun kaynak kodu herkese açıktır; ticari olmayan kullanım serbest, yeniden satış yasaktır. Yönetici Özeti PDF Denetim Raporları ve gelişmiş uyumluluk araçları için Pro'yu etkinleştirin.",
     "settings.license.tier": "Mevcut Sürüm: {tier}",
     "settings.license.activate": "Lisans Etkinleştir...",
     "settings.license.deactivate": "Devre Dışı Bırak",

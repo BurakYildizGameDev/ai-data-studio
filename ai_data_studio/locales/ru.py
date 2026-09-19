@@ -975,7 +975,7 @@ MESSAGES = {
     "app.header.license_pro": "PRO",
     "app.header.license_enterprise": "ENTERPRISE",
     "settings.license.title": "Лицензия и редакция",
-    "settings.license.note": "AI Synthetic Data Studio имеет открытое ядро. Активируйте Pro для получения исполнительных PDF-отчетов и расширенных инструментов соответствия.",
+    "settings.license.note": "Исходный код AI Synthetic Data Studio открыт для просмотра: некоммерческое использование свободно, перепродажа запрещена. Активируйте Pro для получения исполнительных PDF-отчетов и расширенных инструментов соответствия.",
     "settings.license.tier": "Текущая редакция: {tier}",
     "settings.license.activate": "Активировать лицензию...",
     "settings.license.deactivate": "Деактивировать",

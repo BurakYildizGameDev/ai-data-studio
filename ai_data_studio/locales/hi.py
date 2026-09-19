@@ -956,7 +956,7 @@ MESSAGES = {
     "app.header.license_pro": "प्रो",
     "app.header.license_enterprise": "एंटरप्राइज",
     "settings.license.title": "लाइसेंस और संस्करण",
-    "settings.license.note": "AI Synthetic Data Studio ओपन-कोर है। कार्यकारी PDF ऑडिट रिपोर्ट और उन्नत अनुपालन उपकरणों के लिए प्रो सक्रिय करें।",
+    "settings.license.note": "AI Synthetic Data Studio सोर्स-उपलब्ध है: गैर-व्यावसायिक उपयोग मुफ़्त, पुनर्विक्रय निषिद्ध। कार्यकारी PDF ऑडिट रिपोर्ट और उन्नत अनुपालन उपकरणों के लिए प्रो सक्रिय करें।",
     "settings.license.tier": "वर्तमान संस्करण: {tier}",
     "settings.license.activate": "लाइसेंस सक्रिय करें...",
     "settings.license.deactivate": "निष्क्रिय करें",

@@ -975,7 +975,7 @@ MESSAGES = {
     "app.header.license_pro": "专业版",
     "app.header.license_enterprise": "企业版",
     "settings.license.title": "许可证与版本",
-    "settings.license.note": "AI Synthetic Data Studio 采用开放核心模式。激活 Pro 版以解锁高级 PDF 审计报告和合规工具。",
+    "settings.license.note": "AI Synthetic Data Studio 采用源码可见模式：非商业使用免费，禁止转售。激活 Pro 版以解锁高级 PDF 审计报告和合规工具。",
     "settings.license.tier": "当前版本：{tier}",
     "settings.license.activate": "激活许可证...",
     "settings.license.deactivate": "停用",

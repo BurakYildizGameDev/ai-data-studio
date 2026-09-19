@@ -975,7 +975,7 @@ MESSAGES = {
     "app.header.license_pro": "PRO",
     "app.header.license_enterprise": "エンタープライズ",
     "settings.license.title": "ライセンスとエディション",
-    "settings.license.note": "AI Synthetic Data Studioはオープンコアです。エグゼクティブPDF監査レポートと高度なコンプライアンスツールのためにProを有効化してください。",
+    "settings.license.note": "AI Synthetic Data Studio はソース公開型です。非商用利用は自由ですが、再販は禁止されています。エグゼクティブPDF監査レポートと高度なコンプライアンスツールのためにProを有効化してください。",
     "settings.license.tier": "現在のエディション: {tier}",
     "settings.license.activate": "ライセンスを有効化...",
     "settings.license.deactivate": "無効化",

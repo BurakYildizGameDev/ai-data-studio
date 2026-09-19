@@ -84,6 +84,10 @@ DATA_FILES = [
 # Sozlesme sablonlari: modelsiz yolun tamami bunlara bagli.
 DATA_FILES += [(path, "ai_data_studio/templates")
                for path in sorted((ROOT / "ai_data_studio" / "templates").glob("*.json"))]
+# Lisans metni paketin icinde de bulunmali: PolyForm Noncommercial'in "Notices"
+# maddesi, yazilimin bir kopyasini alan herkesin sartlari da almasini sart
+# kosuyor - yalnizca depoya koymak bunu karsilamaz.
+DATA_FILES += [(ROOT / "LICENSE", ".")]
 
 # Paketlemeye gerek olmayan agir/gereksiz bagimliliklar - boyutu ciddi dusurur.
 EXCLUDES = [
@@ -131,6 +135,14 @@ def package_zip(folder: Path) -> Path:
             if path.suffix.lower() in ZIP_EXCLUDE_SUFFIXES:
                 continue
             archive.write(path, folder.name + "/" + str(path.relative_to(folder)).replace(os.sep, "/"))
+            written += 1
+
+        # Lisans exe'nin icine de gomulu (DATA_FILES), ama orada _internal/
+        # altinda dokuz bin dosyanin arasinda kaliyor. Arsivi acan kisinin
+        # bakacagi yerde, exe'nin yaninda da bir kopya dursun.
+        license_file = ROOT / "LICENSE"
+        if license_file.is_file():
+            archive.write(license_file, folder.name + "/LICENSE")
             written += 1
 
     size_mb = target.stat().st_size / 1024 / 1024

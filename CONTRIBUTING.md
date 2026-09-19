@@ -136,4 +136,40 @@ We follow standard GitHub flow and Conventional Commits.
 - **Bug Reports:** Provide your OS, Python version, hardware specs (GPU/CPU/RAM), steps to reproduce, and the complete traceback.
 - **Feature Requests:** Explain the motivation, proposed API / design, and potential trade-offs.
 
+---
+
+## 📄 6. Licensing of Contributions
+
+This project is **source-available, not open source**. The code is published under the
+[PolyForm Noncommercial License 1.0.0](LICENSE), and the maintainer additionally sells
+commercial licences and Pro/Enterprise keys on top of it. That arrangement only holds
+together if every line in the repository can be offered on both tracks — so contributions
+come with terms. Please read this section before opening a pull request.
+
+**By submitting a contribution, you agree that:**
+
+1. **It is yours to give.** The contribution is your own original work, or you have the
+   right to submit it. If an employer holds rights to work you do, you have their approval
+   to contribute it here.
+
+2. **You grant a licence broad enough to sell.** You grant the project maintainer a
+   perpetual, worldwide, non-exclusive, royalty-free, irrevocable and sublicensable licence
+   to use, reproduce, modify, publish, distribute and **commercially license** your
+   contribution — in whole or in part, on its own or in a derivative work — including under
+   the commercial and Pro/Enterprise terms set out in [LICENSE](LICENSE).
+
+3. **You keep your copyright.** This is a licence, not a transfer of ownership. You remain
+   the author, and you stay free to use your own contribution anywhere else, on any terms.
+
+4. **You grant a patent licence.** You grant the same perpetual, worldwide, royalty-free
+   and irrevocable licence under any patent claims you own that your contribution
+   necessarily infringes.
+
+5. **It comes as is.** Except where the law requires otherwise, you provide the
+   contribution without warranties or conditions of any kind.
+
+If you would rather not agree to these terms, that is entirely reasonable — open an issue
+describing the change instead of a pull request. The idea is still welcome, and it can be
+implemented independently.
+
 Thank you for helping make AI Synthetic Data Studio the premier synthetic data toolkit!

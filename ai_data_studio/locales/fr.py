@@ -975,7 +975,7 @@ MESSAGES = {
     "app.header.license_pro": "PRO",
     "app.header.license_enterprise": "ENTREPRISE",
     "settings.license.title": "Licence et édition",
-    "settings.license.note": "AI Synthetic Data Studio est open-core. Activez Pro pour les rapports d'audit PDF exécutifs et les outils de conformité avancés.",
+    "settings.license.note": "AI Synthetic Data Studio est à source ouverte : libre pour un usage non commercial, revente interdite. Activez Pro pour les rapports d'audit PDF exécutifs et les outils de conformité avancés.",
     "settings.license.tier": "Édition actuelle : {tier}",
     "settings.license.activate": "Activer la licence...",
     "settings.license.deactivate": "Désactiver",
