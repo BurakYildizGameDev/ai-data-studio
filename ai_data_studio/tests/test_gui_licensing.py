@@ -179,16 +179,27 @@ class TestLicenseDialog(unittest.TestCase):
         finally:
             dialog.destroy()
 
-    def test_license_dialog_buy_button_opens_browser(self):
-        from ai_data_studio.gui.components.license_dialog import LicenseDialog
+    def test_license_dialog_buy_button_opens_the_checkout(self):
+        """Satin al dugmesi magazanin gercek odeme sayfasini acmali.
 
-        dialog = make_tk(lambda: LicenseDialog(self.root))
+        URL burada cakili: yer tutucu bir adres geri sizarsa musteri
+        satin alamaz, bunu sessizce kaybetmek istemiyoruz.
+        """
+        from ai_data_studio.gui.components import license_dialog as ld
+
+        dialog = make_tk(lambda: ld.LicenseDialog(self.root))
         try:
             with mock.patch("webbrowser.open") as mock_open:
                 dialog._on_buy()
-                mock_open.assert_called_once()
+                mock_open.assert_called_once_with(ld.CHECKOUT_URL)
         finally:
             dialog.destroy()
+
+        self.assertEqual(
+            ld.CHECKOUT_URL,
+            "https://ai-synthetic-data-studio.lemonsqueezy.com"
+            "/checkout/buy/17400e93-40b9-47d9-aee2-9eaa676964a0",
+        )
 
 
 @unittest.skipUnless(GUI_AVAILABLE, "Headless CI environment without Tkinter")

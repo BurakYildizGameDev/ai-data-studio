@@ -25,7 +25,12 @@ WARN_COLOR = "#ffb74d"
 ERR_COLOR = "#e57373"
 INFO_COLOR = "#4fc3f7"
 MUTED = "#8a8a8a"
-CHECKOUT_URL = "https://syntheticdatastudio.com/pricing"
+# Lemon Squeezy magazasinin resmi odeme sayfasi: satin alma tamamlaninca
+# order_created webhook'u lisans anahtarini uretiyor (tools/license_admin.py).
+CHECKOUT_URL = (
+    "https://ai-synthetic-data-studio.lemonsqueezy.com"
+    "/checkout/buy/17400e93-40b9-47d9-aee2-9eaa676964a0"
+)
 
 
 class LicenseDialog(ctk.CTkToplevel):
