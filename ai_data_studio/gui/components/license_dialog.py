@@ -7,6 +7,8 @@ or visit the checkout/pricing portal.
 """
 from __future__ import annotations
 
+import logging
+import threading
 import webbrowser
 from typing import Callable, Optional
 
@@ -19,6 +21,10 @@ from ...licensing import (
     LicenseTier,
     get_license_manager,
 )
+from ...licensing import lemonsqueezy as ls
+from ..thread_bridge import post_to_ui
+
+log = logging.getLogger(__name__)
 
 OK_COLOR = "#81c784"
 WARN_COLOR = "#ffb74d"
@@ -260,7 +266,45 @@ class LicenseDialog(ctk.CTkToplevel):
             )
             return
 
-        info = self._manager.install_license(key)
+        # Magaza anahtari Lemon Squeezy'ye sorulmadan dogrulanamaz, yani bu
+        # yol aga cikar. Ana thread'de beklemek, paketleri yutan bir aginda
+        # pencereyi zaman asimi boyunca dondururdu. ADS token'i ise tamamen
+        # yerel: bir imza denetimi icin thread acmanin anlami yok.
+        if ls.looks_like_license_key(key):
+            self._activate_against_store(key)
+            return
+
+        self._apply_activation_result(self._manager.install_license(key))
+
+    def _activate_against_store(self, key: str) -> None:
+        self.activate_button.configure(state="disabled")
+        self.action_status.configure(
+            text=t("license.dialog.contacting_store"),
+            text_color=INFO_COLOR,
+        )
+
+        def worker() -> None:
+            try:
+                info = self._manager.install_license(key)
+            except Exception:  # pragma: no cover - beklenmeyen istemci hatasi
+                log.exception("Licence activation failed")
+                info = LicenseInfo(
+                    status=LicenseStatus.INVALID,
+                    status_message=t("license.status.ls_offline"),
+                )
+            post_to_ui(self, lambda: self._finish_store_activation(info))
+
+        threading.Thread(target=worker, daemon=True,
+                         name="license-activate").start()
+
+    def _finish_store_activation(self, info: LicenseInfo) -> None:
+        try:
+            self.activate_button.configure(state="normal")
+        except Exception:
+            pass
+        self._apply_activation_result(info)
+
+    def _apply_activation_result(self, info: LicenseInfo) -> None:
         if info.status == LicenseStatus.VALID:
             tier_name = info.tier.value.upper()
             self.action_status.configure(

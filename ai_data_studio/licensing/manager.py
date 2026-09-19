@@ -13,7 +13,9 @@ import hmac
 import json
 import logging
 import os
+import platform
 import sys
+import threading
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -25,6 +27,7 @@ from cryptography.hazmat.primitives import serialization
 
 from .. import config
 from ..i18n import t
+from . import lemonsqueezy as ls
 
 log = logging.getLogger(__name__)
 
@@ -187,6 +190,16 @@ CLOCK_SKEW_TOLERANCE = datetime.timedelta(hours=24)
 # Onbellek omru: calisirken dolan bir lisans sonsuza kadar gecerli kalmasin.
 CACHE_TTL = datetime.timedelta(minutes=15)
 
+# Lemon Squeezy anahtarlari icin (ADS token'larini ILGILENDIRMEZ, onlar
+# tamamen cevrimdisi dogrulanir):
+#   - kurulu kayit bu sureden sonra magazaya yeniden sorulur,
+#   - magaza yanit vermiyorsa lisans bu sure boyunca gecerli kalmaya devam
+#     eder. Ucagi, konferans wifi'sini ve hafta sonu suren bir kesintiyi
+#     rahatca gecsin diye genis tutuldu; sinirsiz degil, cunku iade edilmis
+#     bir anahtarin bir gun geri gelmesi gerekiyor.
+LS_REVALIDATE_AFTER = datetime.timedelta(days=7)
+LS_OFFLINE_GRACE = datetime.timedelta(days=30)
+
 
 def _migrate_legacy_keyring_entry(kr: Any) -> Optional[str]:
     """Eski servis adi altinda duran lisansi yeni ada tasir.
@@ -273,6 +286,33 @@ def _clock_is_sane(now: datetime.datetime) -> bool:
 
 
 
+def _parse_license_record(token: str) -> Optional[Dict[str, Any]]:
+    """Read a persisted Lemon Squeezy record, or ``None`` if this is a token.
+
+    The two licence kinds share one storage slot, so the reader has to tell
+    them apart. An ADS token never starts with ``{``, and a record always does.
+    """
+    text = (token or "").strip()
+    if not text.startswith("{"):
+        return None
+    try:
+        record = json.loads(text)
+    except Exception:
+        return None
+    if not isinstance(record, dict) or record.get("provider") != ls.PROVIDER:
+        return None
+    return record
+
+
+def _instance_name() -> str:
+    """What this machine is called in the store's activation list."""
+    try:
+        name = platform.node()
+    except Exception:  # pragma: no cover - platforma bagli
+        name = ""
+    return (name or "").strip() or "AI Synthetic Data Studio"
+
+
 class LicenseManager:
     """Manages offline license validation, storage, and feature gating."""
 
@@ -286,6 +326,9 @@ class LicenseManager:
         self._public_key = self._load_public_key(self._pubkey_b64)
         self._cached_license: Optional[LicenseInfo] = None
         self._cached_at: Optional[datetime.datetime] = None
+        # Arka planda suren magaza dogrulamasi: ayni anda bir taneden fazlasi
+        # anlamsiz, her ozellik denetimi bir thread acamaz.
+        self._revalidating = False
 
     @staticmethod
     def _load_public_key(key_b64: str) -> ed25519.Ed25519PublicKey:
@@ -296,12 +339,29 @@ class LicenseManager:
         """Verify and decode a license token offline.
 
         Format: ``ADS-<base64_json_payload>.<base64_signature>``
+
+        A stored Lemon Squeezy record (JSON) is routed to the online path
+        instead; see :meth:`_verify_lemonsqueezy_record`.
         """
         token = token.strip()
         if not token:
             return LicenseInfo(
                 status=LicenseStatus.MISSING,
                 status_message=t("license.status.missing"),
+            )
+
+        record = _parse_license_record(token)
+        if record is not None:
+            return self._verify_lemonsqueezy_record(record)
+
+        if ls.looks_like_license_key(token):
+            # Ham bir magaza anahtari: icinde dogrulanacak bir sey yok, once
+            # aktive edilmesi gerekir. Buraya ancak dogrudan cagrilirsa duser
+            # - install_license() bu bicimi kendisi karsiliyor.
+            return LicenseInfo(
+                key=ls.mask(token),
+                status=LicenseStatus.INVALID,
+                status_message=t("license.status.ls_not_activated"),
             )
 
         # Strip prefix if present
@@ -439,13 +499,168 @@ class LicenseManager:
             public_token=public_token,
         )
 
-    def install_license(self, token: str) -> LicenseInfo:
-        """Verify and persist license token in OS keyring or dedicated file."""
-        info = self.verify_token(token)
-        if info.status != LicenseStatus.VALID:
-            return info
+    def _refresh_record_in_background(self, record: Dict[str, Any]) -> None:
+        """Re-check the store without making anyone wait for it.
 
-        token = token.strip()
+        Startup and every feature gate come through get_active_license(); a
+        store that swallows packets would otherwise freeze the window for the
+        whole timeout. The record is still inside its offline grace when this
+        runs, so the cost of trusting it for one more session is that a refund
+        takes an extra launch to bite - and the refusal is written down here
+        so that next check is immediate rather than another round trip.
+        """
+        if self._revalidating:
+            return
+        self._revalidating = True
+
+        def worker() -> None:
+            try:
+                try:
+                    fresh = ls.validate(str(record.get("key") or ""),
+                                        str(record.get("instance_id") or ""))
+                except ls.LemonSqueezyError as exc:
+                    if exc.transient:
+                        return  # magaza susuyor: kayit oldugu gibi kalir
+                    merged = dict(record)
+                    merged["refused_reason"] = exc.localized()
+                else:
+                    merged = dict(record)
+                    merged.pop("refused_reason", None)
+                    merged.update(fresh)
+
+                self._persist_token(json.dumps(merged, separators=(",", ":")))
+                # Onbellegi dusur: karar degismis olabilir, bir sonraki
+                # get_active_license() yeni kaydi okusun.
+                self._cached_license = None
+                self._cached_at = None
+            except Exception as exc:  # pragma: no cover - arka plan sessiz kalmali
+                log.warning("Background licence re-validation failed: %s", exc)
+            finally:
+                self._revalidating = False
+
+        threading.Thread(target=worker, daemon=True,
+                         name="license-revalidate").start()
+
+    def _verify_lemonsqueezy_record(self, record: Dict[str, Any], *,
+                                    allow_network: bool = True,
+                                    defer: bool = False) -> LicenseInfo:
+        """Check a stored store-issued licence, refreshing it when it goes stale.
+
+        The record is the local half of an ONLINE licence. It is trusted
+        between checks - the alternative is a network round trip on every
+        feature gate - but only for :data:`LS_REVALIDATE_AFTER`, and once the
+        store stops answering only for :data:`LS_OFFLINE_GRACE` beyond that.
+        A refusal from the store invalidates it immediately; a timeout does
+        not, because a timeout is not an answer.
+        """
+        raw_key = str(record.get("key") or "")
+        public_id = str(record.get("public_key_id") or "")
+        tier_str = str(record.get("tier") or "").lower()
+        tier = LicenseTier.ENTERPRISE if tier_str == "enterprise" else (
+            LicenseTier.PRO if tier_str == "pro" else LicenseTier.COMMUNITY
+        )
+        expires_at = record.get("expires_at")
+        try:
+            seats = max(1, int(record.get("seats", 1)))
+        except (TypeError, ValueError):
+            seats = 1
+
+        def _info(status: LicenseStatus, message: str) -> LicenseInfo:
+            return LicenseInfo(
+                # Ham anahtar DEGIL: LicenseInfo.key paylasilan denetim
+                # raporlarina giriyor (provenance.py), magaza anahtari ise
+                # bir paroladir.
+                key=public_id or ls.mask(raw_key),
+                email=str(record.get("email") or ""),
+                tier=tier,
+                features=list(record.get("features") or []),
+                issued_at=record.get("issued_at"),
+                expires_at=expires_at,
+                status=status,
+                status_message=message,
+                seats=seats,
+                machine_id=str(record.get("instance_id") or "*") or "*",
+            )
+
+        revoked = load_revoked_keys()
+        if (public_id and public_id in revoked) or (raw_key and raw_key in revoked):
+            return _info(LicenseStatus.INVALID,
+                         t("license.status.revoked", license_key=public_id))
+
+        # Arka plandaki bir dogrulama bu anahtarin reddedildigini gormus.
+        refused_reason = str(record.get("refused_reason") or "")
+        if refused_reason:
+            return _info(LicenseStatus.INVALID, refused_reason)
+
+        now = datetime.datetime.now(datetime.timezone.utc)
+        clock_ok = _clock_is_sane(now)
+
+        perpetual = (
+            expires_at is None
+            or (isinstance(expires_at, str)
+                and expires_at.strip().lower() in ("", "lifetime"))
+        )
+        if not perpetual:
+            if not clock_ok:
+                return _info(LicenseStatus.INVALID,
+                             t("license.status.clock_tampered"))
+            try:
+                exp = datetime.datetime.fromisoformat(
+                    str(expires_at).replace("Z", "+00:00"))
+            except (TypeError, ValueError, AttributeError):
+                return _info(LicenseStatus.INVALID, t("license.status.bad_expiry"))
+            if exp.tzinfo is None:
+                exp = exp.replace(tzinfo=datetime.timezone.utc)
+            if now > exp:
+                return _info(LicenseStatus.EXPIRED,
+                             t("license.status.expired", date=expires_at))
+
+        last_validated = None
+        try:
+            last_validated = datetime.datetime.fromisoformat(
+                str(record.get("last_validated")).replace("Z", "+00:00"))
+            if last_validated.tzinfo is None:
+                last_validated = last_validated.replace(tzinfo=datetime.timezone.utc)
+        except (TypeError, ValueError, AttributeError):
+            last_validated = None
+
+        # Saat geri alinmissa aradan gecen sure de guvenilmez: kaydi bayat
+        # say ve magazaya sor, yoksa saati geri almak yeniden dogrulamayi
+        # sonsuza kadar erteler.
+        stale = (last_validated is None or not clock_ok
+                 or (now - last_validated) >= LS_REVALIDATE_AFTER)
+
+        within_grace = (last_validated is not None
+                        and (now - last_validated) <= LS_OFFLINE_GRACE)
+        if stale and allow_network and defer and within_grace:
+            # Cagiran bir arayuz thread'i olabilir. Lisans hala payinin
+            # icinde, bekletmeye degmez.
+            self._refresh_record_in_background(record)
+            stale = False
+
+        if stale and allow_network:
+            try:
+                fresh = ls.validate(raw_key, str(record.get("instance_id") or ""))
+            except ls.LemonSqueezyError as exc:
+                if not exc.transient:
+                    return _info(LicenseStatus.INVALID, exc.localized())
+                if last_validated is None or (now - last_validated) > LS_OFFLINE_GRACE:
+                    return _info(LicenseStatus.INVALID,
+                                 t("license.status.ls_revalidate_failed",
+                                   days=LS_OFFLINE_GRACE.days))
+                log.info("Licence re-validation deferred, store unreachable")
+            else:
+                record.update(fresh)
+                self._persist_token(json.dumps(record, separators=(",", ":")))
+                return self._verify_lemonsqueezy_record(record, allow_network=False)
+
+        message = t("license.status.valid")
+        if record.get("test_mode"):
+            message = t("license.status.ls_test_mode_active")
+        return _info(LicenseStatus.VALID, message)
+
+    def _persist_token(self, token: str) -> bool:
+        """Store a verified licence where this machine will find it again."""
         kr = config._keyring()
         stored = False
         if kr is not None:
@@ -461,8 +676,46 @@ class LicenseManager:
                 stored = True
             except Exception as exc:
                 log.warning("Could not write license file: %s", exc)
+        return stored
 
-        if not stored:
+    def _install_lemonsqueezy_key(self, license_key: str) -> LicenseInfo:
+        """Activate a store licence key against Lemon Squeezy and persist it."""
+        try:
+            record = ls.activate(license_key, _instance_name())
+        except ls.LemonSqueezyError as exc:
+            return LicenseInfo(
+                key=ls.mask(license_key),
+                status=LicenseStatus.INVALID,
+                status_message=exc.localized(),
+            )
+
+        # Az once konusuldu, tekrar sormanin anlami yok.
+        info = self._verify_lemonsqueezy_record(record, allow_network=False)
+        if info.status != LicenseStatus.VALID:
+            return info
+
+        if not self._persist_token(json.dumps(record, separators=(",", ":"))):
+            info.status_message = t("license.status.not_persisted")
+
+        self._cached_license = info
+        self._cached_at = datetime.datetime.now(datetime.timezone.utc)
+        return info
+
+    def install_license(self, token: str) -> LicenseInfo:
+        """Verify and persist a licence in the OS keyring or dedicated file.
+
+        Accepts both licence shapes: an offline ADS token, or a Lemon Squeezy
+        licence key, which is activated against the store first.
+        """
+        token = token.strip()
+        if ls.looks_like_license_key(token):
+            return self._install_lemonsqueezy_key(token)
+
+        info = self.verify_token(token)
+        if info.status != LicenseStatus.VALID:
+            return info
+
+        if not self._persist_token(token):
             # Dogrulama gecti ama hicbir yere yazilamadi: kullanici "aktif"
             # gorur, uygulamayi kapatinca lisans kaybolurdu.
             info.status_message = t("license.status.not_persisted")
@@ -471,8 +724,23 @@ class LicenseManager:
         self._cached_at = datetime.datetime.now(datetime.timezone.utc)
         return info
 
+    def _release_lemonsqueezy_activation(self) -> None:
+        """Hand this machine's seat back to the store before forgetting it.
+
+        Best effort. Without it a reinstall burns an activation every time,
+        until the customer is locked out of a licence they paid for.
+        """
+        try:
+            record = _parse_license_record(self._read_stored_token() or "")
+            if record:
+                ls.deactivate(str(record.get("key") or ""),
+                              str(record.get("instance_id") or ""))
+        except Exception as exc:  # pragma: no cover - agdan bagimsiz kalmali
+            log.info("Licence deactivation skipped: %s", exc)
+
     def remove_license(self) -> None:
         """Remove persisted license."""
+        self._release_lemonsqueezy_activation()
         kr = config._keyring()
         if kr is not None:
             try:
@@ -494,15 +762,8 @@ class LicenseManager:
         self._cached_license = None
         self._cached_at = None
 
-    def get_active_license(self, force_reload: bool = False) -> LicenseInfo:
-        """Retrieve and verify currently stored license."""
-        now = datetime.datetime.now(datetime.timezone.utc)
-        fresh = (self._cached_at is not None
-                 and datetime.timedelta(0) <= now - self._cached_at < CACHE_TTL)
-        if self._cached_license is not None and fresh and not force_reload:
-            return self._cached_license
-        self._cached_at = now
-
+    def _read_stored_token(self) -> Optional[str]:
+        """The licence as it sits on this machine: keyring first, then file."""
         token = None
         kr = config._keyring()
         if kr is not None:
@@ -518,6 +779,18 @@ class LicenseManager:
                 token = config.read_text(LICENSE_FILE_PATH).strip()
             except Exception:
                 pass
+        return token
+
+    def get_active_license(self, force_reload: bool = False) -> LicenseInfo:
+        """Retrieve and verify currently stored license."""
+        now = datetime.datetime.now(datetime.timezone.utc)
+        fresh = (self._cached_at is not None
+                 and datetime.timedelta(0) <= now - self._cached_at < CACHE_TTL)
+        if self._cached_license is not None and fresh and not force_reload:
+            return self._cached_license
+        self._cached_at = now
+
+        token = self._read_stored_token()
 
         if not token:
             self._cached_license = LicenseInfo(
@@ -526,7 +799,13 @@ class LicenseManager:
             )
             return self._cached_license
 
-        self._cached_license = self.verify_token(token)
+        # Magaza kaydi: bu cagri acilis yolunda ve her ozellik denetiminde
+        # yapiliyor, bu yuzden yeniden dogrulama bekletmeden yapilir.
+        record = _parse_license_record(token)
+        if record is not None:
+            self._cached_license = self._verify_lemonsqueezy_record(record, defer=True)
+        else:
+            self._cached_license = self.verify_token(token)
         return self._cached_license
 
     def is_feature_enabled(self, feature_name: str) -> bool:

@@ -179,6 +179,43 @@ class TestLicenseDialog(unittest.TestCase):
         finally:
             dialog.destroy()
 
+    def test_a_store_key_is_activated_without_freezing_the_window(self):
+        """Magaza anahtari aga cikar, ADS token'i cikmaz.
+
+        Tk ana thread'inde beklemek, paketleri yutan bir agda pencereyi
+        zaman asimi boyunca dondururdu.
+        """
+        from ai_data_studio.gui.components import license_dialog as ld
+
+        dialog = make_tk(lambda: ld.LicenseDialog(self.root))
+        try:
+            dialog.key_entry.insert(0, "296B8F04-E41C-4228-8B42-3FC9D762E417")
+            with mock.patch.object(ld.threading, "Thread") as thread:
+                with mock.patch.object(self.mgr, "install_license") as install:
+                    dialog._on_activate()
+
+            install.assert_not_called()
+            thread.assert_called_once()
+            self.assertEqual(str(dialog.activate_button.cget("state")), "disabled")
+        finally:
+            dialog.destroy()
+
+    def test_the_store_answer_comes_back_to_the_window(self):
+        from ai_data_studio.gui.components import license_dialog as ld
+        from ai_data_studio.licensing import LicenseInfo, LicenseStatus
+
+        dialog = make_tk(lambda: ld.LicenseDialog(self.root))
+        try:
+            dialog.activate_button.configure(state="disabled")
+            dialog._finish_store_activation(LicenseInfo(
+                status=LicenseStatus.INVALID,
+                status_message="Lemon Squeezy rejected this license key"))
+
+            self.assertEqual(str(dialog.activate_button.cget("state")), "normal")
+            self.assertIn("rejected", dialog.action_status.cget("text"))
+        finally:
+            dialog.destroy()
+
     def test_license_dialog_buy_button_opens_the_checkout(self):
         """Satin al dugmesi magazanin gercek odeme sayfasini acmali.
 
