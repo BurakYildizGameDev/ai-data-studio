@@ -1,21 +1,236 @@
-﻿MIT License
+AI Synthetic Data Studio — Licence
+==================================
 
-Copyright (c) 2026 AI Synthetic Data Studio Contributors
+The source in this repository is SOURCE-AVAILABLE, not open source. You may
+read it, run it, study it, change it, and share your changes — for any
+noncommercial purpose. Selling it, reselling it, repackaging it for paid
+distribution, or building a commercial offering on it requires a separate
+commercial licence from the licensor.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+Two sets of terms apply:
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+  1. The PolyForm Noncommercial License 1.0.0, reproduced verbatim below,
+     governs all source in this repository.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+  2. The SUPPLEMENTAL TERMS at the end of this file cover commercial use and
+     the Pro and Enterprise editions. They grant rights in addition to the
+     licence above. They never take away rights the licence above gives you.
+
+Required Notice: Copyright (c) 2026 AI Synthetic Data Studio Contributors
+                 https://ai-synthetic-data-studio.lemonsqueezy.com
+
+SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+
+-------------------------------------------------------------------------------
+
+# PolyForm Noncommercial License 1.0.0
+
+<https://polyformproject.org/licenses/noncommercial/1.0.0>
+
+## Acceptance
+
+In order to get any license under these terms, you must agree to them as both
+strict obligations and conditions to all your licenses.
+
+## Copyright License
+
+The licensor grants you a copyright license for the software to do everything
+you might do with the software that would otherwise infringe the licensor's
+copyright in it for any permitted purpose. However, you may only distribute
+the software according to Distribution License and make changes or new works
+based on the software according to Changes and New Works License.
+
+## Distribution License
+
+The licensor grants you an additional copyright license to distribute copies
+of the software. Your license to distribute covers distributing the software
+with changes and new works permitted by Changes and New Works License.
+
+## Notices
+
+You must ensure that anyone who gets a copy of any part of the software from
+you also gets a copy of these terms or the URL for them above, as well as
+copies of any plain-text lines beginning with Required Notice: that the
+licensor provided with the software. For example:
+
+> Required Notice: Copyright Yoyodyne, Inc. (http://example.com)
+
+## Changes and New Works License
+
+The licensor grants you an additional copyright license to make changes and
+new works based on the software for any permitted purpose.
+
+## Patent License
+
+The licensor grants you a patent license for the software that covers patent
+claims the licensor can license, or becomes able to license, that you would
+infringe by using the software.
+
+## Noncommercial Purposes
+
+Any noncommercial purpose is a permitted purpose.
+
+## Personal Uses
+
+Personal use for research, experiment, and testing for the benefit of public
+knowledge, personal study, private entertainment, hobby projects, amateur
+pursuits, or religious observance, without any anticipated commercial
+application, is use for a permitted purpose.
+
+## Noncommercial Organizations
+
+Use by any charitable organization, educational institution, public research
+organization, public safety or health organization, environmental protection
+organization, or government institution is use for a permitted purpose
+regardless of the source of funding or obligations resulting from the funding.
+
+## Fair Use
+
+You may have "fair use" rights for the software under the law. These terms do
+not limit them.
+
+## No Other Rights
+
+These terms do not allow you to sublicense or transfer any of your licenses to
+anyone else, or prevent the licensor from granting licenses to anyone else.
+These terms do not imply any other licenses.
+
+## Patent Defense
+
+If you make any written claim that the software infringes or contributes to
+infringement of any patent, your patent license for the software granted under
+these terms ends immediately. If your company makes such a claim, your patent
+license ends immediately for work on behalf of your company.
+
+## Violations
+
+The first time you are notified in writing that you have violated any of these
+terms, or done anything with the software not covered by your licenses, your
+licenses can nonetheless continue if you come into full compliance with these
+terms, and take practical steps to correct past violations, within 32 days of
+receiving notice. Otherwise, all your licenses end immediately.
+
+## No Liability
+
+As far as the law allows, the software comes as is, without any warranty or
+condition, and the licensor will not be liable to you for any damages arising
+out of these terms or the use or nature of the software, under any kind of
+legal claim.
+
+## Definitions
+
+The licensor is the individual or entity offering these terms, and the
+software is the software the licensor makes available under these terms.
+
+You refers to the individual or entity agreeing to these terms.
+
+Your company is any legal entity, sole proprietorship, or other kind of
+organization that you work for, plus all organizations that have control over,
+are under the control of, or are under common control with that organization.
+Control means ownership of substantially all the assets of an entity, or the
+power to direct its management and policies by vote, contract, or otherwise.
+Control can be direct or indirect.
+
+Your licenses are all the licenses granted to you for the software under these
+terms.
+
+Use means anything you do with the software requiring one of your licenses.
+
+-------------------------------------------------------------------------------
+
+SUPPLEMENTAL TERMS — COMMERCIAL USE AND THE PRO / ENTERPRISE EDITIONS
+
+These terms are offered by the licensor alongside the PolyForm Noncommercial
+License 1.0.0 above. They are not part of that licence and do not modify it.
+Where they grant you something, they grant it in addition.
+
+1. What you may do at no cost
+
+   Everything the licence above permits. Concretely: run the studio and the
+   CLI, generate and validate datasets, read and modify the source, port it,
+   fork it, publish your changes, write papers about it, teach with it, and
+   use it inside a charity, school, university, public research body or
+   government institution — regardless of how that institution is funded.
+
+2. What requires a commercial licence
+
+   A separate written commercial licence from the licensor is required to:
+
+     a) sell, resell, rent, sublicense or otherwise distribute this software
+        or any derivative of it for a fee, including repackaging it under
+        another name or brand;
+
+     b) offer it, or a derivative of it, as a paid or ad-supported product or
+        service, hosted or otherwise, including as part of a larger offering;
+
+     c) use it to produce datasets, reports or attestations in the course of
+        commercial activity, whether or not the output is sold; or
+
+     d) remove, replace or obscure the Required Notice above.
+
+   Nothing in this section restricts what the law already allows you to do
+   without permission, including fair use.
+
+3. The Pro and Enterprise editions
+
+   The source of every feature, including the reporting and attestation layer,
+   is in this repository and is covered by the licence above. What the Pro and
+   Enterprise editions add is the ENTITLEMENT to use that layer, granted by a
+   licence key the licensor issues:
+
+     - signed provenance declarations that a third party can verify offline
+       (Ed25519 attestation over the generated dataset), and
+     - the executive PDF audit report.
+
+   Those capabilities are gated in the software and are unlocked only by an
+   official licence key. Keys are issued solely through the licensor's
+   Lemon Squeezy store:
+
+       https://ai-synthetic-data-studio.lemonsqueezy.com/checkout/buy/
+       17400e93-40b9-47d9-aee2-9eaa676964a0
+
+   A key is issued to the named purchaser, is limited to the seat count it
+   carries, and is governed by these terms together with the purchase terms
+   shown at checkout. Keys are not transferable and may be revoked if the
+   underlying payment is reversed.
+
+4. Licence keys and the enforcement code
+
+   You may read, audit and modify the licence and provenance code — that is
+   the point of publishing it. You may not, however, distribute a build or a
+   derivative that forges, bypasses, disables or misrepresents the licence
+   check in order to obtain or offer the Pro or Enterprise capabilities
+   without a valid key, nor generate, share or sell keys or tokens that
+   imitate ones the licensor issues. Doing so is use outside your licences
+   under the terms above.
+
+   Studying the mechanism, testing it against your own keys, and reporting
+   weaknesses to the licensor are expressly permitted.
+
+5. Verification is free for everyone, always
+
+   Checking a signed dataset or report that someone else produced never
+   requires a licence, a key, a payment or a network connection. An auditor
+   receiving a signed file must always be able to verify it independently, and
+   the licensor will not restrict that.
+
+6. Third-party components
+
+   Dependencies keep their own licences, which are unaffected by these terms.
+
+7. Earlier releases
+
+   Versions of this software published under the MIT License before this file
+   was changed remain available under the MIT License for those versions. This
+   change applies to this version onward. It does not, and cannot, withdraw
+   permissions already granted for earlier releases.
+
+8. Getting a commercial licence
+
+   Commercial licences, OEM terms and site licences are available from the
+   licensor through the store linked above.
+
+9. No warranty
+
+   The No Liability section of the licence above applies to these supplemental
+   terms in full.

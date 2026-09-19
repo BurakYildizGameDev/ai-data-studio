@@ -42,7 +42,7 @@ Three separate things are being checked, and a failure tells you which one broke
 
 | Line | What it establishes |
 | --- | --- |
-| **Licence signature valid** | The licence embedded in the file was issued by AI Synthetic Data Studio. It is verified against the master public key compiled into this open-source client, so a self-issued licence does not pass. |
+| **Licence signature valid** | The licence embedded in the file was issued by AI Synthetic Data Studio. It is verified against the master public key compiled into this client, so a self-issued licence does not pass. |
 | **Declaration signature valid** | The declaration was signed by *that* licence. Each licence carries its own report-signing keypair; only the public half ever enters a file, so copying someone else's licence out of their report does not let you sign your own. |
 | **Content digest matches** | The bytes in front of you are the data the declaration describes. The SHA-256 is recomputed from the file and compared. |
 

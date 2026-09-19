@@ -136,4 +136,4 @@ We follow standard GitHub flow and Conventional Commits.
 - **Bug Reports:** Provide your OS, Python version, hardware specs (GPU/CPU/RAM), steps to reproduce, and the complete traceback.
 - **Feature Requests:** Explain the motivation, proposed API / design, and potential trade-offs.
 
-Thank you for helping make AI Synthetic Data Studio the premier open-source synthetic data toolkit!
+Thank you for helping make AI Synthetic Data Studio the premier synthetic data toolkit!

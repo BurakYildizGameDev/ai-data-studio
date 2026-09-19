@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://github.com/BurakYildizGameDev/ai-data-studio/actions/workflows/ci.yml"><img src="https://github.com/BurakYildizGameDev/ai-data-studio/actions/workflows/ci.yml/badge.svg" alt="CI Status"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue.svg" alt="Python 3.10 | 3.11 | 3.12"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License: MIT"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-orange.svg" alt="License: PolyForm Noncommercial 1.0.0"></a>
   <a href="https://github.com/astral-sh/ruff"><img src="https://img.shields.io/badge/code%20style-ruff-000000.svg" alt="Code Style: Ruff"></a>
 </p>
 
@@ -429,7 +429,7 @@ out/job_1_orders.csv
 Three separate things are checked, and a failure says which one broke:
 
 1. **The licence is real.** Its payload is verified against the public key compiled into this
-   open-source client, so a self-issued licence does not pass.
+   published client, so a self-issued licence does not pass.
 2. **The declaration came from that licence.** Each licence carries its own report-signing
    keypair; the public half is inside the signed payload, the private half never leaves the
    licence holder. Copying a valid licence out of someone else's report does not let you sign
@@ -451,8 +451,13 @@ simply unsigned, and `--verify-report` says so rather than pretending otherwise.
 
 ## Editions
 
-The code in this repository is MIT-licensed and the generation pipeline is complete without a
-licence key. A key unlocks the reporting and attestation layer.
+The source in this repository is **source-available, not open source**: free to read, run,
+modify and share for any noncommercial purpose, but not to resell — see [License](#license).
+The generation pipeline is complete without a licence key; a key unlocks the reporting and
+attestation layer, and is what licenses the tool for commercial work.
+
+**Pro — $19, paid once, lifetime.**
+[Get a licence key →](https://ai-synthetic-data-studio.lemonsqueezy.com/checkout/buy/17400e93-40b9-47d9-aee2-9eaa676964a0)
 
 | | Community | Pro / Enterprise |
 | --- | --- | --- |
@@ -463,12 +468,22 @@ licence key. A key unlocks the reporting and attestation layer.
 | Executive PDF audit report (`--export-pdf`) | — | ✅ |
 | Verifying someone else's signed file (`--verify-report`) | ✅ | ✅ |
 
-Verification is deliberately free and open source: an auditor receiving a signed dataset should
-never need a licence, or a network connection, to check it.
+Verification is deliberately free and unrestricted: an auditor receiving a signed dataset should
+never need a licence, a payment, or a network connection to check it. The licence guarantees
+this explicitly and permanently.
 
 Keys are installed in the desktop studio (the header badge opens the licence dialog) or by
-placing the token where the app stores credentials. They are validated offline against the
-embedded public key; there is no activation call and no heartbeat. Enterprise payloads may
+placing the token where the app stores credentials. Two kinds are accepted:
+
+- **Store licence keys** — the UUID the checkout emails you (`296B8F04-…`). A UUID carries no
+  signature, so it is activated once against Lemon Squeezy, re-checked about weekly, and keeps
+  working for 30 days without a connection. An outage never drops a licence; only a refusal
+  from the store does.
+- **Offline ADS tokens** — `ADS-…`, issued for air-gapped and Enterprise installs. Verified
+  entirely offline against the embedded public key: no activation call, no heartbeat, no
+  network of any kind.
+
+Enterprise payloads may
 declare `seats` and a `machine_id`, which are recorded in the manifest as statements — the tool
 does not refuse to run on a second machine, because a developer moving between a laptop and a
 desktop is a customer.
@@ -612,8 +627,29 @@ tools/                          # Seller side only - NOT shipped, NOT in build_e
 
 ## License
 
-The source in this repository is distributed under the **MIT License** — see [LICENSE](LICENSE).
+**Source-available, not open source.** The source in this repository is licensed under the
+[PolyForm Noncommercial License 1.0.0](LICENSE).
 
-Pro and Enterprise licence keys are a commercial product on top of it; see [Editions](#editions)
-for what they unlock. Licence verification and provenance verification are part of the MIT
-source, so a signed dataset can always be checked by anyone.
+**Free, for any noncommercial purpose.** Run it, read it, change it, fork it, publish your
+changes, use it for personal projects, research, coursework and teaching — and use it inside a
+charity, school, university, public research body or government institution, whatever their
+funding. Modifying it is expressly welcome; that is why the source is here.
+
+**Not free to resell.** Selling it, reselling it, renting it, repackaging it for paid
+distribution under another name, or building a paid product or service on it requires a
+commercial licence. Commercial use of the tool itself — including generating datasets or
+reports in the course of commercial activity — needs a key:
+[$19, paid once, lifetime](https://ai-synthetic-data-studio.lemonsqueezy.com/checkout/buy/17400e93-40b9-47d9-aee2-9eaa676964a0).
+
+**Pro and Enterprise capabilities** — signed provenance and the executive PDF audit report —
+are gated in the software and unlock only with an official key issued by our Lemon Squeezy
+store. The gate's source is published here and auditing it is encouraged; shipping a build
+that forges or bypasses it is not covered by the licence. [LICENSE](LICENSE) has the exact
+terms, and [Editions](#editions) has the feature table.
+
+**Verification stays free for everyone, always.** Checking a signed dataset or report that
+someone else produced never requires a licence, a key, a payment or a network connection. An
+auditor must always be able to verify a file independently.
+
+Releases published under the MIT License before this change remain under the MIT License for
+those versions; the change applies from this version onward.
