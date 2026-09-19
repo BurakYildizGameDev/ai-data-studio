@@ -403,10 +403,16 @@ def main(argv: Optional[list] = None) -> int:
         if not verify_lemonsqueezy_webhook(body, args.signature, args.webhook_secret):
             print("Signature does NOT match; nothing was minted.", file=sys.stderr)
             return 1
-        payload = payload_from_lemonsqueezy_order(
-            json.loads(body.decode("utf-8")),
-            days=args.days, lifetime=args.lifetime,
-            allow_test_mode=args.allow_test_mode)
+        try:
+            payload = payload_from_lemonsqueezy_order(
+                json.loads(body.decode("utf-8")),
+                days=args.days, lifetime=args.lifetime,
+                allow_test_mode=args.allow_test_mode)
+        except ValueError as exc:
+            # Kullanicinin gorecegi sey bir traceback degil, ne yapmasi
+            # gerektigi olmali: bu komut satici tarafinda elle kosuluyor.
+            print("Refused: %s" % exc, file=sys.stderr)
+            return 2
         token = generate_signed_license(payload, _resolve_private_key(args.private_key))
         print("# %s  %s  seats=%s" % (payload["key"], payload["email"], payload["seats"]))
         print(token)

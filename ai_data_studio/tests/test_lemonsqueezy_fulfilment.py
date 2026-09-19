@@ -303,8 +303,14 @@ class TestFulfilCommand(unittest.TestCase):
         ])
 
     def test_a_test_mode_order_needs_the_explicit_flag(self):
-        with self.assertRaises(ValueError):
-            self._run()
+        """Komut satirinda traceback degil, ne yapmasi gerektigi gorunmeli."""
+        printed = []
+        with mock.patch("builtins.print",
+                        side_effect=lambda *a, **k: printed.append(" ".join(str(x) for x in a))):
+            code = self._run()
+
+        self.assertEqual(code, 2)
+        self.assertIn("test-mode", " ".join(printed))
 
     def test_the_command_prints_a_token_the_client_accepts(self):
         printed = []
