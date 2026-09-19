@@ -33,7 +33,7 @@ log = logging.getLogger(__name__)
 # alongside the test-suite, so any holder of the repository could mint valid
 # licenses. The matching private key now lives only in the release secret store
 # and must never appear in this repository or its tests.
-DEFAULT_PUBLIC_KEY = "o66ER5nGBFNT7Ks12CLne1sViJHwH+P2O6jKwFkbimE="
+DEFAULT_PUBLIC_KEY = "V8L/bWE5dp+af7UmKjSo5hE1RA0gf0B3kAFImt1SKHU="
 # Uygulamanin geri kalani config.KEYRING_SERVICE ("AIDataStudio") kullaniyor.
 # Lisans modulu kendi adini tasiyordu, yani kullanicinin kimlik deposunda
 # iki ayri giris olusuyordu ve bir "tum verileri sil" akisi birini kaciriyordu.

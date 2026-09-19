@@ -233,9 +233,8 @@ def extract_seed_dataframe(
         # Sayisal donusumleri dene
         for col in df.columns:
             try:
-                converted = pd.to_numeric(df[col], errors="ignore")
-                df[col] = converted
-            except Exception:
+                df[col] = pd.to_numeric(df[col])
+            except (ValueError, TypeError):
                 pass
 
         return df

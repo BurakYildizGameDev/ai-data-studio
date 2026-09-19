@@ -92,6 +92,14 @@ class TestAppWindow(unittest.TestCase):
 
     def tearDown(self):
         try:
+            for after_id in self.app.tk.eval("after info").split():
+                try:
+                    self.app.after_cancel(after_id)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        try:
             self.app.destroy()
         except Exception:
             pass
@@ -399,6 +407,13 @@ class TestAppWindow(unittest.TestCase):
         self.app.worker.join(timeout=10)
         self.app.poll_queue()
         self.app.update_idletasks()
+
+        import time
+        timeout = time.time() + 10
+        while self.app._last_result is None and time.time() < timeout:
+            self.app.update_idletasks()
+            self.app.update()
+            time.sleep(0.05)
 
         from ai_data_studio.i18n import t
 
