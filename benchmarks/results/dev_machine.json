@@ -1,0 +1,185 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-09-20T17:35:05Z",
+  "machine": {
+    "platform": "Windows-10-10.0.26200-SP0",
+    "processor": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel",
+    "machine": "AMD64",
+    "python": "3.11.9",
+    "numpy": "2.4.6",
+    "pandas": "3.0.5"
+  },
+  "cold_start_seconds": 0.5028,
+  "settings": {
+    "engine": "parametric",
+    "seed": 42,
+    "repeat": 3,
+    "columns": 10,
+    "column_types": {
+      "bool": 1,
+      "category": 1,
+      "datetime": 1,
+      "float": 2,
+      "int": 5
+    },
+    "business_rules": 2,
+    "correlations": 2,
+    "measures": "generation only - no LLM call, no validation, no file export"
+  },
+  "results": [
+    {
+      "rows": 10000,
+      "columns": 10,
+      "repeat": 3,
+      "best_seconds": 0.0216,
+      "median_seconds": 0.0217,
+      "all_seconds": [
+        0.0216,
+        0.0219,
+        0.0217
+      ],
+      "rows_per_second": 462830,
+      "peak_memory_mb": 2.76,
+      "dataframe_mb": 0.77
+    },
+    {
+      "rows": 100000,
+      "columns": 10,
+      "repeat": 3,
+      "best_seconds": 0.1562,
+      "median_seconds": 0.1572,
+      "all_seconds": [
+        0.1562,
+        0.1572,
+        0.1581
+      ],
+      "rows_per_second": 640314,
+      "peak_memory_mb": 27.14,
+      "dataframe_mb": 7.66
+    },
+    {
+      "rows": 1000000,
+      "columns": 10,
+      "repeat": 3,
+      "best_seconds": 1.8975,
+      "median_seconds": 1.9122,
+      "all_seconds": [
+        1.9122,
+        1.918,
+        1.8975
+      ],
+      "rows_per_second": 526996,
+      "peak_memory_mb": 270.9,
+      "dataframe_mb": 77.09
+    }
+  ],
+  "contract": {
+    "domain": "benchmark_loan_applications",
+    "description": "Fixed 10-column contract used by the reproducible benchmark.",
+    "row_count_target": 100000,
+    "random_seed": 42,
+    "columns": [
+      {
+        "name": "application_id",
+        "type": "int",
+        "min": 1,
+        "max": 2000000000,
+        "distribution": "uniform"
+      },
+      {
+        "name": "applicant_age",
+        "type": "int",
+        "min": 18,
+        "max": 90,
+        "distribution": "normal",
+        "mean": 42,
+        "std": 12
+      },
+      {
+        "name": "annual_income",
+        "type": "float",
+        "min": 12000,
+        "max": 400000,
+        "distribution": "lognormal",
+        "mean": 55000
+      },
+      {
+        "name": "credit_score",
+        "type": "int",
+        "min": 300,
+        "max": 850,
+        "distribution": "normal",
+        "mean": 680,
+        "std": 60
+      },
+      {
+        "name": "loan_amount",
+        "type": "float",
+        "min": 1000,
+        "max": 250000,
+        "distribution": "gamma",
+        "shape": 2.0,
+        "scale": 18000
+      },
+      {
+        "name": "months_employed",
+        "type": "int",
+        "min": 0,
+        "max": 480,
+        "distribution": "exponential",
+        "mean": 54
+      },
+      {
+        "name": "prior_defaults",
+        "type": "int",
+        "min": 0,
+        "max": 12,
+        "distribution": "poisson",
+        "mean": 0.4
+      },
+      {
+        "name": "is_approved",
+        "type": "bool",
+        "target_ratio": 0.62
+      },
+      {
+        "name": "product",
+        "type": "category",
+        "categories": [
+          "mortgage",
+          "auto",
+          "personal",
+          "student",
+          "business"
+        ]
+      },
+      {
+        "name": "applied_at",
+        "type": "datetime",
+        "description": "between 2024-01-01 and 2026-01-01"
+      }
+    ],
+    "business_rules": [
+      "loan_amount <= annual_income * 5",
+      "months_employed >= 0"
+    ],
+    "correlations": [
+      {
+        "columns": [
+          "annual_income",
+          "credit_score"
+        ],
+        "expected_sign": "positive",
+        "min_r": 0.35
+      },
+      {
+        "columns": [
+          "credit_score",
+          "is_approved"
+        ],
+        "expected_sign": "positive",
+        "min_r": 0.25
+      }
+    ]
+  }
+}

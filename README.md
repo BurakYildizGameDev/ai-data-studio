@@ -52,7 +52,9 @@ description ──LLM──> Schema Contract ──engine──> raw rows ──
    regenerates the data offline and, optionally, a Hugging Face dataset card.
 
 Because the model only writes the contract, a 1.5B model on an ordinary laptop is enough, and
-the number of rows does not change the number of LLM calls.
+the number of rows does not change the number of LLM calls. Compiling the contract is the
+cheap part: a million rows across ten columns takes about two seconds and 270 MB —
+[measure it on your machine](benchmarks/RESULTS.md).
 
 > **The validator checks the data against the contract, not against the real world.** A small
 > model can declare a relationship that runs the wrong way for your domain. Read the generated
@@ -354,13 +356,19 @@ Frequently used flags (`--help` lists all of them):
 
 | Engine | When to use it |
 | --- | --- |
-| `parametric` | The choice for small local models. One LLM call for the contract, then vectorised generation — 100,000 rows × 10 columns in 0.13 s, 1,000,000 rows × 10 columns in 1.6 s on the development machine |
+| `parametric` | The choice for small local models. One LLM call for the contract, then vectorised generation — 100,000 rows × 10 columns in 0.16 s, 1,000,000 rows × 10 columns in 1.9 s on the development machine. Reproduce it: [benchmarks/RESULTS.md](benchmarks/RESULTS.md) |
 | `llm` | When a column needs logic a contract cannot express. The model writes a generator program; failures are fed back for up to three repair rounds. Needs a capable model — `qwen2.5-coder:1.5b` failed all of its runs |
 | `auto` | Tries `llm` and falls back to `parametric` when code generation runs out of attempts |
 
 The command line and the Python API default to `llm`. Enrichment engines, the ordering rules
 between them, the small-model measurements and known limits are in
 [docs/engines.md](docs/engines.md).
+
+Every generation figure above comes from a script in this repository, not from a spreadsheet:
+`python benchmarks/run_benchmark.py` measures the same fixed 10-column contract at 10,000,
+100,000 and 1,000,000 rows and prints times and peak memory for *your* machine. Method,
+reference numbers and what the benchmark deliberately leaves out are in
+[benchmarks/RESULTS.md](benchmarks/RESULTS.md).
 
 ## Validation
 
