@@ -1,11 +1,10 @@
-# AI Synthetic Data Studio & Validator
+# AI Synthetic Data Studio
+
+> Contract-based synthetic data generation and statistical validation engine — 100% offline,
+> powered by local LLMs.
 
 <p align="center">
   <img src="ai_data_studio/assets/logo.png" width="96" height="96" alt="AI Synthetic Data Studio logo">
-</p>
-
-<p align="center">
-  <strong>Describe a dataset in plain language. A small local model writes the contract, the engine generates the rows, and a validator checks that the data keeps the contract — no API key required.</strong>
 </p>
 
 <p align="center">
@@ -25,12 +24,24 @@
 
 ---
 
+## Why this exists
+
+Why ask an LLM to write rows one token at a time? Let the local model write a Schema Contract,
+then compile and validate millions of rows in seconds. Zero API bills, no data leaves your
+machine.
+
+Describe a dataset in plain language. A small local model writes the contract, the engine
+generates the rows, and a validator checks that the data keeps the contract — no API key
+required. One LLM call covers ten rows or ten million, so the cost of a dataset stops being a
+function of its size, and every row can be checked against something you can read.
+
+---
+
 ## How it works
 
-Asking an LLM to write rows one token at a time is slow, costs more with every row, and gives
-you nothing to check the result against. This project asks the model for something much
-smaller: a **Schema Contract** — a JSON description of the columns, distributions, business
-rules, correlations and monotonic relationships the data should have.
+This project asks the model for something much smaller than the data itself: a **Schema
+Contract** — a JSON description of the columns, distributions, business rules, correlations
+and monotonic relationships the data should have.
 
 ```
 description ──LLM──> Schema Contract ──engine──> raw rows ──validator──> clean rows + report
@@ -475,6 +486,25 @@ attestation layer, and is what licenses the tool for commercial work.
 | **Signed** provenance an auditor can verify offline | — | ✅ |
 | Executive PDF audit report (`--export-pdf`) | — | ✅ |
 | Verifying someone else's signed file (`--verify-report`) | ✅ | ✅ |
+| Commercial use — client work, internal pipelines, data you ship | — | ✅ |
+
+### Who Pro is for
+
+Pro exists for the people who have to show their work to someone else:
+
+- **Independent consultants and freelance ML engineers.** You generate a dataset for a client
+  and bill for it. The key licenses that commercial work, and the signed PDF report is what you
+  attach to the invoice — evidence of how the data was produced, not just a folder of CSVs.
+- **Teams that answer to a reviewer.** Risk, compliance, audit, an ethics board, a customer's
+  procurement team. A signed provenance declaration lets them verify the file themselves,
+  offline, without your help and without a licence of their own.
+- **Companies generating data in the course of business.** Internal pipelines, CI, test data
+  for a product you sell — commercial use of the tool needs a key regardless of who sees the
+  output.
+
+Pro is **not** required to generate, validate or export data. If you are working on a personal
+project, coursework, research, or anything else noncommercial, Community is the whole pipeline
+and it is free. The terms are in [LICENSE-COMMERCIAL.md](LICENSE-COMMERCIAL.md).
 
 Verification is deliberately free and unrestricted: an auditor receiving a signed dataset should
 never need a licence, a payment, or a network connection to check it. The licence guarantees
@@ -620,6 +650,10 @@ ai_data_studio/
 ├── locales/                    # Message catalogs (en, tr, de, fr, es, ru, zh, ja, hi)
 └── tests/                      # Offline test suite with mock LLM clients
 
+benchmarks/                     # Reproducible generation benchmark - see RESULTS.md
+├── run_benchmark.py            # Fixed 10-column contract at 10k / 100k / 1M rows
+└── results/                    # Measurements, one JSON file per machine
+
 tools/                          # Seller side only - NOT shipped, NOT in build_exe
 └── license_admin.py            # Issue, revoke and keygen; payment webhook checks
 ```
@@ -632,6 +666,7 @@ tools/                          # Seller side only - NOT shipped, NOT in build_e
 - [docs/project-planner.md](docs/project-planner.md) — generating data from a project description
 - [docs/provenance.md](docs/provenance.md) — the page to hand an auditor: how to verify a file offline
 - [docs/ENGINEERING_REPORT_TR.md](docs/ENGINEERING_REPORT_TR.md) — long-form engineering report in Turkish
+- [benchmarks/RESULTS.md](benchmarks/RESULTS.md) — how the generation numbers were measured, and how to reproduce them
 
 ## License
 
