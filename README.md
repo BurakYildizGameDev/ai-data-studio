@@ -1,7 +1,7 @@
 # AI Synthetic Data Studio
 
-> Contract-based synthetic data generation and statistical validation engine — 100% offline,
-> powered by local LLMs.
+> Contract-based synthetic data generation and statistical validation engine — local-first &
+> air-gapped capable, with zero required API dependencies.
 
 <p align="center">
   <img src="ai_data_studio/assets/logo.png" width="96" height="96" alt="AI Synthetic Data Studio logo">
@@ -177,6 +177,10 @@ The desktop studio uses Tk. It ships with Python on Windows and macOS; on Debian
 install it with `sudo apt install python3-tk`.
 
 ## LLM providers
+
+The default path is entirely local — Ollama, any local LLM, or the parametric engine with no
+model at all — and Gemini and Claude are optional external providers that are used only if you
+choose one.
 
 | Provider | Authentication | Notes |
 | --- | --- | --- |
