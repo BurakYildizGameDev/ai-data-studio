@@ -627,29 +627,46 @@ tools/                          # Seller side only - NOT shipped, NOT in build_e
 
 ## License
 
-**Source-available, not open source.** The source in this repository is licensed under the
-[PolyForm Noncommercial License 1.0.0](LICENSE).
+### Dual-licensing model
 
-**Free, for any noncommercial purpose.** Run it, read it, change it, fork it, publish your
-changes, use it for personal projects, research, coursework and teaching — and use it inside a
-charity, school, university, public research body or government institution, whatever their
-funding. Modifying it is expressly welcome; that is why the source is here.
+Two licences ship side by side. Which one applies depends on what you are doing with the
+tool, not on which copy you downloaded — there is one codebase and one repository.
 
-**Not free to resell.** Selling it, reselling it, renting it, repackaging it for paid
-distribution under another name, or building a paid product or service on it requires a
-commercial licence. Commercial use of the tool itself — including generating datasets or
-reports in the course of commercial activity — needs a key:
-[$19, paid once, lifetime](https://ai-synthetic-data-studio.lemonsqueezy.com/checkout/buy/17400e93-40b9-47d9-aee2-9eaa676964a0).
+| | Personal, academic and other noncommercial use | Commercial use and the signed audit layer |
+| --- | --- | --- |
+| Licence file | [`LICENSE`](LICENSE) — PolyForm Noncommercial 1.0.0 | [`LICENSE-COMMERCIAL.md`](LICENSE-COMMERCIAL.md) — commercial EULA |
+| Cost | Free | Pro key, $19, paid once |
+| How you get it | Clone the repository | [Lemon Squeezy Pro key](https://ai-synthetic-data-studio.lemonsqueezy.com/checkout/buy/17400e93-40b9-47d9-aee2-9eaa676964a0) |
+| Covers | Generation, validation, privacy checks, every engine and export format | Everything on the left, in commercial work, plus signed provenance and the executive PDF audit report |
+
+**Free, for any noncommercial purpose** — under [`LICENSE`](LICENSE). Run it, read it, change
+it, fork it, publish your changes, use it for personal projects, research, coursework and
+teaching — and use it inside a charity, school, university, public research body or government
+institution, whatever their funding. Modifying it is expressly welcome; that is why the source
+is here. It is **source-available, not open source**.
+
+**Commercial use needs a Pro key** — under [`LICENSE-COMMERCIAL.md`](LICENSE-COMMERCIAL.md).
+That covers generating or validating data in the course of commercial activity, client work
+billed to a customer, internal company pipelines, and handing signed PDF audit reports to
+clients and auditors. A key is perpetual for the major version you bought it against.
+[Get a Pro key →](https://ai-synthetic-data-studio.lemonsqueezy.com/checkout/buy/17400e93-40b9-47d9-aee2-9eaa676964a0)
+
+**Not free to resell, under either licence.** Selling it, reselling it, renting it,
+repackaging it for paid distribution under another name, or offering it as a hosted service
+whose value is this software's own functionality requires separate terms from the licensor. A
+Pro key licenses *using* the tool commercially; it does not license redistributing the tool
+itself.
 
 **Pro and Enterprise capabilities** — signed provenance and the executive PDF audit report —
 are gated in the software and unlock only with an official key issued by our Lemon Squeezy
 store. The gate's source is published here and auditing it is encouraged; shipping a build
-that forges or bypasses it is not covered by the licence. [LICENSE](LICENSE) has the exact
-terms, and [Editions](#editions) has the feature table.
+that forges or bypasses it is not covered by either licence. [LICENSE](LICENSE) and
+[LICENSE-COMMERCIAL.md](LICENSE-COMMERCIAL.md) have the exact terms, and
+[Editions](#editions) has the feature table.
 
 **Verification stays free for everyone, always.** Checking a signed dataset or report that
 someone else produced never requires a licence, a key, a payment or a network connection. An
-auditor must always be able to verify a file independently.
+auditor must always be able to verify a file independently. Both licences commit to this.
 
 Releases published under the MIT License before this change remain under the MIT License for
 those versions; the change applies from this version onward.
